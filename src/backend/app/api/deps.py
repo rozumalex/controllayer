@@ -1,3 +1,8 @@
+from hmac import compare_digest
+from typing import Annotated
+
+from fastapi import Depends, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 
 from app.control.adapters.mcp_gateway import Connect, McpGateway, connect_http
@@ -50,3 +55,18 @@ def mcp_connect() -> Connect:
 
 def mcp_gateway() -> McpGateway:
     return McpGateway(control_layer(), mcp_connect(), enabled_mcp_servers)
+
+
+bearer = HTTPBearer(auto_error=False, description="MCP_ADMIN_TOKEN")
+
+
+def require_admin(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
+) -> None:
+    """Lets only the holder of MCP_ADMIN_TOKEN through. An unset token lets no
+    one through, so a missing setting never leaves the API open."""
+    token = settings.mcp_admin_token
+    if not (token and credentials and compare_digest(credentials.credentials, token)):
+        raise HTTPException(
+            401, "A valid admin token is required", {"WWW-Authenticate": "Bearer"}
+        )

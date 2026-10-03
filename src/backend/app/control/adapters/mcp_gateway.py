@@ -149,8 +149,8 @@ class McpGateway:
 
 
 def agent_id(ctx: ServerRequestContext[Any]) -> str:
-    """Who is calling, from the X-Agent-Id header, for the guards and the
-    logs."""
+    """Who is calling, for the guards and the logs. The endpoint sets the
+    X-Agent-Id header from the agent's token, so the agent can't choose it."""
     headers = getattr(ctx.request, "headers", None) or {}
     return headers.get(AGENT_HEADER) or "anonymous"
 

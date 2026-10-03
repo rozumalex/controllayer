@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import mcp_connect
+from app.api.deps import mcp_connect, require_admin
 from app.control.adapters.mcp_gateway import Connect, list_upstream_tools
 from app.core.schema.mcp_servers import (
     McpServerCreate,
@@ -17,7 +17,11 @@ from app.core.schema.mcp_servers import (
 from app.db.models import McpServer
 from app.db.session import get_session
 
-router = APIRouter(prefix="/mcp-servers", tags=["mcp servers"])
+# Whoever manages the servers decides which tools every agent gets, so only
+# the admin may.
+router = APIRouter(
+    prefix="/mcp-servers", tags=["mcp servers"], dependencies=[Depends(require_admin)]
+)
 
 Session = Annotated[AsyncSession, Depends(get_session)]
 ConnectDep = Annotated[Connect, Depends(mcp_connect)]

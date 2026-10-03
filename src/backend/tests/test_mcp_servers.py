@@ -8,6 +8,7 @@ from mcp import Client
 
 from app.api.deps import mcp_connect
 from app.control.adapters.mcp_gateway import McpGateway, UpstreamServer
+from app.core.config import settings
 from app.main import app
 from tests.test_mcp_gateway import bank
 
@@ -24,10 +25,41 @@ async def connect(server: UpstreamServer) -> AsyncIterator[Client]:
 
 
 @pytest.fixture
-def api(db: None) -> Iterator[TestClient]:
+def admin(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
+    """Sets the admin token, and gives the headers that carry it."""
+    monkeypatch.setattr(settings, "mcp_admin_token", "admin-secret")
+    return {"Authorization": "Bearer admin-secret"}
+
+
+@pytest.fixture
+def api(db: None, admin: dict[str, str]) -> Iterator[TestClient]:
     app.dependency_overrides[mcp_connect] = lambda: connect
-    yield TestClient(app)
+    yield TestClient(app, headers=admin)
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def agents(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "mcp_agent_tokens", "low-secret:judge-low")
+
+
+@pytest.mark.parametrize("headers", [{}, {"Authorization": "Bearer wrong"}])
+def test_servers_need_the_admin_token(
+    db: None, admin: dict[str, str], headers: dict[str, str]
+) -> None:
+    # when / then
+    assert TestClient(app).get(URL, headers=headers).status_code == 401
+
+
+def test_servers_are_closed_without_an_admin_token(
+    db: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # given
+    monkeypatch.setattr(settings, "mcp_admin_token", "")
+    headers = {"Authorization": "Bearer "}
+
+    # when / then
+    assert TestClient(app).get(URL, headers=headers).status_code == 401
 
 
 def test_create_server_hides_auth_header(api: TestClient) -> None:
@@ -90,10 +122,29 @@ def test_disable_list_tools_and_delete(api: TestClient) -> None:
 MCP_HEADERS = {
     "Accept": "application/json, text/event-stream",
     "MCP-Protocol-Version": "2025-06-18",
+    "Authorization": "Bearer low-secret",
 }
 
 
-def test_gateway_serves_mcp_over_http(db: None) -> None:
+@pytest.mark.parametrize("token", [None, "wrong"])
+def test_gateway_needs_an_agent_token(
+    db: None, agents: None, token: str | None
+) -> None:
+    # given
+    request = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
+    headers = {k: v for k, v in MCP_HEADERS.items() if k != "Authorization"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    # when
+    with TestClient(app) as client:
+        response = client.post("/api/mcp", json=request, headers=headers)
+
+    # then
+    assert response.status_code == 401
+
+
+def test_gateway_serves_mcp_over_http(db: None, agents: None) -> None:
     # given
     request = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
     headers = MCP_HEADERS
@@ -107,8 +158,8 @@ def test_gateway_serves_mcp_over_http(db: None) -> None:
     assert response.json()["result"]["tools"] == []
 
 
-def test_gateway_reads_agent_id_header(
-    db: None, monkeypatch: pytest.MonkeyPatch
+def test_gateway_takes_the_identity_from_the_token(
+    db: None, agents: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # given
     async def call_tool(self, name, arguments, agent_id) -> types.CallToolResult:
@@ -119,7 +170,8 @@ def test_gateway_reads_agent_id_header(
     monkeypatch.setattr(McpGateway, "call_tool", call_tool)
     params = {"name": "bank__get_client", "arguments": {}}
     request = {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": params}
-    headers = {**MCP_HEADERS, "X-Agent-Id": "judge-low"}
+    # An agent with the judge-low token claims more.
+    headers = {**MCP_HEADERS, "X-Agent-Id": "judge-privileged"}
 
     # when
     with TestClient(app) as client:

@@ -28,6 +28,23 @@ class Settings(BaseSettings):
     # it receives, so the demo runs offline.
     openai_api_key: str = ""
     openai_model: str = "gpt-4.1-mini"
+    # The bearer token that manages the MCP servers at /api/mcp-servers. While
+    # it is empty, that API refuses every request.
+    mcp_admin_token: str = ""
+    # The agents' bearer tokens for the gateway at /api/mcp, as
+    # "token:identity,token:identity". The identity, such as judge-low, is the
+    # caller the guards see. With no tokens, the gateway refuses every agent.
+    mcp_agent_tokens: str = ""
+
+    @property
+    def agent_identities(self) -> dict[str, str]:
+        """The agents' identities, by token."""
+        pairs = (item.partition(":") for item in self.mcp_agent_tokens.split(","))
+        return {
+            token.strip(): identity.strip()
+            for token, _, identity in pairs
+            if token.strip() and identity.strip()
+        }
 
     @field_validator("database_url")
     @classmethod
