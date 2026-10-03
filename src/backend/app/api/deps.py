@@ -6,6 +6,7 @@ from sqlalchemy import select
 
 from app.control.adapters.mcp_gateway import Connect, McpGateway, connect_http
 from app.control.adapters.openai_chat import ChatControl
+from app.control.agent import Agent
 from app.control.audit import (
     EventAuditSink,
     EventSink,
@@ -84,8 +85,14 @@ def chat_control(user: CurrentUser) -> ChatControl:
         if settings.openai_api_key
         else MockUpstream()
     )
+    # The tools run through the MCP gateway, which checks every call and
+    # result, so the chat leaves them to it.
     return ChatControl(
-        control_layer(sink), upstream, settings.control_log_payloads, sink
+        control_layer(sink),
+        upstream,
+        settings.control_log_payloads,
+        sink,
+        check_tools=False,
     )
 
 
@@ -108,3 +115,10 @@ def mcp_gateway(user: CurrentUser) -> McpGateway:
         settings.control_log_payloads,
         sink,
     )
+
+
+def chat_agent(
+    control: Annotated[ChatControl, Depends(chat_control)],
+    gateway: Annotated[McpGateway, Depends(mcp_gateway)],
+) -> Agent:
+    return Agent(control, gateway)

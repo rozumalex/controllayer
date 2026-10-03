@@ -56,11 +56,16 @@ class ChatControl:
         upstream: ChatUpstream,
         log_payloads: bool,
         sink: EventSink | None = None,
+        check_tools: bool = True,
     ) -> None:
         self.layer = layer
         self.upstream = upstream
         self.log_payloads = log_payloads
         self.sink = sink or LogEventSink(logger)
+        # Off when the tools run through the MCP gateway, which checks every
+        # call and result itself: checking them here too would wrap each
+        # result twice and pay for the AI check twice.
+        self.check_tools = check_tools
 
     async def complete(self, request: dict[str, Any], trace_id: str) -> dict[str, Any]:
         trace = Trace(trace_id, agent_id=request.get("user") or "anonymous")
@@ -203,7 +208,7 @@ class ChatControl:
                 )
                 if decision.action is Action.BLOCK:
                     return checked, True
-            elif role == "tool":
+            elif role == "tool" and self.check_tools:
                 # Every tool result is checked, so the model never sees one
                 # raw, even from an earlier turn.
                 tool = tool_names.get(message.get("tool_call_id"), "unknown")
@@ -222,6 +227,8 @@ class ChatControl:
     async def check_response(
         self, response: dict[str, Any], trace: Trace
     ) -> dict[str, Any]:
+        if not self.check_tools:
+            return response
         for choice in response.get("choices", []):
             message = choice.get("message") or {}
             for call in message.get("tool_calls") or []:
