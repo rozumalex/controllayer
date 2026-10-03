@@ -1,11 +1,14 @@
+import csv
+import io
 import json
 import math
 from collections import Counter, defaultdict
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import Integer, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,6 +23,7 @@ from app.core.schema.traces import (
     Stats,
     TraceDetail,
     TraceEvent,
+    TraceExport,
     TraceList,
     TraceSummary,
     TraceUser,
@@ -181,12 +185,15 @@ def percentile(values: list[float], fraction: float) -> float | None:
 
 
 async def events_since(
-    session: AsyncSession, start: datetime
+    session: AsyncSession, start: datetime | None, end: datetime | None = None
 ) -> dict[str, list[ControlEvent]]:
-    """The events of every trace that started at or after start."""
-    started = select(ControlEvent.trace_id).where(
-        ControlEvent.event == "request", ControlEvent.created_at >= start
-    )
+    """The events of every trace that started at or after start, and before
+    end. No start or no end leaves that side open."""
+    started = select(ControlEvent.trace_id).where(ControlEvent.event == "request")
+    if start:
+        started = started.where(ControlEvent.created_at >= start)
+    if end:
+        started = started.where(ControlEvent.created_at < end)
     rows = await session.scalars(
         select(ControlEvent)
         .where(ControlEvent.trace_id.in_(started))
@@ -245,6 +252,106 @@ async def analytics(
             for (guard, reason), count in findings.most_common(TOP_FINDINGS)
         ],
     )
+
+
+EXPORT_LIMIT = 10_000
+CSV_COLUMNS = [
+    "trace_id",
+    "started_at",
+    "user_id",
+    "user_name",
+    "agent_id",
+    "outcome",
+    "findings",
+    "prompt_tokens",
+    "completion_tokens",
+    "total_tokens",
+    "duration_ms",
+    "prompt",
+]
+
+
+def cell(value: object) -> object:
+    """A CSV cell that a spreadsheet won't run as a formula."""
+    if isinstance(value, str) and value.startswith(("=", "+", "-", "@", "\t", "\r")):
+        return f"'{value}"
+    return value
+
+
+def csv_of(traces: list[TraceSummary]) -> str:
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(CSV_COLUMNS)
+    for trace in traces:
+        row = [
+            trace.trace_id,
+            trace.started_at.isoformat(),
+            trace.user.id if trace.user else "",
+            trace.user.name if trace.user else "",
+            trace.agent_id or "",
+            trace.outcome,
+            "; ".join(f"{f.guard}:{f.action}:{f.reason}" for f in trace.findings),
+            trace.usage.prompt_tokens,
+            trace.usage.completion_tokens,
+            trace.usage.total_tokens,
+            trace.duration_ms,
+            trace.prompt or "",
+        ]
+        writer.writerow([cell(value) for value in row])
+    return out.getvalue()
+
+
+@router.get(
+    "/export",
+    summary="Download the audit log as CSV or JSON",
+    description=(
+        "One row per trace, the newest first, filtered by when it started, its "
+        f"outcome, its user and the guards that found something. At most "
+        f"{EXPORT_LIMIT} traces. The prompt column is empty unless "
+        "CONTROL_LOG_PAYLOADS is on."
+    ),
+    responses={
+        200: {
+            "content": {"text/csv": {}, "application/json": {}},
+            "description": "The traces, as a file to save.",
+        }
+    },
+)
+async def export_traces(
+    session: Session,
+    fmt: Annotated[Literal["csv", "json"], Query(alias="format")] = "csv",
+    start: Annotated[
+        datetime | None, Query(description="Traces that started at or after it.")
+    ] = None,
+    end: Annotated[
+        datetime | None, Query(description="Traces that started before it.")
+    ] = None,
+    outcomes: Annotated[list[Outcome] | None, Query(alias="outcome")] = None,
+    user_id: UUID | None = None,
+    guards: Annotated[
+        list[str] | None,
+        Query(alias="guard", description="Traces with a finding of one of them."),
+    ] = None,
+) -> Response:
+    traces = [
+        summary(events) for events in (await events_since(session, start, end)).values()
+    ]
+    traces = [
+        trace
+        for trace in traces
+        if (not outcomes or trace.outcome in outcomes)
+        and (not user_id or (trace.user and trace.user.id == user_id))
+        and (not guards or any(f.guard in guards for f in trace.findings))
+    ]
+    traces.sort(key=lambda trace: trace.started_at, reverse=True)
+    traces = traces[:EXPORT_LIMIT]
+
+    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+    headers = {"Content-Disposition": f'attachment; filename="audit-log-{stamp}.{fmt}"'}
+    if fmt == "json":
+        body = TraceExport(traces=traces).model_dump_json(indent=2)
+        return Response(body, media_type="application/json", headers=headers)
+    return Response(csv_of(traces), media_type="text/csv", headers=headers)
 
 
 @router.get(
