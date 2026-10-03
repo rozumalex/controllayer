@@ -96,8 +96,8 @@ function ProviderCard() {
 
   const policyOf = (role: string) =>
     roles.some((r) => r.role === role && r.customized)
-      ? `the ${role} policy`
-      : "the default policy"
+      ? `${role} policy`
+      : "default policy"
 
   useEffect(() => {
     fetchProvider()
@@ -158,9 +158,7 @@ function ProviderCard() {
         <div className="flex flex-col gap-1">
           <CardTitle>Identity provider</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Your people sign in through your own IAM, such as Okta, Entra ID,
-            Google Workspace or Keycloak, over OpenID Connect. Their claims set
-            their role, and so their policy.
+            Your IAM over OpenID Connect. Claims set roles and policies.
           </p>
         </div>
         {saved && (
@@ -182,10 +180,7 @@ function ProviderCard() {
               onChange={(e) => set({ name: e.target.value })}
             />
           </Field>
-          <Field
-            label="Issuer URL"
-            hint="Its OpenID configuration is read from here."
-          >
+          <Field label="Issuer URL" hint="Okta, Entra ID, Google, Keycloak…">
             <Input
               placeholder="https://acme.okta.com"
               value={form.issuer}
@@ -202,8 +197,8 @@ function ProviderCard() {
             label="Client secret"
             hint={
               saved?.has_secret
-                ? "Saved. Leave blank to keep it."
-                : "Only if your provider won't take PKCE alone."
+                ? "Saved. Blank keeps it."
+                : "Optional with PKCE."
             }
           >
             <Input
@@ -213,10 +208,7 @@ function ProviderCard() {
               onChange={(e) => set({ client_secret: e.target.value })}
             />
           </Field>
-          <Field
-            label="Email domains"
-            hint="People who enter an email at these domains sign in here."
-          >
+          <Field label="Email domains" hint="These emails sign in here.">
             <Input
               placeholder="acme.com, acme.io"
               value={form.domains}
@@ -255,10 +247,7 @@ function ProviderCard() {
         <div className="flex flex-col gap-3">
           <div>
             <Label>Roles from claims</Label>
-            <p className="text-xs text-muted-foreground">
-              The first rule whose claim holds the value sets the role. A list
-              claim, such as groups, matches if any item does.
-            </p>
+            <p className="text-xs text-muted-foreground">First match wins.</p>
           </div>
           {form.role_rules.map((rule, index) => (
             <div
@@ -292,9 +281,9 @@ function ProviderCard() {
               </label>
               {rule.role && (
                 <p className="text-xs text-muted-foreground sm:order-last sm:col-span-5">
-                  {rule.value || "…"} in {rule.claim || "…"} → {rule.role},
-                  under {policyOf(rule.role)}
-                  {rule.admin && ", administers the organization"}
+                  {rule.value || "…"} in {rule.claim || "…"} → {rule.role} ·{" "}
+                  {policyOf(rule.role)}
+                  {rule.admin && " · admin"}
                 </p>
               )}
               <Button
@@ -336,8 +325,8 @@ function ProviderCard() {
             label="Default role"
             hint={
               form.default_role
-                ? `A user no rule matches works under ${policyOf(form.default_role)}.`
-                : "For a user no rule matches. Blank refuses their sign-in."
+                ? `No match: ${policyOf(form.default_role)}.`
+                : "No match: blank refuses sign-in."
             }
           >
             <Input
