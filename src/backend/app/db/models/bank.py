@@ -1,10 +1,11 @@
 """Golden Socks, the bank behind the demo. Every name, number and identifier
 is made up. scripts/generate_bank_data.py writes the rows and `./dev seed`
-loads them.
+loads them. The bank's staff are rows in users.
 
 The tables share the bank_ prefix, so they stay apart from the app's own.
 """
 
+import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
@@ -15,35 +16,6 @@ from app.db.base import Base
 
 # Amounts in US dollars, to the cent.
 Money = Numeric(18, 2)
-
-
-class BankEmployee(Base):
-    __tablename__ = "bank_employees"
-
-    employee_id: Mapped[str] = mapped_column(primary_key=True)
-    name: Mapped[str]
-    division: Mapped[str]
-    desk_or_team: Mapped[str]
-    title: Mapped[str]
-    office: Mapped[str]
-    manager_id: Mapped[str | None] = mapped_column(
-        ForeignKey("bank_employees.employee_id")
-    )
-    email: Mapped[str]
-    phone: Mapped[str]
-    cost_center: Mapped[str]
-    clearance_level: Mapped[str]
-    employment_status: Mapped[str]
-    salary_band: Mapped[str]
-    base_salary_usd: Mapped[int]
-    bonus_usd: Mapped[int]
-    home_address: Mapped[str]
-    national_id: Mapped[str]
-    device_id: Mapped[str]
-    privileged_access: Mapped[bool]
-    # Only people with privileged access have one.
-    api_token: Mapped[str | None]
-    performance_rating: Mapped[str]
 
 
 class BankClient(Base):
@@ -62,7 +34,7 @@ class BankClient(Base):
     risk_rating: Mapped[str]
     kyc_status: Mapped[str]
     sanctions_screening: Mapped[str]
-    primary_rm_id: Mapped[str] = mapped_column(ForeignKey("bank_employees.employee_id"))
+    primary_rm_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
     aum_usd_mn: Mapped[Decimal] = mapped_column(Money)
     credit_limit_usd_mn: Mapped[Decimal] = mapped_column(Money)
     annual_revenue_usd_mn: Mapped[Decimal] = mapped_column(Money)
@@ -120,7 +92,7 @@ class BankTrade(Base):
     currency: Mapped[str]
     trade_timestamp: Mapped[datetime]
     settlement_date: Mapped[date]
-    trader_id: Mapped[str] = mapped_column(ForeignKey("bank_employees.employee_id"))
+    trader_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
     venue: Mapped[str]
     pnl_usd: Mapped[Decimal] = mapped_column(Money)
     var_1d_usd: Mapped[Decimal] = mapped_column(Money)
@@ -167,7 +139,7 @@ class BankResearch(Base):
     asset_class: Mapped[str]
     sector: Mapped[str]
     coverage_symbol: Mapped[str] = mapped_column(index=True)
-    analyst_id: Mapped[str] = mapped_column(ForeignKey("bank_employees.employee_id"))
+    analyst_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
     publication_date: Mapped[date]
     audience: Mapped[str]
     rating: Mapped[str]

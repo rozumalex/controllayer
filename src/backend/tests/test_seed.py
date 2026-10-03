@@ -9,16 +9,17 @@ import pytest
 from sqlalchemy import Table
 
 from app.db.base import Base
-from scripts.seed import bank_tables, load
+from scripts.seed import load, seeded_tables
 
 
 @cache
 def rows(table: str) -> list[dict[str, Any]]:
-    columns, values = load(Base.metadata.tables[f"bank_{table}"])
+    name = table if table == "users" else f"bank_{table}"
+    columns, values = load(Base.metadata.tables[name])
     return [dict(zip(columns, row, strict=True)) for row in values]
 
 
-@pytest.mark.parametrize("table", bank_tables(), ids=lambda t: t.name)
+@pytest.mark.parametrize("table", seeded_tables(), ids=lambda t: t.name)
 def test_every_bank_table_has_data(table: Table) -> None:
     # when
     columns, values = load(table)
@@ -55,7 +56,7 @@ def test_load_reads_the_identity_profiles() -> None:
     assert {p["permission"] for p in profiles} == {"LOW", "STANDARD", "PRIVILEGED"}
 
 
-@pytest.mark.parametrize("table", bank_tables(), ids=lambda t: t.name)
+@pytest.mark.parametrize("table", seeded_tables(), ids=lambda t: t.name)
 def test_no_placeholder_values(table: Table) -> None:
     # given
     markers = re.compile(r"\b(demo|example|synthetic|test|dummy|fake)\b", re.I)
@@ -103,12 +104,10 @@ def test_trades_book_on_the_clients_open_accounts() -> None:
 
 def test_traders_sit_on_the_trade_desk() -> None:
     # given
-    employees = {e["employee_id"]: e for e in rows("employees")}
+    users = {u["id"]: u for u in rows("users")}
 
     # when
-    pairs = {
-        (t["desk"], employees[t["trader_id"]]["desk_or_team"]) for t in rows("trades")
-    }
+    pairs = {(t["desk"], users[t["trader_id"]]["team"]) for t in rows("trades")}
 
     # then
     assert all(desk == team for desk, team in pairs)

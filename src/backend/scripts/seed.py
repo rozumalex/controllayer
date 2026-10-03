@@ -1,8 +1,9 @@
 """Load the Golden Socks bank data into a database.
 
-Empties the bank_ tables, then copies every row from scripts/bank_data into
-them, all in one transaction. The other tables are left alone, so it is safe
-to run again. Apply the migrations first.
+Empties the bank_ tables and removes the bank's staff from users, then copies
+every row from scripts/bank_data into them, all in one transaction. Other
+users and tables are left alone, so it is safe to run again. Apply the
+migrations first.
 
 Run from src/backend: `uv run python -m scripts.seed`, or `./dev seed` from
 the repo root. Pass `--url <postgres url>` to seed another database, such as
@@ -14,6 +15,7 @@ import asyncio
 import csv
 import gzip
 import sys
+import uuid
 from collections.abc import Callable
 from datetime import date, datetime
 from decimal import Decimal
@@ -32,6 +34,8 @@ from app.db.base import Base
 DATA_DIR = Path(__file__).resolve().parent / "bank_data"
 # Seeding any other host asks first, so production is never seeded by mistake.
 LOCAL_HOSTS = {"db", "localhost", "127.0.0.1"}
+# The bank's staff are the users with an email at this domain.
+STAFF_DOMAIN = "goldensocks.com"
 
 PARSERS: dict[type, Callable[[str], Any]] = {
     str: str,
@@ -40,12 +44,17 @@ PARSERS: dict[type, Callable[[str], Any]] = {
     bool: {"true": True, "false": False}.__getitem__,
     date: date.fromisoformat,
     datetime: datetime.fromisoformat,
+    uuid.UUID: uuid.UUID,
 }
 
 
-def bank_tables() -> list[Table]:
-    """The bank tables, each one after the tables it refers to."""
-    return [t for t in Base.metadata.sorted_tables if t.name.startswith("bank_")]
+def seeded_tables() -> list[Table]:
+    """users and the bank tables, each one after the tables it refers to."""
+    return [
+        t
+        for t in Base.metadata.sorted_tables
+        if t.name == "users" or t.name.startswith("bank_")
+    ]
 
 
 def load(table: Table) -> tuple[list[str], list[tuple[Any, ...]]]:
@@ -67,7 +76,7 @@ def load(table: Table) -> tuple[list[str], list[tuple[Any, ...]]]:
 
 
 async def seed(url: str) -> None:
-    tables = bank_tables()
+    tables = seeded_tables()
     engine = create_async_engine(url, poolclass=NullPool)
     try:
         async with engine.begin() as connection:
@@ -81,8 +90,12 @@ async def seed(url: str) -> None:
                     f"The database has no {', '.join(missing)}. "
                     "Apply the migrations first."
                 )
-            names = ", ".join(t.name for t in tables)
+            names = ", ".join(t.name for t in tables if t.name != "users")
             await connection.execute(text(f"TRUNCATE {names}"))
+            await connection.execute(
+                text("DELETE FROM users WHERE email LIKE :staff"),
+                {"staff": f"%@{STAFF_DOMAIN}"},
+            )
             # COPY, through asyncpg, loads the rows far faster than INSERT.
             raw = (await connection.get_raw_connection()).driver_connection
             assert raw is not None

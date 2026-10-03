@@ -1,8 +1,8 @@
-"""add golden socks bank tables
+"""add golden socks bank tables and staff users
 
-Revision ID: 427e2a669bc8
+Revision ID: 643913f65ca8
 Revises: d9468defef33
-Create Date: 2026-10-03 14:07:42.500152
+Create Date: 2026-10-03 14:29:28.569726
 
 """
 
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "427e2a669bc8"
+revision: str = "643913f65ca8"
 down_revision: str | Sequence[str] | None = "d9468defef33"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
@@ -28,35 +28,6 @@ def upgrade() -> None:
         sa.Column("sensitivity", sa.String(), nullable=False),
         sa.Column("rationale", sa.String(), nullable=False),
         sa.PrimaryKeyConstraint("table_name", "field_name"),
-    )
-    op.create_table(
-        "bank_employees",
-        sa.Column("employee_id", sa.String(), nullable=False),
-        sa.Column("name", sa.String(), nullable=False),
-        sa.Column("division", sa.String(), nullable=False),
-        sa.Column("desk_or_team", sa.String(), nullable=False),
-        sa.Column("title", sa.String(), nullable=False),
-        sa.Column("office", sa.String(), nullable=False),
-        sa.Column("manager_id", sa.String(), nullable=True),
-        sa.Column("email", sa.String(), nullable=False),
-        sa.Column("phone", sa.String(), nullable=False),
-        sa.Column("cost_center", sa.String(), nullable=False),
-        sa.Column("clearance_level", sa.String(), nullable=False),
-        sa.Column("employment_status", sa.String(), nullable=False),
-        sa.Column("salary_band", sa.String(), nullable=False),
-        sa.Column("base_salary_usd", sa.Integer(), nullable=False),
-        sa.Column("bonus_usd", sa.Integer(), nullable=False),
-        sa.Column("home_address", sa.String(), nullable=False),
-        sa.Column("national_id", sa.String(), nullable=False),
-        sa.Column("device_id", sa.String(), nullable=False),
-        sa.Column("privileged_access", sa.Boolean(), nullable=False),
-        sa.Column("api_token", sa.String(), nullable=True),
-        sa.Column("performance_rating", sa.String(), nullable=False),
-        sa.ForeignKeyConstraint(
-            ["manager_id"],
-            ["bank_employees.employee_id"],
-        ),
-        sa.PrimaryKeyConstraint("employee_id"),
     )
     op.create_table(
         "bank_identity_profiles",
@@ -81,7 +52,7 @@ def upgrade() -> None:
         sa.Column("risk_rating", sa.String(), nullable=False),
         sa.Column("kyc_status", sa.String(), nullable=False),
         sa.Column("sanctions_screening", sa.String(), nullable=False),
-        sa.Column("primary_rm_id", sa.String(), nullable=False),
+        sa.Column("primary_rm_id", sa.Uuid(), nullable=False),
         sa.Column("aum_usd_mn", sa.Numeric(precision=18, scale=2), nullable=False),
         sa.Column(
             "credit_limit_usd_mn", sa.Numeric(precision=18, scale=2), nullable=False
@@ -98,7 +69,7 @@ def upgrade() -> None:
         sa.Column("internal_notes", sa.String(), nullable=False),
         sa.ForeignKeyConstraint(
             ["primary_rm_id"],
-            ["bank_employees.employee_id"],
+            ["users.id"],
         ),
         sa.PrimaryKeyConstraint("client_id"),
     )
@@ -116,7 +87,7 @@ def upgrade() -> None:
         sa.Column("asset_class", sa.String(), nullable=False),
         sa.Column("sector", sa.String(), nullable=False),
         sa.Column("coverage_symbol", sa.String(), nullable=False),
-        sa.Column("analyst_id", sa.String(), nullable=False),
+        sa.Column("analyst_id", sa.Uuid(), nullable=False),
         sa.Column("publication_date", sa.Date(), nullable=False),
         sa.Column("audience", sa.String(), nullable=False),
         sa.Column("rating", sa.String(), nullable=False),
@@ -129,7 +100,7 @@ def upgrade() -> None:
         sa.Column("watermark", sa.String(), nullable=False),
         sa.ForeignKeyConstraint(
             ["analyst_id"],
-            ["bank_employees.employee_id"],
+            ["users.id"],
         ),
         sa.PrimaryKeyConstraint("research_id"),
     )
@@ -190,7 +161,7 @@ def upgrade() -> None:
         sa.Column("currency", sa.String(), nullable=False),
         sa.Column("trade_timestamp", sa.DateTime(), nullable=False),
         sa.Column("settlement_date", sa.Date(), nullable=False),
-        sa.Column("trader_id", sa.String(), nullable=False),
+        sa.Column("trader_id", sa.Uuid(), nullable=False),
         sa.Column("venue", sa.String(), nullable=False),
         sa.Column("pnl_usd", sa.Numeric(precision=18, scale=2), nullable=False),
         sa.Column("var_1d_usd", sa.Numeric(precision=18, scale=2), nullable=False),
@@ -208,7 +179,7 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(
             ["trader_id"],
-            ["bank_employees.employee_id"],
+            ["users.id"],
         ),
         sa.PrimaryKeyConstraint("trade_id"),
     )
@@ -261,12 +232,32 @@ def upgrade() -> None:
         ["client_id"],
         unique=False,
     )
+    op.add_column("users", sa.Column("division", sa.String(), nullable=True))
+    op.add_column("users", sa.Column("team", sa.String(), nullable=True))
+    op.add_column("users", sa.Column("title", sa.String(), nullable=True))
+    op.add_column("users", sa.Column("office", sa.String(), nullable=True))
+    op.add_column("users", sa.Column("phone", sa.String(), nullable=True))
+    op.add_column("users", sa.Column("manager_id", sa.Uuid(), nullable=True))
+    op.add_column("users", sa.Column("clearance_level", sa.String(), nullable=True))
+    op.add_column("users", sa.Column("employment_status", sa.String(), nullable=True))
+    op.create_foreign_key(
+        "users_manager_id_fkey", "users", "users", ["manager_id"], ["id"]
+    )
     # ### end Alembic commands ###
 
 
 def downgrade() -> None:
     """Downgrade schema."""
     # ### commands auto generated by Alembic - please adjust! ###
+    op.drop_constraint("users_manager_id_fkey", "users", type_="foreignkey")
+    op.drop_column("users", "employment_status")
+    op.drop_column("users", "clearance_level")
+    op.drop_column("users", "manager_id")
+    op.drop_column("users", "phone")
+    op.drop_column("users", "office")
+    op.drop_column("users", "title")
+    op.drop_column("users", "team")
+    op.drop_column("users", "division")
     op.drop_index(
         op.f("ix_bank_transactions_client_id"), table_name="bank_transactions"
     )
@@ -284,6 +275,5 @@ def downgrade() -> None:
     op.drop_index(op.f("ix_bank_clients_client_name"), table_name="bank_clients")
     op.drop_table("bank_clients")
     op.drop_table("bank_identity_profiles")
-    op.drop_table("bank_employees")
     op.drop_table("bank_data_catalog")
     # ### end Alembic commands ###

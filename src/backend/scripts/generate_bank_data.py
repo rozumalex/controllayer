@@ -14,7 +14,7 @@ way a bank's would:
 - Research targets follow the same prices the trades use, and each report is
   written by an analyst in Global Investment Research.
 - Relationship managers, traders, analysts and compliance officers are
-  employees in the right division, with a manager above them.
+  staff users in the right division, with a manager above them.
 
 The seed is fixed, so every run writes the same files. The data catalog and
 the identity profiles are kept by hand. Run from src/backend:
@@ -28,10 +28,11 @@ import math
 import random
 import string
 import unicodedata
+import uuid
 from collections import defaultdict
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import date, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 
 from scripts.seed import DATA_DIR
@@ -668,8 +669,6 @@ DIVISION_OFFICES = {
                    "Singapore": 10},
 }
 TRADING_OFFICES = {"New York": 45, "London": 35, "Tokyo": 10, "Hong Kong": 10}
-LOCATION_PAY = {"US": 1.0, "GB": 0.9, "CH": 1.1, "FR": 0.8, "DE": 0.8, "JP": 0.85,
-                "HK": 0.95, "SG": 0.9, "PL": 0.45, "CZ": 0.42}
 # fmt: on
 
 
@@ -681,8 +680,8 @@ class Employee:
     office: str
     first: str
     last: str
-    female: bool
     id: str = ""
+    email: str = ""
     manager: Employee | None = None
 
     @property
@@ -694,46 +693,6 @@ class Employee:
         if self.level == 0 and self.division in JUNIOR_TITLE:
             return JUNIOR_TITLE[self.division]
         return LEVELS[self.level]
-
-
-def national_id(country: str, born: date, female: bool) -> str:
-    match country:
-        case "US":
-            return f"{rng.randint(100, 665)}-{rng.randint(10, 99)}-{pattern('%###')}"
-        case "GB":
-            prefix = rng.choice(("AB", "CE", "GH", "JK", "LM", "NP", "PR", "SR", "TW"))
-            return f"{prefix} {pattern('## ## ##')} {rng.choice('ABCD')}"
-        case "FR":
-            s = f"{2 if female else 1}{born:%y%m}75{rng.randint(101, 120)}{pattern('###')}"
-            key = 97 - int(s) % 97
-            return f"{s[0]} {s[1:3]} {s[3:5]} {s[5:7]} {s[7:10]} {s[10:]} {key:02d}"
-        case "CH":
-            return f"756.{pattern('####')}.{pattern('####')}.{pattern('##')}"
-        case "PL":
-            month = born.month + (20 if born.year >= 2000 else 0)
-            serial = f"{pattern('###')}{rng.choice('02468' if female else '13579')}"
-            s = f"{born:%y}{month:02d}{born:%d}{serial}"
-            total = sum(int(c) * w for c, w in zip(s, (1, 3, 7, 9) * 3, strict=False))
-            return s + str(-total % 10)
-        case "CZ":
-            month = born.month + (50 if female else 0)
-            while True:
-                base = int(f"{born:%y}{month:02d}{born:%d}{pattern('###')}")
-                check = -base * 10 % 11
-                if check < 10:
-                    s = f"{base * 10 + check:010d}"
-                    return f"{s[:6]}/{s[6:]}"
-        case "JP":
-            return pattern("%###########")
-        case "HK":
-            return (
-                f"{rng.choice('ACDEGHKPRVZ')}{pattern('######')}({rng.randint(0, 9)})"
-            )
-        case "SG":
-            return (
-                f"{'T' if born.year >= 2000 else 'S'}{pattern('#######')}{pattern('?')}"
-            )
-    return pattern("%##########")
 
 
 def generate_employees() -> list[Employee]:
@@ -750,10 +709,8 @@ def generate_employees() -> list[Employee]:
             members = []
             for level in sorted(levels, reverse=True):
                 office = weighted(offices)
-                first, last, female = person(OFFICES[office][0])
-                members.append(
-                    Employee(division, team, level, office, first, last, female)
-                )
+                first, last, _ = person(OFFICES[office][0])
+                members.append(Employee(division, team, level, office, first, last))
             team_head = members[0]
             if head is None:
                 head = team_head
@@ -764,46 +721,26 @@ def generate_employees() -> list[Employee]:
                 local = [m for m in seniors if m.office == member.office]
                 member.manager = rng.choice(local or [team_head])
             employees.extend(members)
-    # IDs in hiring order, not by team.
     rng.shuffle(employees)
-    for n, employee in enumerate(employees, 1):
-        employee.id = f"EMP-{n:05d}"
-    return employees
-
-
-def employee_rows(employees: list[Employee]) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
     emails: set[str] = set()
-    devices = rng.sample(range(100000, 999999), len(employees))
-    division_codes = {d: n for n, d in enumerate(TEAMS, 1)}
-    for employee, device in zip(employees, devices, strict=True):
-        country = OFFICES[employee.office][0]
-        age = rng.randint(
-            *((22, 27), (26, 32), (30, 42), (36, 50), (41, 60))[employee.level]
-        )
-        born = date(TODAY.year - age, rng.randint(1, 12), rng.randint(1, 28))
+    for employee in employees:
+        # Drawn from the seed, so a user keeps the same ID on every run.
+        employee.id = str(uuid.UUID(int=rng.getrandbits(128), version=4))
         local = f"{slug(employee.first)}.{slug(employee.last)}"
         email, n = f"{local}@goldensocks.com", 1
         while email in emails:
             n += 1
             email = f"{local}{n}@goldensocks.com"
         emails.add(email)
-        base = (115000, 165000, 225000, 285000, 400000)[employee.level]
-        base *= LOCATION_PAY[country] * rng.uniform(0.92, 1.1)
-        rating = weighted({"EXCEEDS": 20, "MEETS": 65, "DEVELOPING": 15})
-        bonus_rate = (
-            (0.4, 0.6, 0.8, 1.2, 2.0)
-            if employee.division == "Global Banking & Markets"
-            else (0.15, 0.2, 0.3, 0.45, 0.8)
-        )[employee.level]
-        bonus = (
-            base * bonus_rate * {"EXCEEDS": 1.3, "MEETS": 1, "DEVELOPING": 0.5}[rating]
-        )
-        privileged = employee.team == "Cybersecurity" or (
-            employee.division == "Engineering"
-            and employee.level >= 1
-            and rng.random() < 0.4
-        )
+        employee.email = email
+    return employees
+
+
+def user_rows(employees: list[Employee]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for employee in employees:
+        years = rng.randint(0, (2, 4, 10, 16, 22)[employee.level])
+        joined = TODAY - timedelta(365 * years + rng.randint(0, 364))
         if (employee.division in ("Compliance", "Risk") and employee.level >= 2) or (
             employee.team == "Cybersecurity" or employee.level == 4
         ):
@@ -812,35 +749,20 @@ def employee_rows(employees: list[Employee]) -> list[dict[str, Any]]:
             clearance = "LOW"
         else:
             clearance = "STANDARD"
-        team_index = list(TEAMS[employee.division]).index(employee.team)
-        office_code = OFFICES[employee.office][1]
         rows.append(
             {
-                "employee_id": employee.id,
+                "id": employee.id,
+                "email": employee.email,
                 "name": employee.name,
+                "created_at": datetime.combine(joined, time(8), tzinfo=UTC),
                 "division": employee.division,
-                "desk_or_team": employee.team,
+                "team": employee.team,
                 "title": employee.title,
                 "office": employee.office,
+                "phone": pattern(COUNTRIES[OFFICES[employee.office][0]].phone),
                 "manager_id": employee.manager.id if employee.manager else None,
-                "email": email,
-                "phone": pattern(COUNTRIES[country].phone),
-                "cost_center": f"{division_codes[employee.division]}{team_index + 1}"
-                f"{list(OFFICES).index(employee.office):02d}-{office_code}",
                 "clearance_level": clearance,
                 "employment_status": "ON_LEAVE" if rng.random() < 0.02 else "ACTIVE",
-                "salary_band": f"B{employee.level + 1}",
-                "base_salary_usd": int(round(base, -2)),
-                "bonus_usd": int(round(bonus, -2)),
-                "home_address": address(country, employee.office),
-                "national_id": national_id(country, born, employee.female),
-                "device_id": f"GSL-{device}",
-                "privileged_access": privileged,
-                "api_token": "gsk_"
-                + "".join(rng.choices(string.ascii_lowercase + string.digits, k=40))
-                if privileged
-                else None,
-                "performance_rating": rating,
             }
         )
     return rows
@@ -1224,7 +1146,7 @@ def client_notes(c: Client, compliance: list[Employee]) -> str:
         officer = rng.choice(compliance)
         notes.append(
             f"Name-screening hit on a related party under review by {officer.name} "
-            f"({officer.id}); no new business until cleared."
+            f"({officer.email}); no new business until cleared."
         )
     if c.kyc == "REVIEW_DUE":
         notes.append(
@@ -1767,7 +1689,7 @@ def generate_transactions(
             row["status"] = "COMPLETED"
             row["investigation_notes"] = rng.choice(
                 (
-                    f"{alert} cleared by {analyst.name} ({analyst.id}) on {closed}: consistent "
+                    f"{alert} cleared by {analyst.name} ({analyst.email}) on {closed}: consistent "
                     f"with the client's {row['purpose'].lower()} activity.",
                     f"{alert} cleared on {closed}: client provided the invoice and contract; "
                     "no further action.",
@@ -1786,7 +1708,7 @@ def generate_transactions(
             row["investigation_notes"] = (
                 f"{alert}: {amount} to {row['beneficiary_name']} in "
                 f"{row['destination_country']}; source-of-funds evidence requested from "
-                f"RM {client.rm.name} ({client.rm.id}) on {opened}."
+                f"RM {client.rm.name} ({client.rm.email}) on {opened}."
             )
         else:
             row["investigation_notes"] = (
@@ -2030,7 +1952,7 @@ def main() -> None:
     employees = generate_employees()
     clients = generate_clients(employees)
     accounts = generate_accounts(clients)
-    write("employees", employee_rows(employees))
+    write("users", user_rows(employees))
     write("clients", client_rows(clients, employees))
     write("accounts", account_rows(accounts))
     write("trades", generate_trades(accounts, employees))
