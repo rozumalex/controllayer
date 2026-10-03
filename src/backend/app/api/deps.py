@@ -16,6 +16,7 @@ from app.control.audit import (
     UserEventSink,
 )
 from app.control.guard import Guard
+from app.control.guards.data_flow import DataFlowGuard
 from app.control.guards.policy import (
     BudgetGuard,
     ClearanceGuard,
@@ -40,6 +41,7 @@ from app.db.models import McpServer, User
 from app.db.policy import (
     data_catalog,
     monthly_usage,
+    recent_flows,
     recent_questions,
     role_policy,
 )
@@ -215,6 +217,7 @@ async def mcp_gateway(user: CurrentUser, policy: UserPolicy) -> McpGateway:
     sink = UserEventSink(event_sink(), user.id)
     async with SessionLocal() as session:
         catalog = await data_catalog(session)
+        labels, seen = await recent_flows(session, user.id)
     clearance = ClearanceGuard(
         catalog,
         policy.clearance,
@@ -223,9 +226,15 @@ async def mcp_gateway(user: CurrentUser, policy: UserPolicy) -> McpGateway:
         policy.default_tool_action,
     )
     patterns = sensitive_data(policy)
+    # Sees each result first, as the server sent it, and carries what it saw
+    # over from the user's earlier requests.
+    flow = DataFlowGuard(labels, seen, clearance)
     return McpGateway(
         control_layer(
-            sink, policy, [tool_access(policy), patterns], [clearance, patterns]
+            sink,
+            policy,
+            [tool_access(policy), patterns, flow],
+            [flow, clearance, patterns],
         ),
         mcp_connect(),
         enabled_mcp_servers,

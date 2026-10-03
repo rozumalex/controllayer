@@ -95,3 +95,27 @@ async def recent_questions(session: AsyncSession, user_id: uuid.UUID) -> int:
         )
     )
     return count or 0
+
+
+async def recent_flows(
+    session: AsyncSession, user_id: uuid.UUID
+) -> tuple[set[str], set[str]]:
+    """What the data flow guard remembered of the user's tool results within
+    its window: the kinds of sensitive data read, and the hashes of the
+    identifiers seen."""
+    start = datetime.now(UTC) - timedelta(minutes=settings.control_flow_window_minutes)
+    memories = await session.scalars(
+        select(ControlEvent.data["memory"]).where(
+            ControlEvent.user_id == user_id,
+            ControlEvent.event == "verdict",
+            ControlEvent.data["guard"].astext == "data_flow",
+            ControlEvent.data.has_key("memory"),
+            ControlEvent.created_at >= start,
+        )
+    )
+    labels: set[str] = set()
+    seen: set[str] = set()
+    for memory in memories:
+        labels.update(memory.get("labels", []))
+        seen.update(memory.get("seen", []))
+    return labels, seen
