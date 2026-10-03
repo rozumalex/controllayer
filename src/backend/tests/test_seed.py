@@ -9,6 +9,9 @@ import pytest
 from sqlalchemy import Table
 
 from app.db.base import Base
+from app.db.policy import DEFAULT_ROLE
+from app.servers import bank
+from scripts.policies import POLICIES
 from scripts.seed import load, seeded_tables
 
 
@@ -131,3 +134,26 @@ def test_alerts_carry_investigation_notes() -> None:
     # then
     assert alerts
     assert all(t["investigation_notes"] for t in alerts)
+
+
+def test_every_role_has_a_policy() -> None:
+    # given
+    titles = {u["title"] for u in rows("users")}
+
+    # when
+    roles = set(POLICIES) - {DEFAULT_ROLE}
+
+    # then
+    assert roles == titles
+
+
+def test_policies_name_only_bank_tools() -> None:
+    # when
+    tools = {name for policy in POLICIES.values() for name in policy.tools}
+
+    # then
+    assert tools
+    assert all(
+        name.startswith("bank__") and callable(getattr(bank, name[6:], None))
+        for name in tools
+    )

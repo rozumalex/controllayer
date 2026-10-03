@@ -1,9 +1,10 @@
 """Load the Golden Socks bank data into a database.
 
 Empties the bank_ tables and removes the bank's staff from users, then copies
-every row from scripts/bank_data into them, all in one transaction. Other
-users and tables are left alone, so it is safe to run again. Apply the
-migrations first.
+every row from scripts/bank_data into them, all in one transaction. It also
+saves the policies in scripts/policies.py for the roles that have none, so a
+policy someone changed is kept. Other users and tables are left alone, so it
+is safe to run again. Apply the migrations first.
 
 Run from src/backend: `uv run python -m scripts.seed`, or `./dev seed` from
 the repo root. Pass `--url <postgres url>` to seed another database, such as
@@ -23,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from sqlalchemy import Table, inspect, text
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
@@ -30,6 +32,8 @@ from sqlalchemy.pool import NullPool
 from app.core.config import Settings, settings
 from app.db import models  # noqa: F401  registers the models in Base.metadata
 from app.db.base import Base
+from app.db.models import Policy
+from scripts.policies import POLICIES
 
 DATA_DIR = Path(__file__).resolve().parent / "bank_data"
 # Seeding any other host asks first, so production is never seeded by mistake.
@@ -82,7 +86,9 @@ async def seed(url: str) -> None:
         async with engine.begin() as connection:
             missing = await connection.run_sync(
                 lambda sync: [
-                    t.name for t in tables if not inspect(sync).has_table(t.name)
+                    t.name
+                    for t in [*tables, Base.metadata.tables[Policy.__tablename__]]
+                    if not inspect(sync).has_table(t.name)
                 ]
             )
             if missing:
@@ -105,6 +111,17 @@ async def seed(url: str) -> None:
                     table.name, records=rows, columns=columns
                 )
                 print(f"{table.name}: {len(rows)} rows")
+            added = await connection.execute(
+                insert(Policy)
+                .values(
+                    [
+                        {"role": role, "settings": policy.model_dump(mode="json")}
+                        for role, policy in POLICIES.items()
+                    ]
+                )
+                .on_conflict_do_nothing(index_elements=[Policy.role])
+            )
+            print(f"policies: {added.rowcount} new of {len(POLICIES)}")
     finally:
         await engine.dispose()
 
