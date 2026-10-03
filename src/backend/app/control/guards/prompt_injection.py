@@ -60,7 +60,10 @@ PATTERNS: list[tuple[str, float, re.Pattern[str]]] = [
         0.7,
         # Zero-width characters, bidi overrides and the Unicode tag block,
         # which hide text from a human reader but not from the model.
-        re.compile("[​-‏‪-‮⁠-⁤\U000e0000-\U000e007f]"),
+        # U+200D, the zero-width joiner, is left out: emoji such as 👩‍💻 use it.
+        re.compile(
+            "[\u200b\u200c\u200e\u200f\u202a-\u202e\u2060-\u2064\U000e0000-\U000e007f]"
+        ),
     ),
 ]
 

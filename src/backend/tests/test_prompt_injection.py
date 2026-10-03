@@ -48,6 +48,7 @@ def test_injection_blocked(text: str) -> None:
         "The quarterly report shows revenue grew by 12%.",
         "To install, run pip install requests and follow the instructions below.",
         "You can ignore the warning about deprecated settings.",
+        "Thanks, the team says hi 👩\u200d💻👨\u200d👩\u200d👧",
     ],
 )
 def test_benign_allowed(text: str) -> None:
