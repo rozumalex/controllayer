@@ -94,10 +94,10 @@ function ProviderCard() {
       .catch(() => setRoles([]))
   }, [])
 
-  const policyOf = (role: string) =>
+  const hasPolicy = (role: string) =>
     roles.some((r) => r.role === role && r.customized)
-      ? `${role} policy`
-      : "default policy"
+  const policyOf = (role: string) =>
+    hasPolicy(role) ? `${role} policy` : "default policy"
 
   useEffect(() => {
     fetchProvider()
@@ -284,6 +284,17 @@ function ProviderCard() {
                   {rule.value || "…"} in {rule.claim || "…"} → {rule.role} ·{" "}
                   {policyOf(rule.role)}
                   {rule.admin && " · admin"}
+                  {saved && !hasPolicy(rule.role) && (
+                    <>
+                      {" · "}
+                      <a
+                        className="text-primary underline-offset-4 hover:underline"
+                        href={`/admin/policy?role=${encodeURIComponent(rule.role)}`}
+                      >
+                        Set a policy →
+                      </a>
+                    </>
+                  )}
                 </p>
               )}
               <Button

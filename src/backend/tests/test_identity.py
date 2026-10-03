@@ -135,3 +135,38 @@ def test_another_organizations_provider_is_not_shown(client: TestClient) -> None
 
     # when / then
     assert client.get(URL).json() is None
+
+
+def test_idp_roles_are_listed_for_policies(client: TestClient) -> None:
+    # given
+    client.put(URL, json={**OKTA, "default_role": "Guest"})
+
+    # when
+    roles = {r["role"]: r for r in client.get("/api/policy").json()["roles"]}
+
+    # then
+    assert roles["Analyst"]["employees"] == 0
+    assert roles["Analyst"]["from_idp"] is True
+    assert roles["Guest"]["from_idp"] is True
+
+
+def test_idp_role_gets_its_policy_before_anyone_signs_in(client: TestClient) -> None:
+    # given
+    client.put(URL, json=OKTA)
+    policy = client.get("/api/policy").json()["default"]["settings"]
+
+    # when
+    saved = client.put("/api/policy/roles/Analyst", json=policy)
+
+    # then
+    assert saved.status_code == 200
+    roles = {r["role"]: r for r in client.get("/api/policy").json()["roles"]}
+    assert roles["Analyst"]["customized"] is True
+
+
+def test_role_nobody_has_and_no_idp_gives_is_404(client: TestClient) -> None:
+    # given
+    policy = client.get("/api/policy").json()["default"]["settings"]
+
+    # when / then
+    assert client.put("/api/policy/roles/Pilot", json=policy).status_code == 404

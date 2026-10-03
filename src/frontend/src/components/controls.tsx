@@ -229,7 +229,16 @@ export function Policy() {
 
   const load = useCallback(() => {
     fetchPolicy()
-      .then((overview) => (setOverview(overview), setError(null)))
+      .then((overview) => {
+        setOverview(overview)
+        setError(null)
+        // /admin/policy?role=… opens that role, as the IdP tab links to it.
+        const wanted = new URLSearchParams(window.location.search).get("role")
+        const role = overview.roles.find((r) => r.role === wanted)
+        if (!role) return
+        window.history.replaceState(null, "", window.location.pathname)
+        setEditing({ role: role.role, policy: role })
+      })
       .catch((error) => setError((error as Error).message))
   }, [])
 
@@ -311,7 +320,7 @@ export function Policy() {
             <TableHeader>
               <TableRow>
                 <TableHead>Role</TableHead>
-                <TableHead className="text-right">Employees</TableHead>
+                <TableHead className="text-right">People</TableHead>
                 <TableHead>Clearance</TableHead>
                 <TableHead className="hidden md:table-cell">Models</TableHead>
                 <TableHead className="hidden md:table-cell">Budget</TableHead>
@@ -325,7 +334,7 @@ export function Policy() {
                     colSpan={6}
                     className="py-10 text-center text-muted-foreground"
                   >
-                    No employees yet. Load the bank data with ./dev seed.
+                    No roles yet. Connect your IdP to bring them in.
                   </TableCell>
                 </TableRow>
               )}
@@ -343,6 +352,7 @@ export function Policy() {
                       ) : (
                         <Badge variant="outline">default</Badge>
                       )}
+                      {role.from_idp && <Badge variant="secondary">IdP</Badge>}
                     </div>
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
