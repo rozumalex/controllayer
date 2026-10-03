@@ -71,8 +71,9 @@ OPENAI_URL = "https://api.openai.com/v1/chat/completions"
 
 
 class OpenAIUpstream:
-    """OpenAI's chat completions API, always with one model and at most
-    max_tokens tokens an answer."""
+    """An OpenAI-compatible chat completions API, such as OpenAI's or
+    Ollama's, always with one model and at most max_tokens tokens an answer.
+    The provider names the field that caps them."""
 
     def __init__(
         self,
@@ -80,18 +81,19 @@ class OpenAIUpstream:
         model: str,
         url: str = OPENAI_URL,
         max_tokens: int | None = None,
+        max_tokens_field: str = "max_completion_tokens",
     ) -> None:
         self.api_key = api_key
         self.model = model
         self.url = url
         self.max_tokens = max_tokens
+        self.max_tokens_field = max_tokens_field
 
     def limit(self, request: dict[str, Any]) -> dict[str, Any]:
         """The request for this model, capped at max_tokens."""
         request = {**request, "model": self.model}
         if self.max_tokens:
-            # Reasoning models take max_completion_tokens, not max_tokens.
-            request["max_completion_tokens"] = self.max_tokens
+            request[self.max_tokens_field] = self.max_tokens
         return request
 
     async def complete(self, request: dict[str, Any]) -> dict[str, Any]:

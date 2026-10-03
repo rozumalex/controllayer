@@ -26,7 +26,7 @@ flowchart LR
         gout -- "tool results" --> chat
     end
 
-    cin --> openai["OpenAI<br/>chat model"]
+    cin --> openai["Model pool<br/>OpenAI, Ollama"]
     gin --> bank
     gin --> other["Other MCP servers"]
     bank --> gout
@@ -48,7 +48,7 @@ The chat sends the user's prompt through the chat pipeline before the model sees
 
 - **Policy guards** run first, because they are cheap: allowed models, the monthly budget, tool access, and the data clearance, which hides fields above the user's level using the bank's data catalog.
 - **PII and secrets** finds them in free text by pattern. The policy says whether each kind of PII is allowed, redacted or blocked; a secret is always blocked.
-- **Injection** is a regex heuristic that blocks the obvious attacks first, then an LLM classifier for the rest. Without `OPENAI_API_KEY`, the classifier is off and the chat uses a mock model.
+- **Injection** is a regex heuristic that blocks the obvious attacks first, then an LLM classifier for the rest. It runs on OpenAI or on a local model, see [Model pool](#model-pool). With neither, the classifier is off and the chat uses a mock model.
 - **Spotlight** wraps every tool result that passes as untrusted data, so the model treats it as data, not instructions.
 - **Attack signatures** block the patterns of known exploits, such as pickle payloads or a reverse shell, from a feed outside the code. See [Attack signatures](#attack-signatures).
 - **Rate limit** caps a user's questions a minute, and **loop** blocks an agent that repeats the same tool call or makes too many calls a minute.
@@ -87,6 +87,19 @@ uv run ty check
 - Keep a task under 60 seconds. On a deploy, the worker stops taking new tasks and waits up to 60 seconds for the running ones to finish. A task that runs longer is killed and runs again from the start, so write tasks that are safe to run twice.
 
 To run it on the host: `uv run celery -A app.worker worker --beat --loglevel INFO`, with Redis running (`docker compose up -d redis`).
+
+### Model pool
+
+Every LLM the control layer may call is in one pool, in `MODELS`, with its provider and its price per million prompt and completion tokens. OpenAI serves the OpenAI models when `OPENAI_API_KEY` is set, and [Ollama](https://ollama.com/) serves the local ones when `OLLAMA_URL` is set. Both speak the same OpenAI chat completions API, so the guards, the tools and the streaming work the same on either. A role's policy names the models from the pool it may use. The chat uses one that a provider serves, in the order of `CHAT_MODELS` first, and the semantic guard uses the first model in `CONTROL_SEMANTIC_MODELS` that a provider serves. So without an OpenAI key, both run on the local model, and with no provider at all, the chat answers with a mock model and only the heuristic guard runs.
+
+A local model has an estimated price for the compute it uses, so the monthly budgets count it like any other.
+
+To run a local model:
+
+- **On a Mac,** install Ollama on the host, which uses the GPU, run `ollama pull qwen2.5:7b`, and set `OLLAMA_URL=http://host.docker.internal:11434/v1` in `.env`.
+- **On Linux,** or anywhere without a GPU to spare, run `./dev ollama pull qwen2.5:7b`. It starts the `ollama` service in Compose and downloads the model, about 5 GB. Set `OLLAMA_URL=http://ollama:11434/v1` in `.env`. Docker on a Mac has no GPU, so there it is slow.
+
+Then `./dev restart api`. To add a model, pull it, and add it to `MODELS` and to the policies that may use it.
 
 ### MCP gateway
 
@@ -207,6 +220,7 @@ Manage the stack with the `./dev` script in the repo root. Every command except 
 | `./dev shell [service]`          | Open a bash shell in a service, `api` by default                                                              |
 | `./dev python`                   | Open a Python shell in the backend; `await` works at the prompt                                               |
 | `./dev ngrok`                    | Share the app on a public HTTPS URL through ngrok; needs `NGROK_AUTHTOKEN`                                    |
+| `./dev ollama [args...]`         | Start the local Ollama service and run `ollama` in it, such as `./dev ollama pull qwen2.5:7b`                 |
 | `./dev psql`                     | Open psql in the database                                                                                     |
 | `./dev migrate [revision]`       | Apply the migrations, up to `head` by default                                                                 |
 | `./dev makemigrations <message>` | Create a migration from the model changes                                                                     |
@@ -289,6 +303,11 @@ Every variable has a default, so the project runs without any setup.
 | `VITE_SENTRY_ENVIRONMENT`     | Frontend (build)           | the Vite mode, `production` in the Docker build             | Environment name on the browser's Sentry events                                                    |
 | `NEW_RELIC_LICENSE_KEY`       | New Relic agent, Compose   | empty, New Relic off                                        | [New Relic](https://newrelic.com/) ingest license key that the API and the worker report with      |
 | `NEW_RELIC_APP_NAME`          | New Relic agent, Compose   | `backend` in Compose                                        | App name in New Relic APM; the deploy sets it to the DigitalOcean app name                         |
+| `OPENAI_API_KEY` | Backend, Compose | empty, OpenAI models off | OpenAI key for the OpenAI models in the [model pool](#model-pool) |
+| `OLLAMA_URL` | Backend, Compose | empty, local models off | Base URL of an Ollama server's OpenAI-compatible API, such as `http://host.docker.internal:11434/v1` |
+| `MODELS` | Backend | four OpenAI models and `qwen2.5:7b` | The model pool, as JSON: `{"<name>": {"provider": "openai" or "ollama", "price": [prompt, completion]}}`, in dollars per million tokens |
+| `CHAT_MODELS` | Backend | `["gpt-4.1-mini", "qwen2.5:7b"]` | Models the chat tries first, as JSON; the default policy allows these |
+| `CONTROL_SEMANTIC_MODELS` | Backend | `["gpt-4.1-mini", "qwen2.5:7b"]` | Models the semantic guard may use, as JSON; it uses the first one a provider serves |
 | `BANK_MCP_TOKEN`              | Backend, Compose           | `dev-bank` in Compose, else empty: server closed            | Bearer token for the bank MCP server at `/api/bank/mcp`. A repository secret in production         |
 | `CONTROL_SIGNATURE_FEED`      | Backend                    | empty, the bundled `app/control/signatures.json`            | File path or http(s) URL of the attack signature feed, see [Attack signatures](#attack-signatures) |
 | `CONTROL_SIGNATURE_REFRESH`   | Backend                    | `30`                                                        | Seconds between two fetches of a feed URL. A file is read again when it changes                    |

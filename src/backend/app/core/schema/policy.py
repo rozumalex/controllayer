@@ -17,8 +17,8 @@ class Clearance(StrEnum):
 
 
 def available_models() -> list[str]:
-    """The models a policy may allow, the chat model among them."""
-    return sorted({*settings.available_models, settings.openai_model})
+    """The models a policy may allow: the model pool."""
+    return sorted(settings.models)
 
 
 class ToolAction(StrEnum):

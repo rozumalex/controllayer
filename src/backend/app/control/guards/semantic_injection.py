@@ -122,7 +122,8 @@ class InjectionClassifier(Protocol):
 
 
 class OpenAIInjectionClassifier:
-    """Asks an OpenAI model to label the text, with structured outputs."""
+    """Asks a model behind an OpenAI-compatible API to label the text, with
+    structured outputs."""
 
     def __init__(
         self,
@@ -131,12 +132,14 @@ class OpenAIInjectionClassifier:
         timeout: float = 10.0,
         url: str = OPENAI_URL,
         http: SharedClient = OPENAI_HTTP,
+        max_tokens_field: str = "max_completion_tokens",
     ) -> None:
         self.api_key = api_key
         self.model = model
         self.timeout = timeout
         self.url = url
         self.http = http
+        self.max_tokens_field = max_tokens_field
 
     def request(self, text: str, source: str) -> dict[str, Any]:
         # A new marker every call, so the text can't guess it and close the
@@ -146,7 +149,7 @@ class OpenAIInjectionClassifier:
         return {
             "model": self.model,
             "temperature": 0,
-            "max_completion_tokens": 200,
+            self.max_tokens_field: 200,
             "response_format": {"type": "json_schema", "json_schema": SCHEMA},
             "messages": [
                 {"role": "system", "content": system},

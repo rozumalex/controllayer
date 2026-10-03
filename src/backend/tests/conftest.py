@@ -51,8 +51,10 @@ def database() -> None:
 @pytest.fixture(autouse=True)
 def offline(monkeypatch: pytest.MonkeyPatch) -> None:
     """Runs every test on the mock model, without the semantic guard, even
-    when the environment has an OpenAI key, so tests never call OpenAI."""
+    when the environment has an OpenAI key or an Ollama URL, so tests never
+    call a model."""
     monkeypatch.setattr(settings, "openai_api_key", "")
+    monkeypatch.setattr(settings, "ollama_url", "")
 
 
 @pytest.fixture(autouse=True)

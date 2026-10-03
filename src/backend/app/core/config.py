@@ -1,10 +1,36 @@
 from decimal import Decimal
+from enum import StrEnum
+from typing import NamedTuple
 
-from pydantic import field_validator
+from pydantic import BaseModel, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 
 from app.control.pipeline import Mode
+
+
+class Provider(StrEnum):
+    OPENAI = "openai"
+    OLLAMA = "ollama"
+
+
+class PoolModel(BaseModel):
+    provider: Provider
+    # US dollars per million prompt and completion tokens, for the budgets.
+    price: tuple[Decimal, Decimal] = (Decimal(0), Decimal(0))
+
+
+class Endpoint(NamedTuple):
+    """A provider's OpenAI-compatible API: its base URL, its key, and the
+    field it caps an answer's tokens with."""
+
+    url: str
+    key: str
+    max_tokens_field: str
+
+
+def pool_model(provider: Provider, prompt: str, completion: str) -> PoolModel:
+    return PoolModel(provider=provider, price=(Decimal(prompt), Decimal(completion)))
 
 
 class Settings(BaseSettings):
@@ -26,10 +52,27 @@ class Settings(BaseSettings):
     # Log message contents at each stage of a chat completion. Prompts and
     # tool results may hold secrets, so turn it on only for a demo.
     control_log_payloads: bool = False
-    # The OpenAI model behind /api/chat. With no key, a mock model echoes what
-    # it receives, so the demo runs offline.
+    # OpenAI serves the pool's OpenAI models. Without a key, they are off.
     openai_api_key: str = ""
-    openai_model: str = "gpt-4.1-mini"
+    openai_url: str = "https://api.openai.com/v1"
+    # An Ollama server, or any other OpenAI-compatible API, serves the pool's
+    # local models. Empty turns them off.
+    ollama_url: str = ""
+    # The model pool: every LLM a policy may allow, by the name its provider
+    # knows it by. A local model has an estimated price for the compute it
+    # uses, so the budgets count it too.
+    models: dict[str, PoolModel] = {
+        "gpt-4.1-mini": pool_model(Provider.OPENAI, "0.40", "1.60"),
+        "gpt-4.1": pool_model(Provider.OPENAI, "2.00", "8.00"),
+        "gpt-4o-mini": pool_model(Provider.OPENAI, "0.15", "0.60"),
+        "o4-mini": pool_model(Provider.OPENAI, "1.10", "4.40"),
+        "qwen2.5:7b": pool_model(Provider.OLLAMA, "0.05", "0.05"),
+    }
+    # The chat uses the first of these models that the user's policy allows
+    # and a provider serves, so without OpenAI it falls back to a local model.
+    # With none served, a mock model echoes what it receives, so the demo runs
+    # offline. The default policy allows these models.
+    chat_models: list[str] = ["gpt-4.1-mini", "qwen2.5:7b"]
     # The most tokens the model may write in one answer, reasoning included,
     # so one prompt can't run up the bill.
     chat_max_tokens: int = 4096
@@ -42,20 +85,11 @@ class Settings(BaseSettings):
     control_loop_window_seconds: int = 60
     control_loop_repeat_limit: int = 3
     control_loop_call_limit: int = 30
-    # The semantic injection guard asks this model whether a message is an
-    # attack. It runs only with an OpenAI key, and needs a model that takes
-    # temperature and structured outputs, so not a reasoning model.
-    control_semantic_model: str = "gpt-4.1-mini"
-    # The models a policy may allow. A role allows the default model unless
-    # its policy says otherwise.
-    available_models: list[str] = ["gpt-4.1-mini", "gpt-4.1", "gpt-4o-mini", "o4-mini"]
-    # US dollars per million prompt and completion tokens, for the budgets.
-    model_prices: dict[str, tuple[Decimal, Decimal]] = {
-        "gpt-4.1-mini": (Decimal("0.40"), Decimal("1.60")),
-        "gpt-4.1": (Decimal("2.00"), Decimal("8.00")),
-        "gpt-4o-mini": (Decimal("0.15"), Decimal("0.60")),
-        "o4-mini": (Decimal("1.10"), Decimal("4.40")),
-    }
+    # The semantic injection guard asks the first of these models that a
+    # provider serves whether a message is an attack; with none served, it
+    # is off. It needs a model that takes temperature and structured outputs,
+    # so not a reasoning model.
+    control_semantic_models: list[str] = ["gpt-4.1-mini", "qwen2.5:7b"]
     control_semantic_timeout: float = 10.0
     # Block when the semantic check fails, for example when OpenAI is down.
     # Turn it off to fall back to the heuristic guard alone.
@@ -100,6 +134,24 @@ class Settings(BaseSettings):
             separator = "&" if "?" in value else "?"
             value = f"{value}{separator}ssl_cert_reqs=required"
         return value
+
+    def endpoint(self, model: str) -> Endpoint | None:
+        """Where the provider that serves the model takes requests, or None
+        when the model isn't in the pool or its provider is off."""
+        entry = self.models.get(model)
+        if entry is None:
+            return None
+        if entry.provider is Provider.OPENAI:
+            if not self.openai_api_key:
+                return None
+            # Reasoning models refuse max_tokens.
+            return Endpoint(
+                self.openai_url, self.openai_api_key, "max_completion_tokens"
+            )
+        if not self.ollama_url:
+            return None
+        # Ollama takes any key, and ignores max_completion_tokens.
+        return Endpoint(self.ollama_url, "ollama", "max_tokens")
 
 
 settings = Settings()

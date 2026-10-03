@@ -31,8 +31,12 @@
 #                        catalog field that holds it: allowed at or below it,
 #                        above_clearance above it. A kind set here wins over
 #                        the clearance, either way.
-#   allowed_models       The LLMs the role may chat with. Each must be one of
-#                        AVAILABLE_MODELS in the backend settings.
+#   allowed_models       The LLMs the role may chat with. Each must be in the
+#                        model pool, MODELS in the backend settings: OpenAI
+#                        models, and local ones on Ollama such as qwen2.5:7b.
+#                        The chat uses one that a provider serves, in the
+#                        order of CHAT_MODELS first, so without OpenAI it
+#                        runs on the local model.
 #   budget               What each employee in the role may spend in a
 #                        calendar month (UTC): monthly_tokens and monthly_usd.
 #                        Leave one out, or set it to null, for no limit. The
@@ -119,7 +123,7 @@ policies:
   "*":
     <<: *balanced
     clearance: INTERNAL
-    allowed_models: [gpt-4.1-mini]
+    allowed_models: [gpt-4.1-mini, qwen2.5:7b]
     budget: {monthly_tokens: 500000, monthly_usd: 10}
     default_tool_action: block
     tools:
@@ -131,7 +135,7 @@ policies:
   Analyst:
     <<: *balanced
     clearance: INTERNAL
-    allowed_models: [gpt-4.1-mini, gpt-4o-mini]
+    allowed_models: [gpt-4.1-mini, gpt-4o-mini, qwen2.5:7b]
     budget: {monthly_tokens: 2000000, monthly_usd: 25}
     default_tool_action: block
     tools:
@@ -142,7 +146,7 @@ policies:
   Associate:
     <<: *balanced
     clearance: INTERNAL
-    allowed_models: [gpt-4.1-mini, gpt-4o-mini]
+    allowed_models: [gpt-4.1-mini, gpt-4o-mini, qwen2.5:7b]
     budget: {monthly_tokens: 3000000, monthly_usd: 40}
     default_tool_action: block
     tools:
@@ -153,7 +157,7 @@ policies:
   Vice President:
     <<: *balanced
     clearance: CONFIDENTIAL
-    allowed_models: [gpt-4.1, gpt-4.1-mini]
+    allowed_models: [gpt-4.1, gpt-4.1-mini, qwen2.5:7b]
     budget: {monthly_tokens: 5000000, monthly_usd: 100}
     default_tool_action: allow
     tools:
@@ -164,7 +168,7 @@ policies:
   Executive Director:
     <<: *permissive
     clearance: CONFIDENTIAL
-    allowed_models: [gpt-4.1, gpt-4.1-mini, o4-mini]
+    allowed_models: [gpt-4.1, gpt-4.1-mini, o4-mini, qwen2.5:7b]
     budget: {monthly_tokens: 8000000, monthly_usd: 200}
     default_tool_action: allow
     tools:
@@ -175,7 +179,7 @@ policies:
   Managing Director:
     <<: *permissive
     clearance: RESTRICTED
-    allowed_models: [gpt-4.1, gpt-4.1-mini, gpt-4o-mini, o4-mini]
+    allowed_models: [gpt-4.1, gpt-4.1-mini, gpt-4o-mini, o4-mini, qwen2.5:7b]
     budget: {monthly_tokens: null, monthly_usd: 500}
     default_tool_action: allow
     tools:
@@ -186,7 +190,7 @@ policies:
   Compliance Officer:
     <<: *permissive
     clearance: RESTRICTED
-    allowed_models: [gpt-4.1, gpt-4.1-mini, o4-mini]
+    allowed_models: [gpt-4.1, gpt-4.1-mini, o4-mini, qwen2.5:7b]
     budget: {monthly_tokens: 6000000, monthly_usd: 150}
     default_tool_action: block
     tools:
@@ -196,7 +200,7 @@ policies:
   Risk Manager:
     <<: *permissive
     clearance: CONFIDENTIAL
-    allowed_models: [gpt-4.1, gpt-4.1-mini, o4-mini]
+    allowed_models: [gpt-4.1, gpt-4.1-mini, o4-mini, qwen2.5:7b]
     budget: {monthly_tokens: 5000000, monthly_usd: 120}
     default_tool_action: block
     tools:
@@ -208,7 +212,7 @@ policies:
   Operations Specialist:
     <<: *balanced
     clearance: CONFIDENTIAL
-    allowed_models: [gpt-4.1-mini, gpt-4o-mini]
+    allowed_models: [gpt-4.1-mini, gpt-4o-mini, qwen2.5:7b]
     budget: {monthly_tokens: 3000000, monthly_usd: 40}
     default_tool_action: block
     tools:
@@ -223,7 +227,7 @@ policies:
   Research Analyst:
     <<: *strict
     clearance: INTERNAL
-    allowed_models: [gpt-4.1, gpt-4.1-mini, o4-mini]
+    allowed_models: [gpt-4.1, gpt-4.1-mini, o4-mini, qwen2.5:7b]
     budget: {monthly_tokens: 4000000, monthly_usd: 80}
     default_tool_action: block
     tools:
@@ -233,6 +237,6 @@ policies:
   Engineer:
     <<: *strict
     clearance: PUBLIC
-    allowed_models: [gpt-4.1, gpt-4.1-mini, gpt-4o-mini, o4-mini]
+    allowed_models: [gpt-4.1, gpt-4.1-mini, gpt-4o-mini, o4-mini, qwen2.5:7b]
     budget: {monthly_tokens: 4000000, monthly_usd: 60}
     default_tool_action: block
