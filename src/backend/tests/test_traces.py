@@ -1,11 +1,13 @@
 import asyncio
+import csv
+import io
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.api.deps import chat_control, control_layer, event_sink
-from app.api.endpoints.traces import percentile
+from app.api.endpoints.traces import cell, percentile
 from app.control.adapters.openai_chat import ChatControl
 from app.control.pipeline import Mode
 from app.control.upstream import MockUpstream, UpstreamError
@@ -37,8 +39,9 @@ def test_streamed_chat_traced_with_every_stage(client: TestClient) -> None:
     events = [e["event"] for e in trace["events"]]
     assert events == [
         "request",
-        # The rate limit, the model, the budget, the sensitive data and the
-        # injection guard.
+        # The rate limit, the model, the budget, the sensitive data, the
+        # attack signatures and the injection guard.
+        "verdict",
         "verdict",
         "verdict",
         "verdict",
@@ -267,3 +270,88 @@ def test_percentile_nearest_rank(
 ) -> None:
     # when / then
     assert percentile(values, fraction) == expected
+
+
+def test_export_csv_has_a_row_per_trace(client: TestClient) -> None:
+    # given
+    allowed = chat(client, "What is 2 + 2?")
+    blocked = chat(client, INJECTION)
+
+    # when
+    response = client.get("/api/traces/export?format=csv")
+
+    # then
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/csv")
+    assert "attachment" in response.headers["content-disposition"]
+    rows = list(csv.DictReader(io.StringIO(response.text)))
+    assert [row["trace_id"] for row in rows] == [blocked, allowed]
+    assert rows[0]["outcome"] == "blocked"
+    assert "prompt_injection:block:" in rows[0]["findings"]
+
+
+def test_export_json_filters_by_outcome(client: TestClient) -> None:
+    # given
+    chat(client, "What is 2 + 2?")
+    blocked = chat(client, INJECTION)
+
+    # when
+    body = client.get("/api/traces/export?format=json&outcome=blocked").json()
+
+    # then
+    assert [trace["trace_id"] for trace in body["traces"]] == [blocked]
+
+
+def test_export_filters_by_guard(client: TestClient) -> None:
+    # given
+    chat(client, "What is 2 + 2?")
+    blocked = chat(client, INJECTION)
+
+    # when
+    body = client.get("/api/traces/export?format=json&guard=prompt_injection").json()
+
+    # then
+    assert [trace["trace_id"] for trace in body["traces"]] == [blocked]
+
+
+def test_export_filters_by_time(client: TestClient) -> None:
+    # given
+    chat(client, "What is 2 + 2?")
+    url = "/api/traces/export?format=json&start=2999-01-01T00:00:00Z"
+
+    # when
+    body = client.get(url).json()
+
+    # then
+    assert body["traces"] == []
+
+
+def test_export_leaves_out_prompts_without_payload_logging(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # given
+    monkeypatch.setattr(settings, "control_log_payloads", False)
+    chat(client, INJECTION)
+
+    # when
+    response = client.get("/api/traces/export?format=csv")
+
+    # then
+    assert "Ignore all previous instructions" not in response.text
+
+
+def test_export_unknown_format_rejected(client: TestClient) -> None:
+    # given
+    url = "/api/traces/export?format=xml"
+
+    # when / then
+    assert client.get(url).status_code == 422
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [("=1+1", "'=1+1"), ("@SUM(A1)", "'@SUM(A1)"), ("hello", "hello"), (3, 3)],
+)
+def test_export_cell_defuses_formulas(value: object, expected: object) -> None:
+    # when / then
+    assert cell(value) == expected

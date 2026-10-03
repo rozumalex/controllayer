@@ -29,6 +29,7 @@ from app.control.guards.semantic_injection import (
     SemanticInjectionGuard,
 )
 from app.control.guards.sensitive_data import SensitiveDataGuard
+from app.control.guards.signatures import BUNDLED, Feed, SignatureGuard
 from app.control.layer import ControlLayer, build_layer
 from app.control.upstream import ChatUpstream, MockUpstream, OpenAIUpstream
 from app.core.assistant import SYSTEM_PROMPT
@@ -130,6 +131,19 @@ def semantic_guard(threshold: float) -> SemanticInjectionGuard | None:
     )
 
 
+FEEDS: dict[tuple[str, float], Feed] = {}
+
+
+def signature_feed() -> Feed:
+    """One feed per source for the whole process, so it is read again only
+    when it changes, not on every request."""
+    source = settings.control_signature_feed or str(BUNDLED)
+    key = (source, settings.control_signature_refresh)
+    if key not in FEEDS:
+        FEEDS[key] = Feed(source, settings.control_signature_refresh)
+    return FEEDS[key]
+
+
 def control_layer(
     sink: EventSink | None = None,
     policy: PolicySettings | None = None,
@@ -150,6 +164,7 @@ def control_layer(
         inbound,
         outbound,
         response,
+        SignatureGuard(signature_feed(), settings.control_signature_threshold),
     )
 
 
