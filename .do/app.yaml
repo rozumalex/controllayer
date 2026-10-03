@@ -28,7 +28,7 @@ services:
   - name: api
     github: &github
       repo: ${GITHUB_REPOSITORY}
-      branch: master
+      branch: main
       # The deploy job deploys after the checks pass, so a push alone does not.
       deploy_on_push: false
     source_dir: src/backend
