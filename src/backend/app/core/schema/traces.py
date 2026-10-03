@@ -28,7 +28,10 @@ class TraceSummary(BaseModel):
     started_at: datetime
     agent_id: str | None
     prompt: str | None = Field(
-        description="The user's message; empty unless CONTROL_LOG_PAYLOADS is on."
+        description=(
+            "The user's message, or the tool an MCP call went to. The message "
+            "and the call's arguments are empty unless CONTROL_LOG_PAYLOADS is on."
+        )
     )
     outcome: Outcome = Field(
         description=(

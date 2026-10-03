@@ -71,4 +71,10 @@ def mcp_connect() -> Connect:
 
 
 def mcp_gateway() -> McpGateway:
-    return McpGateway(control_layer(), mcp_connect(), enabled_mcp_servers)
+    return McpGateway(
+        control_layer(),
+        mcp_connect(),
+        enabled_mcp_servers,
+        settings.control_log_payloads,
+        event_sink(),
+    )

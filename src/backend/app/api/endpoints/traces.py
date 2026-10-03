@@ -1,3 +1,4 @@
+import json
 import math
 from collections import Counter, defaultdict
 from collections.abc import Sequence
@@ -51,6 +52,12 @@ def outcome(events: Sequence[ControlEvent]) -> Outcome:
 
 
 def prompt(request: ControlEvent | None) -> str | None:
+    if request and request.data.get("tool"):
+        # A tool call through the MCP gateway: the tool, and the arguments
+        # when they were stored.
+        call = f"{request.data.get('server')}__{request.data['tool']}"
+        arguments = request.data.get("arguments")
+        return f"{call} {json.dumps(arguments)}" if arguments is not None else call
     messages = request.data.get("messages") if request else None
     users = [m for m in messages or [] if m.get("role") == "user"]
     return text_of(users[-1].get("content")) if users else None
