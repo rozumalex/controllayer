@@ -7,8 +7,8 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from app.api.deps import chat_control
-from app.control.adapters.openai_chat import ChatControl
+from app.api.deps import chat_agent
+from app.control.agent import Agent
 from app.control.upstream import UpstreamError
 from app.core.assistant import conversation
 from app.core.schema.chat import ChatRequest, ChatResponse
@@ -25,18 +25,18 @@ UPSTREAM_FAILED = {"detail": "The model is unavailable. Try again later."}
     response_model=ChatResponse,
     summary="Send a message to the model through the control layer",
     description=(
-        "The control layer checks the message before the model sees it, and "
-        "the tool calls the model returns. Its verdicts go to the logs under "
+        "The control layer checks the message before the model sees it. The "
+        "model may use the tools of the MCP servers behind the gateway, which "
+        "checks each call and its result. The verdicts go to the logs under "
         "the response's `trace_id`, not to the caller."
     ),
 )
 async def chat(
-    request: ChatRequest, control: Annotated[ChatControl, Depends(chat_control)]
+    request: ChatRequest, agent: Annotated[Agent, Depends(chat_agent)]
 ) -> Any:
     trace_id = uuid4().hex
-    completion = {"messages": conversation(request.message)}
     try:
-        response = await control.complete(completion, trace_id)
+        response = await agent.complete(conversation(request.message), trace_id)
     except UpstreamError as error:
         # The upstream error is about the server's key and the model, not the
         # caller's request, so the caller gets a plain 502.
@@ -73,15 +73,15 @@ def event(**data: Any) -> str:
     ),
 )
 async def chat_stream(
-    request: ChatRequest, control: Annotated[ChatControl, Depends(chat_control)]
+    request: ChatRequest, agent: Annotated[Agent, Depends(chat_agent)]
 ) -> StreamingResponse:
     trace_id = uuid4().hex
-    completion = {"messages": conversation(request.message)}
+    messages = conversation(request.message)
 
     async def events() -> AsyncIterator[str]:
         blocked = False
         try:
-            async for chunk in control.stream(completion, trace_id):
+            async for chunk in agent.stream(messages, trace_id):
                 choice = chunk["choices"][0]
                 if text := choice["delta"].get("content"):
                     yield event(type="delta", text=text)
