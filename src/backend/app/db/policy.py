@@ -16,12 +16,12 @@ DEFAULT_ROLE = "*"
 
 def builtin_policy() -> PolicySettings:
     """The default policy until someone saves one: the environment's
-    threshold and model, internal data, every tool, no budget."""
+    threshold and chat models, internal data, every tool, no budget."""
     return PolicySettings(
         injection_threshold=settings.control_injection_threshold,
         clearance=Clearance.INTERNAL,
         above_clearance=ToolAction.REDACT,
-        allowed_models=[settings.openai_model],
+        allowed_models=settings.chat_models,
         budget=Budget(),
         default_tool_action=ToolAction.ALLOW,
     )
@@ -48,10 +48,10 @@ def price(model: str) -> tuple[Decimal, Decimal]:
     """US dollars per million prompt and completion tokens. OpenAI answers
     with a dated name, such as gpt-4.1-mini-2025-04-14, so the longest known
     name it starts with sets the price. An unknown model costs nothing."""
-    known = [name for name in settings.model_prices if model.startswith(name)]
+    known = [name for name in settings.models if model.startswith(name)]
     if not known:
         return Decimal(0), Decimal(0)
-    return settings.model_prices[max(known, key=len)]
+    return settings.models[max(known, key=len)].price
 
 
 async def monthly_usage(

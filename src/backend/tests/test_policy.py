@@ -56,7 +56,9 @@ def test_roles_follow_the_builtin_default(staff: TestClient) -> None:
 
     # then
     assert overview["default"]["customized"] is False
-    assert overview["default"]["settings"]["allowed_models"] == [settings.openai_model]
+    assert overview["default"]["settings"]["allowed_models"] == sorted(
+        settings.chat_models
+    )
     assert {r: v["employees"] for r, v in roles(overview).items()} == {
         "Analyst": 2,
         "Engineer": 1,

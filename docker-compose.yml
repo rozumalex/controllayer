@@ -62,6 +62,10 @@ services:
       # The chat model and the semantic injection guard. Without it the api
       # answers with the mock model and runs only the heuristic guard.
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # The local models: an Ollama server's OpenAI-compatible API. Use
+      # http://ollama:11434/v1 for the service below, or, on a Mac, Ollama on
+      # the host at http://host.docker.internal:11434/v1, which uses the GPU.
+      OLLAMA_URL: ${OLLAMA_URL:-}
       # Save the messages with the events, so the dashboard shows what was
       # asked. Off in production, where prompts may hold secrets.
       CONTROL_LOG_PAYLOADS: ${CONTROL_LOG_PAYLOADS:-true}
@@ -146,5 +150,14 @@ services:
     depends_on:
       - app
 
+  # Local models, started only by `./dev ollama`. Docker on a Mac has no GPU,
+  # so there it is slow; run Ollama on the host instead.
+  ollama:
+    image: ollama/ollama:latest
+    profiles: [ollama]
+    volumes:
+      - ollama-models:/root/.ollama
+
 volumes:
   db-data:
+  ollama-models:

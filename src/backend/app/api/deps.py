@@ -96,12 +96,30 @@ UserPolicy = Annotated[PolicySettings, Depends(user_policy)]
 
 
 def chat_model(policy: PolicySettings) -> str:
-    """The environment's model if the policy allows it, otherwise the first
-    model it allows. With none allowed, the model guard blocks the chat."""
+    """The first chat model the policy allows that a provider serves, then
+    any other it allows that one serves. With none served, the first it
+    allows, which the mock model stands in for. With none allowed, the model
+    guard blocks the chat."""
     allowed = policy.allowed_models
-    if settings.openai_model in allowed or not allowed:
-        return settings.openai_model
-    return allowed[0]
+    if not allowed:
+        return settings.chat_models[0]
+    preferred = [m for m in settings.chat_models if m in allowed]
+    candidates = preferred + [m for m in allowed if m not in preferred]
+    served = [m for m in candidates if settings.endpoint(m)]
+    return (served or candidates)[0]
+
+
+def chat_upstream(model: str) -> ChatUpstream:
+    endpoint = settings.endpoint(model)
+    if endpoint is None:
+        return MockUpstream()
+    return OpenAIUpstream(
+        endpoint.key,
+        model,
+        url=f"{endpoint.url}/chat/completions",
+        max_tokens=settings.chat_max_tokens,
+        max_tokens_field=endpoint.max_tokens_field,
+    )
 
 
 def tool_access(policy: PolicySettings) -> ToolAccessGuard:
@@ -119,19 +137,24 @@ def sensitive_data(policy: PolicySettings) -> SensitiveDataGuard:
 
 
 def semantic_guard(threshold: float) -> SemanticInjectionGuard | None:
-    # Without a key the demo runs offline, on the heuristic guard alone.
-    if not settings.openai_api_key:
+    # With no model served the demo runs offline, on the heuristic guard alone.
+    models = settings.control_semantic_models
+    served = [(m, e) for m in models if (e := settings.endpoint(m))]
+    if not served:
         return None
+    model, endpoint = served[0]
     classifier = OpenAIInjectionClassifier(
-        settings.openai_api_key,
-        settings.control_semantic_model,
+        endpoint.key,
+        model,
         settings.control_semantic_timeout,
+        url=f"{endpoint.url}/chat/completions",
+        max_tokens_field=endpoint.max_tokens_field,
     )
     return SemanticInjectionGuard(
         classifier,
         threshold=threshold,
         fail_closed=settings.control_semantic_fail_closed,
-        model=settings.control_semantic_model,
+        model=model,
     )
 
 
@@ -187,13 +210,7 @@ async def chat_control(user: CurrentUser, policy: UserPolicy) -> ChatControl:
     # The answer is checked too: the model may write PII the policy hides,
     # a secret, or its own instructions.
     answer = [sensitive_data(policy), PromptLeakGuard(SYSTEM_PROMPT)]
-    upstream: ChatUpstream = (
-        OpenAIUpstream(
-            settings.openai_api_key, model, max_tokens=settings.chat_max_tokens
-        )
-        if settings.openai_api_key
-        else MockUpstream()
-    )
+    upstream = chat_upstream(model)
     # The tools run through the MCP gateway, which checks every call and
     # result, so the chat leaves them to it.
     return ChatControl(

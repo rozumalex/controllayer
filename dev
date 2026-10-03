@@ -18,6 +18,7 @@ Stack:
   shell [service]            Open a bash shell in a service, api by default
   python                     Open a Python shell in the backend; await works at the prompt
   ngrok                      Share the app on a public HTTPS URL; needs NGROK_AUTHTOKEN
+  ollama [args...]           Start the local Ollama service and run ollama in it, such as pull qwen2.5:7b
 
 Database:
   migrate [revision]         Apply the migrations, up to head by default
@@ -37,6 +38,7 @@ Examples:
   ./dev test -k health -x
   ./dev makemigrations "add posts table"
   ./dev seed --url "$PRODUCTION_DATABASE_URL"
+  ./dev ollama pull qwen2.5:7b
   ./dev attacks --heuristic --fail-under 0.9
 USAGE
 }
@@ -67,6 +69,7 @@ case $command in
   shell) in_service "${1:-api}" bash ;;
   python) in_service api python -m asyncio ;;
   ngrok) docker compose run --rm ngrok ;;
+  ollama) docker compose --profile ollama up -d ollama && docker compose exec ollama ollama "$@" ;;
   destroy)
     if [[ ${1:-} != -y ]]; then
       read -rp "Delete the database data and built images? [y/N] " answer
