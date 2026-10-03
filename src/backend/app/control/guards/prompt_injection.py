@@ -3,7 +3,7 @@
 A classifier and an LLM judge can come after it later, for the grey zone."""
 
 import re
-from collections.abc import Iterator
+from collections.abc import Collection, Iterator
 from typing import Any
 
 from app.control.envelope import Action, Envelope, Verdict
@@ -68,6 +68,17 @@ PATTERNS: list[tuple[str, float, re.Pattern[str]]] = [
 ]
 
 
+DESCRIPTIONS: dict[str, str] = {
+    "override": "Asks to ignore or override the earlier instructions.",
+    "new_instructions": "Announces new or updated system instructions.",
+    "role_tag": "Fakes a system or assistant turn with chat role tags.",
+    "persona": "Switches the model to an unrestricted persona.",
+    "exfiltration": "Asks to send keys, passwords or other secrets somewhere.",
+    "markdown_image_leak": "Leaks data through the URL of a Markdown image.",
+    "hidden_unicode": "Hides text in invisible Unicode characters.",
+}
+
+
 def strings(value: Any) -> Iterator[str]:
     """Every string in a JSON-like value, keys included."""
     if isinstance(value, str):
@@ -84,14 +95,17 @@ def strings(value: Any) -> Iterator[str]:
 class PromptInjectionGuard:
     name = "prompt_injection"
 
-    def __init__(self, threshold: float = 0.7) -> None:
+    def __init__(
+        self, threshold: float = 0.7, disabled_rules: Collection[str] = ()
+    ) -> None:
         self.threshold = threshold
+        self.patterns = [p for p in PATTERNS if p[0] not in disabled_rules]
 
     async def inspect(self, envelope: Envelope) -> Verdict:
         hits = {
             label: score
             for text in strings(envelope.payload)
-            for label, score, pattern in PATTERNS
+            for label, score, pattern in self.patterns
             if pattern.search(text)
         }
         score = max(hits.values(), default=0.0)

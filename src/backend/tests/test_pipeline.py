@@ -57,6 +57,34 @@ def test_monitor_logs_but_does_not_block() -> None:
     assert [v.action for _, v in audit.events] == [Action.BLOCK, Action.MODIFY]
 
 
+def test_monitored_guard_logs_but_does_not_block() -> None:
+    # given
+    audit = MemoryAuditSink()
+    guards = [PromptInjectionGuard(), SpotlightGuard()]
+    pipeline = Pipeline(
+        "outbound", guards, audit, Mode.ENFORCE, monitored={"prompt_injection"}
+    )
+
+    # when
+    decision = asyncio.run(pipeline.run(envelope(INJECTION)))
+
+    # then
+    assert decision.action is Action.MODIFY
+    assert [v.action for _, v in audit.events] == [Action.BLOCK, Action.MODIFY]
+
+
+def test_disabled_rule_does_not_match() -> None:
+    # given
+    guard = PromptInjectionGuard(disabled_rules={"override"})
+
+    # when
+    verdict = asyncio.run(guard.inspect(envelope(INJECTION)))
+
+    # then
+    assert verdict.action is Action.ALLOW
+    assert verdict.score == 0.0
+
+
 def test_clean_payload_is_modified_by_spotlight() -> None:
     # given
     guards = [PromptInjectionGuard(), SpotlightGuard()]

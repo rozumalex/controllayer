@@ -10,7 +10,7 @@ from sqlalchemy.pool import NullPool
 
 from app.core.config import settings
 from app.db.base import Base
-from app.db.models import ControlEvent
+from app.db.models import ControlEvent, GuardSetting
 from app.db.session import SessionLocal
 from app.main import app
 
@@ -53,6 +53,18 @@ async def delete_events() -> None:
 def no_events() -> None:
     """Starts the test with no control layer events in the database."""
     asyncio.run(delete_events())
+
+
+async def delete_guard_settings() -> None:
+    async with SessionLocal() as session:
+        await session.execute(delete(GuardSetting))
+        await session.commit()
+
+
+@pytest.fixture(autouse=True)
+def default_controls() -> None:
+    """Starts every test with the guards at their default settings."""
+    asyncio.run(delete_guard_settings())
 
 
 @pytest.fixture
