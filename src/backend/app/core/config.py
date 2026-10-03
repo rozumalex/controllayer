@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     # The bearer token that manages the MCP servers at /api/mcp-servers. While
     # it is empty, that API refuses every request.
     mcp_admin_token: str = ""
+    # The bearer token of the example bank MCP server at /api/bank/mcp. While
+    # it is empty, the server refuses every request.
+    bank_mcp_token: str = ""
 
     @field_validator("database_url")
     @classmethod
