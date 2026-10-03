@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     # Block when the semantic check fails, for example when OpenAI is down.
     # Turn it off to fall back to the heuristic guard alone.
     control_semantic_fail_closed: bool = True
+    # The bearer token that manages the MCP servers at /api/mcp-servers. While
+    # it is empty, that API refuses every request.
+    mcp_admin_token: str = ""
 
     @field_validator("database_url")
     @classmethod

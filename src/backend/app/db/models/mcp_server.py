@@ -9,7 +9,7 @@ from app.db.base import Base
 
 class McpServer(Base):
     """An MCP server behind the control layer. Its tools are served to every
-    agent through the gateway at /api/mcp."""
+    agent through the gateway."""
 
     __tablename__ = "mcp_servers"
 

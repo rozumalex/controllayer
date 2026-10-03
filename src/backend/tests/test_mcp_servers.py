@@ -1,13 +1,13 @@
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 
-import mcp_types as types
 import pytest
 from fastapi.testclient import TestClient
 from mcp import Client
 
 from app.api.deps import mcp_connect
-from app.control.adapters.mcp_gateway import McpGateway, UpstreamServer
+from app.control.adapters.mcp_gateway import UpstreamServer
+from app.core.config import settings
 from app.main import app
 from tests.test_mcp_gateway import bank
 
@@ -24,10 +24,36 @@ async def connect(server: UpstreamServer) -> AsyncIterator[Client]:
 
 
 @pytest.fixture
-def api(db: None) -> Iterator[TestClient]:
+def admin(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
+    """Sets the admin token, and gives the headers that carry it."""
+    monkeypatch.setattr(settings, "mcp_admin_token", "admin-secret")
+    return {"Authorization": "Bearer admin-secret"}
+
+
+@pytest.fixture
+def api(db: None, admin: dict[str, str]) -> Iterator[TestClient]:
     app.dependency_overrides[mcp_connect] = lambda: connect
-    yield TestClient(app)
+    yield TestClient(app, headers=admin)
     app.dependency_overrides.clear()
+
+
+@pytest.mark.parametrize("headers", [{}, {"Authorization": "Bearer wrong"}])
+def test_servers_need_the_admin_token(
+    db: None, admin: dict[str, str], headers: dict[str, str]
+) -> None:
+    # when / then
+    assert TestClient(app).get(URL, headers=headers).status_code == 401
+
+
+def test_servers_are_closed_without_an_admin_token(
+    db: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # given
+    monkeypatch.setattr(settings, "mcp_admin_token", "")
+    headers = {"Authorization": "Bearer "}
+
+    # when / then
+    assert TestClient(app).get(URL, headers=headers).status_code == 401
 
 
 def test_create_server_hides_auth_header(api: TestClient) -> None:
@@ -85,45 +111,3 @@ def test_disable_list_tools_and_delete(api: TestClient) -> None:
     assert {tool["name"] for tool in tools.json()} == {"get_client", "get_note"}
     assert deleted.status_code == 204
     assert api.get(URL).json() == []
-
-
-MCP_HEADERS = {
-    "Accept": "application/json, text/event-stream",
-    "MCP-Protocol-Version": "2025-06-18",
-}
-
-
-def test_gateway_serves_mcp_over_http(db: None) -> None:
-    # given
-    request = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
-    headers = MCP_HEADERS
-
-    # when
-    with TestClient(app) as client:
-        response = client.post("/api/mcp", json=request, headers=headers)
-
-    # then
-    assert response.status_code == 200
-    assert response.json()["result"]["tools"] == []
-
-
-def test_gateway_reads_agent_id_header(
-    db: None, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # given
-    async def call_tool(self, name, arguments, agent_id) -> types.CallToolResult:
-        return types.CallToolResult(
-            content=[types.TextContent(type="text", text=agent_id)]
-        )
-
-    monkeypatch.setattr(McpGateway, "call_tool", call_tool)
-    params = {"name": "bank__get_client", "arguments": {}}
-    request = {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": params}
-    headers = {**MCP_HEADERS, "X-Agent-Id": "judge-low"}
-
-    # when
-    with TestClient(app) as client:
-        response = client.post("/api/mcp", json=request, headers=headers)
-
-    # then
-    assert response.json()["result"]["content"][0]["text"] == "judge-low"

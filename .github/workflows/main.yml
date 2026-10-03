@@ -63,6 +63,7 @@ jobs:
           SENTRY_DSN: ${{ vars.SENTRY_DSN }}
           VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
           NEW_RELIC_LICENSE_KEY: ${{ secrets.NEW_RELIC_LICENSE_KEY }}
+          MCP_ADMIN_TOKEN: ${{ secrets.MCP_ADMIN_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         with:
           token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}

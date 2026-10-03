@@ -5,7 +5,6 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
-from app.api.endpoints.mcp import endpoint as mcp_endpoint
 from app.api.router import router as api_router
 from app.control.http import OPENAI_HTTP
 from app.core.config import settings
@@ -20,8 +19,7 @@ init_sentry()
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    async with mcp_endpoint.run():
-        yield
+    yield
     await OPENAI_HTTP.aclose()
     await engine.dispose()
 

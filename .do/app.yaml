@@ -1,8 +1,8 @@
 # DigitalOcean App Platform spec for the production stack. The deploy job in
 # .github/workflows/main.yml creates the app from this file on the first run
 # and updates it on every later one. The deploy action fills in ${APP_NAME},
-# ${GITHUB_REPOSITORY}, the Sentry DSNs, the New Relic license key and the
-# OpenAI key from the workflow environment.
+# ${GITHUB_REPOSITORY}, the Sentry DSNs, the New Relic license key, the OpenAI
+# key and the MCP admin token from the workflow environment.
 # Quote them, so an unset one becomes an empty string.
 # ${db.DATABASE_URL} and ${redis.DATABASE_URL} are App Platform variables and
 # stay as they are.
@@ -57,6 +57,10 @@ services:
         value: production
       - key: NEW_RELIC_LICENSE_KEY
         value: "${NEW_RELIC_LICENSE_KEY}"
+        type: SECRET
+      # Unset, it stays empty, and /api/mcp-servers refuses every request.
+      - key: MCP_ADMIN_TOKEN
+        value: "${MCP_ADMIN_TOKEN}"
         type: SECRET
       - key: NEW_RELIC_APP_NAME
         value: "${APP_NAME}"

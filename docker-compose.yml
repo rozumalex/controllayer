@@ -65,6 +65,8 @@ services:
       # Save the messages with the events, so the dashboard shows what was
       # asked. Off in production, where prompts may hold secrets.
       CONTROL_LOG_PAYLOADS: ${CONTROL_LOG_PAYLOADS:-true}
+      # A development token. Production sets its own, from a repository secret.
+      MCP_ADMIN_TOKEN: ${MCP_ADMIN_TOKEN:-dev-admin}
     ports:
       - "${API_PORT:-8000}:8000"
     volumes:

@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.endpoints import chat, health, mcp, mcp_servers, traces
+from app.api.endpoints import chat, health, mcp_servers, traces
 from app.core.config import settings
 
 # Every endpoint router is included here, under the API prefix.
@@ -9,4 +9,3 @@ router.include_router(health.router)
 router.include_router(chat.router)
 router.include_router(traces.router)
 router.include_router(mcp_servers.router)
-router.include_router(mcp.router)
