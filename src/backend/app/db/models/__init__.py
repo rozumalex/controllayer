@@ -10,6 +10,7 @@ from app.db.models.bank import (
 )
 from app.db.models.control_event import ControlEvent
 from app.db.models.mcp_server import McpServer
+from app.db.models.policy import Policy
 from app.db.models.user import User
 
 __all__ = [
@@ -22,5 +23,6 @@ __all__ = [
     "BankTransaction",
     "ControlEvent",
     "McpServer",
+    "Policy",
     "User",
 ]
