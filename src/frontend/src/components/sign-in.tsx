@@ -239,7 +239,7 @@ function SignIn({ onSignedIn }: { onSignedIn: (user: Employee) => void }) {
                 autoFocus
                 containerClassName="justify-center"
               >
-                <InputOTPGroup className="gap-1.5">
+                <InputOTPGroup className="gap-1.5 has-aria-invalid:ring-0">
                   {[0, 1, 2, 3, 4, 5].map((index) => (
                     <InputOTPSlot
                       key={index}
