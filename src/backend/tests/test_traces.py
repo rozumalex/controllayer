@@ -4,6 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api.deps import chat_control, control_layer, event_sink
+from app.api.endpoints.traces import percentile
 from app.control.adapters.openai_chat import ChatControl
 from app.control.pipeline import Mode
 from app.control.upstream import MockUpstream, UpstreamError
@@ -159,3 +160,58 @@ def test_unknown_trace_not_found(client: TestClient) -> None:
 
     # when / then
     assert client.get(url).status_code == 404
+
+
+def test_analytics_counts_outcomes_tokens_and_findings(client: TestClient) -> None:
+    # given
+    chat(client, "What is 2 + 2?")
+    chat(client, INJECTION)
+
+    # when
+    body = client.get("/api/traces/analytics?range=1h").json()
+
+    # then
+    timeline = body["timeline"]
+    assert sum(b["allowed"] for b in timeline) == 1
+    assert sum(b["blocked"] for b in timeline) == 1
+    assert sum(b["completion_tokens"] for b in timeline) > 0
+    assert [(f["guard"], f["count"]) for f in body["findings"]] == [
+        ("prompt_injection", 1)
+    ]
+
+
+@pytest.mark.parametrize(
+    ("period", "buckets", "seconds"),
+    [("1h", 60, 60), ("24h", 24, 3600), ("7d", 28, 6 * 3600)],
+)
+def test_analytics_range_sets_buckets(
+    client: TestClient, period: str, buckets: int, seconds: int
+) -> None:
+    # given
+    url = f"/api/traces/analytics?range={period}"
+
+    # when
+    body = client.get(url).json()
+
+    # then
+    assert len(body["timeline"]) == buckets
+    assert body["bucket_seconds"] == seconds
+
+
+def test_analytics_unknown_range_rejected(client: TestClient) -> None:
+    # given
+    url = "/api/traces/analytics?range=1y"
+
+    # when / then
+    assert client.get(url).status_code == 422
+
+
+@pytest.mark.parametrize(
+    ("values", "fraction", "expected"),
+    [([], 0.5, None), ([5.0], 0.95, 5.0), ([4.0, 1.0, 3.0, 2.0], 0.5, 2.0)],
+)
+def test_percentile_nearest_rank(
+    values: list[float], fraction: float, expected: float | None
+) -> None:
+    # when / then
+    assert percentile(values, fraction) == expected
