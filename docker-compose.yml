@@ -58,7 +58,7 @@ services:
       REDIS_URL: *redis-url
       SENTRY_DSN: ${SENTRY_DSN:-}
       NEW_RELIC_LICENSE_KEY: ${NEW_RELIC_LICENSE_KEY:-}
-      NEW_RELIC_APP_NAME: ${NEW_RELIC_APP_NAME:-backend}
+      NEW_RELIC_APP_NAME: ${NEW_RELIC_APP_NAME:-controllayer}
     ports:
       - "${API_PORT:-8000}:8000"
     volumes:
@@ -95,7 +95,7 @@ services:
       REDIS_URL: *redis-url
       SENTRY_DSN: ${SENTRY_DSN:-}
       NEW_RELIC_LICENSE_KEY: ${NEW_RELIC_LICENSE_KEY:-}
-      NEW_RELIC_APP_NAME: ${NEW_RELIC_APP_NAME:-backend}
+      NEW_RELIC_APP_NAME: ${NEW_RELIC_APP_NAME:-controllayer}
     volumes:
       - ./src/backend:/app
     depends_on:
