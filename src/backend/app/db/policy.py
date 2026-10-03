@@ -27,15 +27,31 @@ def builtin_policy() -> PolicySettings:
     )
 
 
-async def default_policy(session: AsyncSession) -> PolicySettings:
-    saved = await session.get(Policy, DEFAULT_ROLE)
+async def saved_policy(
+    session: AsyncSession, org_id: uuid.UUID | None, role: str | None
+) -> Policy | None:
+    """The policy the organization saved for the role, if any."""
+    if org_id is None or role is None:
+        return None
+    return await session.get(Policy, (org_id, role))
+
+
+async def default_policy(
+    session: AsyncSession, org_id: uuid.UUID | None
+) -> PolicySettings:
+    saved = await saved_policy(session, org_id, DEFAULT_ROLE)
     return PolicySettings(**saved.settings) if saved else builtin_policy()
 
 
-async def role_policy(session: AsyncSession, role: str | None) -> PolicySettings:
-    """The policy an employee with this job title works under."""
-    saved = await session.get(Policy, role) if role else None
-    return PolicySettings(**saved.settings) if saved else await default_policy(session)
+async def role_policy(
+    session: AsyncSession, org_id: uuid.UUID | None, role: str | None
+) -> PolicySettings:
+    """The policy an employee of the organization with this job title works
+    under."""
+    saved = await saved_policy(session, org_id, role)
+    if saved:
+        return PolicySettings(**saved.settings)
+    return await default_policy(session, org_id)
 
 
 async def data_catalog(session: AsyncSession) -> dict[tuple[str, str], Clearance]:

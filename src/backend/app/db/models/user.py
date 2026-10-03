@@ -17,6 +17,11 @@ class User(Base):
     )
     email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(255))
+    # The organization the user belongs to. Empty only until the seed assigns
+    # the rows that predate organizations; such a user sees nothing.
+    org_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("organizations.id", name="users_org_id_fkey"), index=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

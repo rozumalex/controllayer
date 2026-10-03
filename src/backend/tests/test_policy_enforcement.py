@@ -22,7 +22,7 @@ from app.db.models import Policy, User
 from app.db.policy import DEFAULT_ROLE, builtin_policy
 from app.db.session import SessionLocal
 from app.main import app
-from tests.conftest import signed_in
+from tests.conftest import demo_org_id, signed_in
 from tests.test_agent import QUESTION, ListSink, ToolUsingUpstream
 from tests.test_chat import ask, blocked
 from tests.test_mcp_gateway import Upstream, text
@@ -58,14 +58,19 @@ def policy(**changes: Any) -> PolicySettings:
 
 
 async def save(role: str, settings: PolicySettings) -> None:
+    org_id = await demo_org_id()
     async with SessionLocal() as session:
-        session.add(Policy(role=role, settings=settings.model_dump(mode="json")))
+        values = settings.model_dump(mode="json")
+        session.add(Policy(org_id=org_id, role=role, settings=values))
         await session.commit()
 
 
 async def add_analyst() -> User:
+    org_id = await demo_org_id()
     async with SessionLocal() as session:
-        user = User(email="ann@goldensocks.com", name="Ann Lee", title="Analyst")
+        user = User(
+            email="ann@goldensocks.com", name="Ann Lee", title="Analyst", org_id=org_id
+        )
         session.add(user)
         await session.commit()
         return user

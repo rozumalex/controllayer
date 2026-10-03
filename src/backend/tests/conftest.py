@@ -1,4 +1,5 @@
 import asyncio
+import uuid
 from collections.abc import Iterator
 
 import pytest
@@ -11,7 +12,8 @@ from sqlalchemy.pool import NullPool
 from app.api.deps import PRIVILEGED
 from app.core.config import settings
 from app.db.base import Base
-from app.db.models import ControlEvent, User
+from app.db.models import ControlEvent, Organization, User
+from app.db.models.organization import DEMO_SLUG
 from app.db.session import SessionLocal
 from app.main import app
 
@@ -93,12 +95,29 @@ def no_events() -> None:
 TESTER_EMAIL = "tester@example.com"
 
 
+async def demo_org_id() -> uuid.UUID:
+    """The demo organization, which the test user and staff belong to."""
+    async with SessionLocal() as session:
+        query = select(Organization.id).where(Organization.slug == DEMO_SLUG)
+        org_id = await session.scalar(query)
+        if org_id is None:
+            org = Organization(slug=DEMO_SLUG, name="Golden Socks")
+            session.add(org)
+            await session.commit()
+            org_id = org.id
+        return org_id
+
+
 async def tester() -> User:
+    org_id = await demo_org_id()
     async with SessionLocal() as session:
         user = await session.scalar(select(User).where(User.email == TESTER_EMAIL))
         if user is None:
             user = User(
-                email=TESTER_EMAIL, name="Test User", clearance_level=PRIVILEGED
+                email=TESTER_EMAIL,
+                name="Test User",
+                clearance_level=PRIVILEGED,
+                org_id=org_id,
             )
             session.add(user)
             await session.commit()

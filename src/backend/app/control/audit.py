@@ -38,15 +38,22 @@ class FanOutSink:
 
 
 class UserEventSink:
-    """Adds the ID of the signed-in user to each event, so every log line and
-    saved event names who made the request."""
+    """Adds the IDs of the signed-in user and their organization to each
+    event, so every log line and saved event names who made the request, and
+    only their organization sees it."""
 
-    def __init__(self, sink: EventSink, user_id: UUID) -> None:
+    def __init__(
+        self, sink: EventSink, user_id: UUID, org_id: UUID | None = None
+    ) -> None:
         self.sink = sink
         self.user_id = user_id
+        self.org_id = org_id
 
     async def write(self, event: dict[str, Any]) -> None:
-        await self.sink.write({**event, "user_id": str(self.user_id)})
+        ids = {"user_id": str(self.user_id)}
+        if self.org_id:
+            ids["org_id"] = str(self.org_id)
+        await self.sink.write({**event, **ids})
 
 
 class AuditSink(Protocol):

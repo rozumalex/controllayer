@@ -21,6 +21,7 @@ class DatabaseEventSink:
             event=data["event"],
             action=data.get("action"),
             user_id=data.get("user_id"),
+            org_id=data.get("org_id"),
             data=data,
         )
         try:

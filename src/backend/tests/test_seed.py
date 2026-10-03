@@ -12,7 +12,7 @@ from app.db.base import Base
 from app.db.policy import DEFAULT_ROLE
 from app.servers import bank
 from scripts.policies import POLICIES
-from scripts.seed import load, seeded_tables
+from scripts.seed import OWN_COLUMNS, load, seeded_tables
 
 
 @cache
@@ -28,7 +28,7 @@ def test_every_bank_table_has_data(table: Table) -> None:
     columns, values = load(table)
 
     # then
-    assert set(columns) == set(table.columns.keys())
+    assert set(columns) == set(table.columns.keys()) - OWN_COLUMNS
     assert values
 
 

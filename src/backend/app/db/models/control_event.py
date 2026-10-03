@@ -25,6 +25,11 @@ class ControlEvent(Base):
     user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", name="control_events_user_id_fkey"), index=True
     )
+    # The user's organization, so its dashboard shows only its own events.
+    org_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("organizations.id", name="control_events_org_id_fkey"),
+        index=True,
+    )
     # Loaded with the event, so the dashboard can name the user.
     user: Mapped[User | None] = relationship(lazy="joined")
     # The verdict's or the decision's action; empty for the other events.

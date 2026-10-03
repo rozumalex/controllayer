@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import CurrentUser, mcp_connect
+from app.api.deps import CurrentUser, OrgId, mcp_connect
 from app.control.adapters.mcp_gateway import Connect, list_upstream_tools
 from app.core.schema.mcp_servers import (
     McpServerCreate,
@@ -18,8 +18,8 @@ from app.core.schema.mcp_servers import (
 from app.db.models import McpServer
 from app.db.session import get_session
 
-# Whoever manages the servers decides which tools every agent gets. Open to
-# every signed-in user for now.
+# Whoever manages the servers decides which tools the organization's agents
+# get. Each organization sees and manages only its own.
 router = APIRouter(prefix="/mcp-servers", tags=["mcp servers"])
 
 Session = Annotated[AsyncSession, Depends(get_session)]
@@ -44,9 +44,10 @@ async def tools_of(server: McpServer, connect: Connect) -> list[McpTool]:
     ]
 
 
-async def get_server(id: uuid.UUID, session: Session) -> McpServer:
+async def get_server(id: uuid.UUID, session: Session, org_id: OrgId) -> McpServer:
     server = await session.get(McpServer, id)
-    if server is None:
+    # Another organization's server is not found either.
+    if server is None or server.org_id != org_id:
         raise HTTPException(404, "MCP server not found")
     return server
 
@@ -55,8 +56,10 @@ Server = Annotated[McpServer, Depends(get_server)]
 
 
 @router.get("", summary="List the MCP servers behind the control layer")
-async def list_servers(session: Session) -> list[McpServerRead]:
-    servers = await session.scalars(select(McpServer).order_by(McpServer.name))
+async def list_servers(session: Session, org_id: OrgId) -> list[McpServerRead]:
+    servers = await session.scalars(
+        select(McpServer).where(McpServer.org_id == org_id).order_by(McpServer.name)
+    )
     return [McpServerRead.of(server) for server in servers]
 
 
@@ -67,13 +70,19 @@ async def list_servers(session: Session) -> list[McpServerRead]:
     description=(
         "The control layer connects to the server and lists its tools first, "
         "so a server it can't reach is refused with 422. Its tools are then "
-        "given to every agent through the gateway as `<name>__<tool>`."
+        "given to the organization's agents through the gateway as "
+        "`<name>__<tool>`."
     ),
 )
 async def create_server(
-    request: McpServerCreate, session: Session, connect: ConnectDep, user: CurrentUser
+    request: McpServerCreate,
+    session: Session,
+    connect: ConnectDep,
+    user: CurrentUser,
+    org_id: OrgId,
 ) -> McpServerRead:
     server = McpServer(
+        org_id=org_id,
         name=request.name,
         url=str(request.url),
         auth_header=request.auth_header,

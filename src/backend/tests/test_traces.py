@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from app.api.deps import chat_control, control_layer, event_sink
 from app.api.endpoints.traces import cell, percentile
 from app.control.adapters.openai_chat import ChatControl
+from app.control.audit import UserEventSink
 from app.control.pipeline import Mode
 from app.control.upstream import MockUpstream, UpstreamError
 from app.core.config import settings
@@ -142,10 +143,11 @@ def chat_failing(client: TestClient) -> str:
     return client.get("/api/traces?limit=1").json()["traces"][0]["trace_id"]
 
 
-def test_upstream_error_traced(client: TestClient) -> None:
+def test_upstream_error_traced(client: TestClient, user: User) -> None:
     # given
+    sink = UserEventSink(event_sink(), user.id, user.org_id)
     app.dependency_overrides[chat_control] = lambda: ChatControl(
-        control_layer(), FailingUpstream(), False, event_sink()
+        control_layer(), FailingUpstream(), False, sink
     )
     try:
         trace_id = chat_failing(client)
@@ -176,9 +178,12 @@ def test_prompt_saved_only_with_payload_logging(
     assert traces[shown]["prompt"] == "What is 2 + 2?"
 
 
-def test_mcp_call_listed_with_tool_and_arguments(client: TestClient) -> None:
+def test_mcp_call_listed_with_tool_and_arguments(
+    client: TestClient, user: User
+) -> None:
     # given
-    subject = gateway("bank", sink=event_sink(), log_payloads=True)
+    sink = UserEventSink(event_sink(), user.id, user.org_id)
+    subject = gateway("bank", sink=sink, log_payloads=True)
     asyncio.run(subject.call_tool("bank__get_client", {"client_id": "CLT-1"}, "a"))
 
     # when
