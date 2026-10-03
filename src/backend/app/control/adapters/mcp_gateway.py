@@ -107,15 +107,21 @@ class McpGateway:
         return tools
 
     async def call_tool(
-        self, name: str, arguments: dict[str, Any], agent_id: str
+        self,
+        name: str,
+        arguments: dict[str, Any],
+        agent_id: str,
+        trace_id: str | None = None,
     ) -> types.CallToolResult:
+        """Runs one tool call through the guards. Pass the trace id of the
+        chat that asked for it, so the call shows up in that trace."""
         server_name, _, tool = name.partition(SEPARATOR)
         servers = {server.name: server for server in await self.servers()}
         server = servers.get(server_name)
         if server is None or not tool:
             return error(UNKNOWN_TOOL.format(tool=name))
 
-        trace_id = uuid4().hex
+        trace_id = trace_id or uuid4().hex
         await self.log(
             trace_id,
             "request",

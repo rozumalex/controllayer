@@ -1,11 +1,12 @@
 import uuid
 from typing import Annotated
 
-from fastapi import Header, HTTPException
+from fastapi import Depends, Header, HTTPException
 from sqlalchemy import select
 
 from app.control.adapters.mcp_gateway import Connect, McpGateway, connect_http
 from app.control.adapters.openai_chat import ChatControl
+from app.control.agent import Agent
 from app.control.audit import EventAuditSink, EventSink, FanOutSink, LogEventSink
 from app.control.guards.semantic_injection import (
     OpenAIInjectionClassifier,
@@ -59,8 +60,14 @@ def chat_control() -> ChatControl:
         if settings.openai_api_key
         else MockUpstream()
     )
+    # The tools run through the MCP gateway, which checks every call and
+    # result, so the chat leaves them to it.
     return ChatControl(
-        control_layer(), upstream, settings.control_log_payloads, event_sink()
+        control_layer(),
+        upstream,
+        settings.control_log_payloads,
+        event_sink(),
+        check_tools=False,
     )
 
 
@@ -82,6 +89,13 @@ def mcp_gateway() -> McpGateway:
         settings.control_log_payloads,
         event_sink(),
     )
+
+
+def chat_agent(
+    control: Annotated[ChatControl, Depends(chat_control)],
+    gateway: Annotated[McpGateway, Depends(mcp_gateway)],
+) -> Agent:
+    return Agent(control, gateway)
 
 
 async def current_user(
