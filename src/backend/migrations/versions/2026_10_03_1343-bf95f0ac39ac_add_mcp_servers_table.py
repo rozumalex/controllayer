@@ -1,8 +1,8 @@
 """add mcp servers table
 
-Revision ID: dc9fb9261d80
-Revises: cbcb85758011
-Create Date: 2026-10-03 13:31:46.153613
+Revision ID: bf95f0ac39ac
+Revises: d9468defef33
+Create Date: 2026-10-03 13:43:28.077085
 
 """
 
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "dc9fb9261d80"
-down_revision: str | Sequence[str] | None = "cbcb85758011"
+revision: str = "bf95f0ac39ac"
+down_revision: str | Sequence[str] | None = "d9468defef33"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
