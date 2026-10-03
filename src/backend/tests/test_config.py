@@ -40,17 +40,3 @@ def test_redis_url_plain_unchanged() -> None:
 
     # when / then
     assert Settings(redis_url=url).redis_url == url
-
-
-def test_agent_tokens_map_to_identities() -> None:
-    # given
-    tokens = "low-secret:judge-low, priv-secret:judge-privileged,,broken"
-
-    # when
-    settings = Settings(mcp_agent_tokens=tokens)
-
-    # then
-    assert settings.agent_identities == {
-        "low-secret": "judge-low",
-        "priv-secret": "judge-privileged",
-    }

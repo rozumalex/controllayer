@@ -62,7 +62,7 @@ async def list_servers(session: Session) -> list[McpServerRead]:
     description=(
         "The control layer connects to the server and lists its tools first, "
         "so a server it can't reach is refused with 422. Its tools are then "
-        "served to every agent at `/api/mcp` as `<name>__<tool>`."
+        "given to every agent through the gateway as `<name>__<tool>`."
     ),
 )
 async def create_server(

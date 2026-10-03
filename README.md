@@ -48,13 +48,10 @@ To run it on the host: `uv run celery -A app.worker worker --beat --loglevel INF
 
 ### MCP gateway
 
-The control layer serves the tools of every registered MCP server to agents at `/api/mcp`, and runs each call and result through its guards.
+The control layer gives agents the tools of every registered MCP server, and runs each call and result through its guards. The gateway runs inside the API and has no URL of its own: the chat calls it for the signed-in user, whose clearance decides what the guards let through.
 
-- **Agents** connect to `/api/mcp` with `Authorization: Bearer <token>`. `MCP_AGENT_TOKENS` maps each token to an identity, such as `judge-low`, and that identity is the caller the guards see. An agent can't pick another one: the `X-Agent-Id` header it sends is replaced.
-- **Servers** are managed at `/api/mcp-servers` with `Authorization: Bearer $MCP_ADMIN_TOKEN`. Whoever manages them decides which tools every agent gets.
+- **Servers** are managed at `/api/mcp-servers` with `Authorization: Bearer $MCP_ADMIN_TOKEN`. Whoever manages them decides which tools every agent gets. In Compose, the token is `dev-admin`.
 - **Keep the servers behind it internal.** An agent that can reach an MCP server directly goes around the guards. Run each one without a public port in Compose and without a public route on DigitalOcean, so only the API reaches it.
-
-In Compose, the admin token is `dev-admin`, and the agent tokens are `dev-low`, `dev-standard` and `dev-privileged`.
 
 ## Frontend
 
@@ -167,7 +164,6 @@ Every variable has a default, so the project runs without any setup.
 | `NEW_RELIC_LICENSE_KEY`     | New Relic agent, Compose   | empty, New Relic off                                        | [New Relic](https://newrelic.com/) ingest license key that the API and the worker report with |
 | `NEW_RELIC_APP_NAME`        | New Relic agent, Compose   | `backend` in Compose                                        | App name in New Relic APM; the deploy sets it to the DigitalOcean app name                    |
 | `MCP_ADMIN_TOKEN`           | Backend, Compose           | `dev-admin` in Compose, else empty: API closed              | Bearer token for `/api/mcp-servers`. A repository secret in production                        |
-| `MCP_AGENT_TOKENS`          | Backend, Compose           | `dev-low:judge-low,…` in Compose, else empty                | Agent tokens for `/api/mcp`, as `token:identity,…`. A repository secret in production         |
 
 Where to set them:
 
@@ -235,7 +231,7 @@ Set it up once:
 
 Without the `DIGITALOCEAN_APP_NAME` variable, `main.yml` skips the deploy.
 
-To open the MCP gateway, also add the secrets `MCP_ADMIN_TOKEN` and `MCP_AGENT_TOKENS` there; see [MCP gateway](#mcp-gateway). Without them, `/api/mcp-servers` and `/api/mcp` refuse every request.
+To manage the MCP servers, also add the secret `MCP_ADMIN_TOKEN` there; see [MCP gateway](#mcp-gateway). Without it, `/api/mcp-servers` refuses every request.
 
 To send errors to [Sentry](https://sentry.io/), also add the variables `SENTRY_DSN` and `VITE_SENTRY_DSN` there. The deploy passes them to the backend and to the frontend build, with the environment `production`. Without them, Sentry stays off.
 

@@ -1,13 +1,12 @@
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 
-import mcp_types as types
 import pytest
 from fastapi.testclient import TestClient
 from mcp import Client
 
 from app.api.deps import mcp_connect
-from app.control.adapters.mcp_gateway import McpGateway, UpstreamServer
+from app.control.adapters.mcp_gateway import UpstreamServer
 from app.core.config import settings
 from app.main import app
 from tests.test_mcp_gateway import bank
@@ -36,11 +35,6 @@ def api(db: None, admin: dict[str, str]) -> Iterator[TestClient]:
     app.dependency_overrides[mcp_connect] = lambda: connect
     yield TestClient(app, headers=admin)
     app.dependency_overrides.clear()
-
-
-@pytest.fixture
-def agents(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "mcp_agent_tokens", "low-secret:judge-low")
 
 
 @pytest.mark.parametrize("headers", [{}, {"Authorization": "Bearer wrong"}])
@@ -117,65 +111,3 @@ def test_disable_list_tools_and_delete(api: TestClient) -> None:
     assert {tool["name"] for tool in tools.json()} == {"get_client", "get_note"}
     assert deleted.status_code == 204
     assert api.get(URL).json() == []
-
-
-MCP_HEADERS = {
-    "Accept": "application/json, text/event-stream",
-    "MCP-Protocol-Version": "2025-06-18",
-    "Authorization": "Bearer low-secret",
-}
-
-
-@pytest.mark.parametrize("token", [None, "wrong"])
-def test_gateway_needs_an_agent_token(
-    db: None, agents: None, token: str | None
-) -> None:
-    # given
-    request = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
-    headers = {k: v for k, v in MCP_HEADERS.items() if k != "Authorization"}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-
-    # when
-    with TestClient(app) as client:
-        response = client.post("/api/mcp", json=request, headers=headers)
-
-    # then
-    assert response.status_code == 401
-
-
-def test_gateway_serves_mcp_over_http(db: None, agents: None) -> None:
-    # given
-    request = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
-    headers = MCP_HEADERS
-
-    # when
-    with TestClient(app) as client:
-        response = client.post("/api/mcp", json=request, headers=headers)
-
-    # then
-    assert response.status_code == 200
-    assert response.json()["result"]["tools"] == []
-
-
-def test_gateway_takes_the_identity_from_the_token(
-    db: None, agents: None, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # given
-    async def call_tool(self, name, arguments, agent_id) -> types.CallToolResult:
-        return types.CallToolResult(
-            content=[types.TextContent(type="text", text=agent_id)]
-        )
-
-    monkeypatch.setattr(McpGateway, "call_tool", call_tool)
-    params = {"name": "bank__get_client", "arguments": {}}
-    request = {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": params}
-    # An agent with the judge-low token claims more.
-    headers = {**MCP_HEADERS, "X-Agent-Id": "judge-privileged"}
-
-    # when
-    with TestClient(app) as client:
-        response = client.post("/api/mcp", json=request, headers=headers)
-
-    # then
-    assert response.json()["result"]["content"][0]["text"] == "judge-low"

@@ -64,7 +64,6 @@ jobs:
           VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
           NEW_RELIC_LICENSE_KEY: ${{ secrets.NEW_RELIC_LICENSE_KEY }}
           MCP_ADMIN_TOKEN: ${{ secrets.MCP_ADMIN_TOKEN }}
-          MCP_AGENT_TOKENS: ${{ secrets.MCP_AGENT_TOKENS }}
         with:
           token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
           print_build_logs: true

@@ -1,9 +1,11 @@
-"""Serves the tools of every registered MCP server as one MCP server.
+"""Gives an agent the tools of every registered MCP server, as one set.
 
-Agents connect to the gateway, not to the servers behind it. Each tool is
-listed as `<server>__<tool>`. A call is checked before it reaches the server
-(inbound, agent -> tool), and its result before the agent sees it (outbound,
-tool -> agent).
+The gateway runs inside the API, and the agent reaches the servers only
+through it: nothing exposes it on its own URL. Each tool is listed as
+`<server>__<tool>`. A call is checked before it reaches the server (inbound,
+agent -> tool), and its result before the agent sees it (outbound, tool ->
+agent). The agent id says whom the agent works for, so the guards can decide
+what that user may see.
 """
 
 import logging
@@ -17,8 +19,6 @@ import httpx2
 import mcp_types as types
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
-from mcp.server import Server
-from mcp.server.context import ServerRequestContext
 from mcp.shared._httpx_utils import create_mcp_http_client
 
 from app.control.envelope import Action, Direction, Envelope
@@ -35,7 +35,6 @@ LIST_TIMEOUT = 10
 BLOCKED_CALL = "[control layer] The call to {tool} was blocked."
 WITHHELD = "[control layer] This tool result was withheld."
 UNKNOWN_TOOL = "Unknown tool: {tool}"
-AGENT_HEADER = "x-agent-id"
 
 
 class UpstreamServer(Protocol):
@@ -146,33 +145,3 @@ class McpGateway:
             structured_content=decision.envelope.payload.get("structured_content"),
             is_error=result.is_error,
         )
-
-
-def agent_id(ctx: ServerRequestContext[Any]) -> str:
-    """Who is calling, for the guards and the logs. The endpoint sets the
-    X-Agent-Id header from the agent's token, so the agent can't choose it."""
-    headers = getattr(ctx.request, "headers", None) or {}
-    return headers.get(AGENT_HEADER) or "anonymous"
-
-
-def build_server(gateway: Callable[[], McpGateway]) -> Server[Any]:
-    """The MCP server agents connect to. It builds a gateway per request, so a
-    setting changed at runtime applies to the next one."""
-
-    async def on_list_tools(
-        ctx: ServerRequestContext[Any], params: types.PaginatedRequestParams | None
-    ) -> types.ListToolsResult:
-        return types.ListToolsResult(tools=await gateway().list_tools())
-
-    async def on_call_tool(
-        ctx: ServerRequestContext[Any], params: types.CallToolRequestParams
-    ) -> types.CallToolResult:
-        arguments = params.arguments or {}
-        return await gateway().call_tool(params.name, arguments, agent_id(ctx))
-
-    return Server(
-        "controllayer",
-        instructions="Tools from every MCP server behind the control layer.",
-        on_list_tools=on_list_tools,
-        on_call_tool=on_call_tool,
-    )
