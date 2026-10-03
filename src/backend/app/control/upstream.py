@@ -1,4 +1,8 @@
+import asyncio
+import json
+import re
 import time
+from collections.abc import AsyncIterator
 from typing import Any, Protocol
 from uuid import uuid4
 
@@ -14,6 +18,10 @@ class UpstreamError(Exception):
 
 class ChatUpstream(Protocol):
     async def complete(self, request: dict[str, Any]) -> dict[str, Any]: ...
+
+    def stream(self, request: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
+        """The completion as chat.completion.chunk dicts."""
+        ...
 
 
 def completion(model: str, content: str, finish_reason: str) -> dict[str, Any]:
@@ -34,6 +42,31 @@ def completion(model: str, content: str, finish_reason: str) -> dict[str, Any]:
     }
 
 
+def chunk(
+    id: str, model: str, delta: dict[str, Any], finish_reason: str | None = None
+) -> dict[str, Any]:
+    """One chat.completion.chunk of a streamed completion."""
+    return {
+        "id": id,
+        "object": "chat.completion.chunk",
+        "created": int(time.time()),
+        "model": model,
+        "choices": [{"index": 0, "delta": delta, "finish_reason": finish_reason}],
+    }
+
+
+def error_body(response: httpx.Response) -> Any:
+    try:
+        return response.json()
+    except ValueError:
+        return {"error": {"message": response.text}}
+
+
+def unreachable(error: httpx.HTTPError) -> UpstreamError:
+    message = f"upstream model unreachable: {error!r}"
+    return UpstreamError(502, {"error": {"message": message}})
+
+
 OPENAI_URL = "https://api.openai.com/v1/chat/completions"
 
 
@@ -52,29 +85,67 @@ class OpenAIUpstream:
             async with httpx.AsyncClient(timeout=120) as client:
                 response = await client.post(self.url, json=request, headers=headers)
         except httpx.HTTPError as error:
-            message = f"upstream model unreachable: {error!r}"
-            raise UpstreamError(502, {"error": {"message": message}}) from error
+            raise unreachable(error) from error
         if response.is_error:
-            try:
-                body = response.json()
-            except ValueError:
-                body = {"error": {"message": response.text}}
-            raise UpstreamError(response.status_code, body)
+            raise UpstreamError(response.status_code, error_body(response))
         try:
             return response.json()
         except ValueError as error:
             message = f"upstream returned a body that is not JSON: {response.text}"
             raise UpstreamError(502, {"error": {"message": message}}) from error
 
+    async def stream(self, request: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
+        request = {**request, "model": self.model, "stream": True}
+        headers = {"Authorization": f"Bearer {self.api_key}"}
+        try:
+            async with (
+                httpx.AsyncClient(timeout=120) as client,
+                client.stream(
+                    "POST", self.url, json=request, headers=headers
+                ) as response,
+            ):
+                if response.is_error:
+                    await response.aread()
+                    raise UpstreamError(response.status_code, error_body(response))
+                # Server-sent events: one "data: {chunk}" line per chunk, and
+                # "data: [DONE]" at the end.
+                async for line in response.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    data = line.removeprefix("data:").strip()
+                    if data == "[DONE]":
+                        return
+                    try:
+                        yield json.loads(data)
+                    except ValueError as error:
+                        message = f"upstream sent a chunk that is not JSON: {data}"
+                        body = {"error": {"message": message}}
+                        raise UpstreamError(502, body) from error
+        except httpx.HTTPError as error:
+            raise unreachable(error) from error
+
 
 class MockUpstream:
     """Echoes the last message back, so the demo shows what the model sees."""
 
+    def __init__(self, delay: float = 0.02) -> None:
+        # The pause between streamed words, so the demo looks like a model.
+        self.delay = delay
+
     async def complete(self, request: dict[str, Any]) -> dict[str, Any]:
-        messages = request["messages"]
+        return completion("mock", self.reply(request["messages"]), "stop")
+
+    async def stream(self, request: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
+        id = f"chatcmpl-{uuid4().hex}"
+        yield chunk(id, "mock", {"role": "assistant", "content": ""})
+        for word in re.findall(r"\s*\S+", self.reply(request["messages"])):
+            await asyncio.sleep(self.delay)
+            yield chunk(id, "mock", {"content": word})
+        yield chunk(id, "mock", {}, "stop")
+
+    def reply(self, messages: list[dict[str, Any]]) -> str:
         last = messages[-1]
-        content = (
-            f"[mock model] I received {len(messages)} messages. "
+        return (
+            f"I received {len(messages)} messages. "
             f"The last one ({last.get('role')}) was:\n{last.get('content')}"
         )
-        return completion("mock", content, "stop")

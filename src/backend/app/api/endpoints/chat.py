@@ -1,9 +1,11 @@
+import json
 import logging
+from collections.abc import AsyncIterator
 from typing import Annotated, Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.api.deps import chat_control
 from app.control.adapters.openai_chat import ChatControl
@@ -49,4 +51,53 @@ async def chat(
         trace_id=trace_id,
         reply=choice["message"].get("content") or "",
         blocked=choice["finish_reason"] == "content_filter",
+    )
+
+
+def event(**data: Any) -> str:
+    """One server-sent event with a JSON body."""
+    return f"data: {json.dumps(data)}\n\n"
+
+
+@router.post(
+    "/chat/stream",
+    response_class=StreamingResponse,
+    summary="Stream the model's answer through the control layer",
+    description=(
+        "Like `/chat`, but the answer comes as server-sent events while the "
+        "model writes it. Each event is `data:` and a JSON object: "
+        '`{"type": "delta", "text": ...}` for each piece of the answer, then '
+        '`{"type": "done", "blocked": ...}`, or `{"type": "error", "detail": '
+        "...}` if the model failed. The trace id is in the `X-Trace-Id` header."
+    ),
+)
+async def chat_stream(
+    request: ChatRequest, control: Annotated[ChatControl, Depends(chat_control)]
+) -> StreamingResponse:
+    trace_id = uuid4().hex
+    completion = {"messages": [{"role": "user", "content": request.message}]}
+
+    async def events() -> AsyncIterator[str]:
+        blocked = False
+        try:
+            async for chunk in control.stream(completion, trace_id):
+                choice = chunk["choices"][0]
+                if text := choice["delta"].get("content"):
+                    yield event(type="delta", text=text)
+                blocked = blocked or choice["finish_reason"] == "content_filter"
+        except UpstreamError as error:
+            logger.warning(
+                "upstream failed: trace_id=%s status=%s body=%s",
+                trace_id,
+                error.status_code,
+                error.body,
+            )
+            yield event(type="error", **UPSTREAM_FAILED)
+            return
+        yield event(type="done", blocked=blocked)
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={"X-Trace-Id": trace_id, "Cache-Control": "no-cache"},
     )

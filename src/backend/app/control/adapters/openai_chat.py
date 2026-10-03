@@ -9,13 +9,15 @@ tool call it asks for (inbound, agent -> tool).
 import json
 import logging
 import time
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
+from uuid import uuid4
 
 from app.control.envelope import Action, Direction, Envelope
 from app.control.layer import ControlLayer
 from app.control.pipeline import Decision
-from app.control.upstream import ChatUpstream, completion
+from app.control.upstream import ChatUpstream, chunk, completion
 
 logger = logging.getLogger("app.control.chat")
 
@@ -73,6 +75,64 @@ class ChatControl:
 
         self.log(trace, "response", body=response)
         return response
+
+    async def stream(
+        self, request: dict[str, Any], trace_id: str
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Like complete, but yields chat.completion.chunk dicts as the model
+        writes. Text goes out as it comes. Tool calls are held back to the
+        end, because they are checked whole, before the agent can act on
+        them."""
+        trace = Trace(trace_id, agent_id=request.get("user") or "anonymous")
+        model = request.get("model", "")
+        id = f"chatcmpl-{uuid4().hex}"
+        self.log(trace, "request", model=model, messages=request["messages"])
+
+        messages, blocked = await self.check_messages(request["messages"], trace)
+        if blocked:
+            self.log(trace, "response", body=BLOCKED_PROMPT)
+            yield chunk(id, model, {"content": BLOCKED_PROMPT}, "content_filter")
+            return
+
+        upstream_request = {**request, "messages": messages, "stream": True}
+        self.log(trace, "upstream_request", messages=messages)
+        start = time.perf_counter()
+        content: list[str] = []
+        calls: dict[int, dict[str, Any]] = {}
+        finish_reason = "stop"
+        async for part in self.upstream.stream(upstream_request):
+            for choice in part.get("choices", [])[:1]:
+                delta = choice.get("delta") or {}
+                for call in delta.get("tool_calls") or []:
+                    add_call_delta(calls, call)
+                finish_reason = choice.get("finish_reason") or finish_reason
+                if delta.get("content"):
+                    content.append(delta["content"])
+                    yield chunk(id, model, {"content": delta["content"]})
+        latency_ms = round((time.perf_counter() - start) * 1000, 3)
+
+        message: dict[str, Any] = {"role": "assistant", "content": "".join(content)}
+        if calls:
+            message["tool_calls"] = [calls[index] for index in sorted(calls)]
+        response = completion(model, "", finish_reason)
+        response["choices"][0]["message"] = message
+        self.log(trace, "upstream_response", latency_ms=latency_ms, body=response)
+        response = await self.check_response(response, trace)
+        self.log(trace, "response", body=response)
+
+        choice = response["choices"][0]
+        if choice["finish_reason"] == "content_filter":
+            delta = {"content": choice["message"]["content"]}
+        elif calls:
+            delta = {
+                "tool_calls": [
+                    {"index": index, **call}
+                    for index, call in enumerate(message["tool_calls"])
+                ]
+            }
+        else:
+            delta = {}
+        yield chunk(id, model, delta, choice["finish_reason"])
 
     async def check_messages(
         self, messages: list[dict[str, Any]], trace: Trace
@@ -154,6 +214,20 @@ class ChatControl:
             data = {k: v for k, v in data.items() if k not in ("messages", "body")}
         event = {"event": stage, "trace_id": trace.trace_id, **data}
         logger.info(json.dumps(event, default=str))
+
+
+def add_call_delta(calls: dict[int, dict[str, Any]], delta: dict[str, Any]) -> None:
+    """Adds one streamed piece of a tool call to the calls so far. The model
+    sends the id and name first, then the arguments in pieces."""
+    call = calls.setdefault(
+        delta.get("index", 0),
+        {"id": None, "type": "function", "function": {"name": "", "arguments": ""}},
+    )
+    if delta.get("id"):
+        call["id"] = delta["id"]
+    function = delta.get("function") or {}
+    call["function"]["name"] += function.get("name") or ""
+    call["function"]["arguments"] += function.get("arguments") or ""
 
 
 def arguments(function: dict[str, Any]) -> dict[str, Any]:
