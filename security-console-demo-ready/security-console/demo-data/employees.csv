@@ -1,0 +1,6 @@
+employee_id,name,job_title,department,office,manager,project,email,phone,address,salary,iban,performance_review,api_key
+EMP-001,Anna Novak,Security Analyst,Threat Intelligence,Prague,Marek Dvorak,Project Atlas,anna.novak@example.test,+420 700 000 042,"Prague 2, Demo Street 42",92000 CZK,CZ6508000000192000145399,Exceeds expectations,sk-test-DEMO-ANNA-NOT-REAL-001
+EMP-002,Marek Dvorak,Head of Cybersecurity,Cybersecurity,Prague,Elena Horak,Project Atlas,marek.dvorak@example.test,+420 700 000 043,"Prague 7, Demo Street 11",145000 CZK,CZ1701000000001234567899,Exceeds expectations,sk-test-DEMO-MAREK-NOT-REAL-002
+EMP-003,Sofia Kral,Data Analyst,Business Intelligence,Brno,Petr Vesely,Project Aurora,sofia.kral@example.test,+420 700 000 044,"Brno, Demo Avenue 8",78000 CZK,CZ5508000000009876543210,Meets expectations,sk-test-DEMO-SOFIA-NOT-REAL-003
+EMP-004,Daniel Urban,Software Engineer,Platform Engineering,Prague,Marek Dvorak,Project Horizon,daniel.urban@example.test,+420 700 000 045,"Prague 4, Demo Road 17",105000 CZK,CZ2106000000002468135790,Meets expectations,sk-test-DEMO-DANIEL-NOT-REAL-004
+EMP-005,Lucie Benes,HR Specialist,People Operations,Ostrava,Elena Horak,Project People,lucie.benes@example.test,+420 700 000 046,"Ostrava, Demo Lane 3",71000 CZK,CZ4303000000001357924680,Meets expectations,sk-test-DEMO-LUCIE-NOT-REAL-005
