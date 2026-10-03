@@ -1,4 +1,4 @@
-from app.control.audit import AuditSink, LogAuditSink
+from app.control.audit import AuditSink, EventAuditSink
 from app.control.envelope import Direction, Envelope
 from app.control.guards.prompt_injection import PromptInjectionGuard
 from app.control.guards.spotlight import SpotlightGuard
@@ -18,7 +18,7 @@ class ControlLayer:
 def build_layer(
     mode: Mode, injection_threshold: float, audit: AuditSink | None = None
 ) -> ControlLayer:
-    audit = audit or LogAuditSink()
+    audit = audit or EventAuditSink()
     injection = PromptInjectionGuard(threshold=injection_threshold)
     return ControlLayer(
         {

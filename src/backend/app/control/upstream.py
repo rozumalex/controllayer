@@ -95,7 +95,13 @@ class OpenAIUpstream:
             raise UpstreamError(502, {"error": {"message": message}}) from error
 
     async def stream(self, request: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
-        request = {**request, "model": self.model, "stream": True}
+        request = {
+            **request,
+            "model": self.model,
+            "stream": True,
+            # Without it, a stream doesn't say how many tokens it used.
+            "stream_options": {"include_usage": True},
+        }
         headers = {"Authorization": f"Bearer {self.api_key}"}
         try:
             async with (
@@ -133,15 +139,33 @@ class MockUpstream:
         self.delay = delay
 
     async def complete(self, request: dict[str, Any]) -> dict[str, Any]:
-        return completion("mock", self.reply(request["messages"]), "stop")
+        reply = self.reply(request["messages"])
+        response = completion("mock", reply, "stop")
+        response["usage"] = self.usage(request["messages"], reply)
+        return response
 
     async def stream(self, request: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
         id = f"chatcmpl-{uuid4().hex}"
+        reply = self.reply(request["messages"])
         yield chunk(id, "mock", {"role": "assistant", "content": ""})
-        for word in re.findall(r"\s*\S+", self.reply(request["messages"])):
+        for word in re.findall(r"\s*\S+", reply):
             await asyncio.sleep(self.delay)
             yield chunk(id, "mock", {"content": word})
         yield chunk(id, "mock", {}, "stop")
+        # OpenAI sends the usage last, in a chunk with no choices.
+        usage = {**chunk(id, "mock", {}), "choices": []}
+        yield {**usage, "usage": self.usage(request["messages"], reply)}
+
+    def usage(self, messages: list[dict[str, Any]], reply: str) -> dict[str, int]:
+        """A rough token count, about four characters a token, so the demo
+        shows usage without a model."""
+        prompt = sum(len(str(m.get("content") or "")) for m in messages) // 4 + 1
+        answer = len(reply) // 4 + 1
+        return {
+            "prompt_tokens": prompt,
+            "completion_tokens": answer,
+            "total_tokens": prompt + answer,
+        }
 
     def reply(self, messages: list[dict[str, Any]]) -> str:
         last = messages[-1]

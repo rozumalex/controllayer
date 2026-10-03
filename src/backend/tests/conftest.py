@@ -1,14 +1,16 @@
 import asyncio
+from collections.abc import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import text
+from sqlalchemy import delete, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.core.config import settings
 from app.db.base import Base
+from app.db.models import ControlEvent
 from app.db.session import SessionLocal
 from app.main import app
 
@@ -31,6 +33,7 @@ async def create_database() -> None:
         if not exists:
             await connection.execute(text(f'CREATE DATABASE "{TEST_URL.database}"'))
     await dev.dispose()
+    await empty_tables()
 
 
 async def empty_tables() -> None:
@@ -50,6 +53,19 @@ def db() -> None:
     asyncio.run(empty_tables())
 
 
+async def delete_events() -> None:
+    async with SessionLocal() as session:
+        await session.execute(delete(ControlEvent))
+        await session.commit()
+
+
 @pytest.fixture
-def client() -> TestClient:
-    return TestClient(app)
+def no_events() -> None:
+    """Starts the test with no control layer events in the database."""
+    asyncio.run(delete_events())
+
+
+@pytest.fixture
+def client() -> Iterator[TestClient]:
+    with TestClient(app) as client:
+        yield client
