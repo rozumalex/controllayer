@@ -62,6 +62,7 @@ jobs:
         env:
           SENTRY_DSN: ${{ vars.SENTRY_DSN }}
           VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
+          GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
           NEW_RELIC_LICENSE_KEY: ${{ secrets.NEW_RELIC_LICENSE_KEY }}
           BANK_MCP_TOKEN: ${{ secrets.BANK_MCP_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

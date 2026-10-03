@@ -9,8 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import PRIVILEGED, Authorization, bearer_token
 from app.api.endpoints.employees import employee
 from app.core.config import settings
+from app.core.google import GoogleTokenError
+from app.core.google import verify as verify_google
 from app.core.passwords import hash_password, verify_password
-from app.core.schema.auth import SignedIn, SignIn, SignUp
+from app.core.schema.auth import GoogleSignIn, SignedIn, SignIn, SignUp
 from app.db.auth import issue_token, revoke_token
 from app.db.models import Organization, User
 from app.db.session import get_session
@@ -48,18 +50,67 @@ def slug(name: str) -> str:
 async def sign_up(request: SignUp, session: Session) -> SignedIn:
     if await session.scalar(select(User.id).where(User.email == request.email)):
         raise HTTPException(409, "This email has an account. Sign in instead.")
-    org = Organization(slug=slug(request.organization), name=request.organization)
+    password_hash = await hash_password(request.password)
+    user = await start_organization(
+        session, request.organization, request.name, request.email, password_hash
+    )
+    return await signed_in(session, user)
+
+
+async def start_organization(
+    session: AsyncSession,
+    organization: str,
+    name: str,
+    email: str,
+    password_hash: str | None = None,
+) -> User:
+    """A new organization and its first user, who administers it."""
+    org = Organization(slug=slug(organization), name=organization)
     session.add(org)
     await session.flush()
     user = User(
-        email=request.email,
-        name=request.name,
+        email=email,
+        name=name,
         org_id=org.id,
         clearance_level=PRIVILEGED,
-        password_hash=await hash_password(request.password),
+        password_hash=password_hash,
     )
     session.add(user)
     await session.commit()
+    return user
+
+
+@router.post(
+    "/google",
+    summary="Sign in with Google",
+    description=(
+        "Takes the ID token of Sign in with Google and signs in the user with "
+        "its verified email. For an email with no account, it starts the "
+        "`organization` given, as sign-up does; without one, it answers 404."
+    ),
+    responses={
+        401: {"description": "Google didn't confirm who the user is."},
+        404: {"description": "No account, or Google sign-in is off."},
+    },
+)
+async def google(request: GoogleSignIn, session: Session) -> SignedIn:
+    if not settings.google_client_id:
+        raise HTTPException(404, "Google sign-in is off")
+    try:
+        identity = await verify_google(request.credential, settings.google_client_id)
+    except GoogleTokenError as error:
+        raise HTTPException(401, "Google didn't confirm who you are") from error
+    user = await session.scalar(select(User).where(User.email == identity.email))
+    if user is None:
+        if not request.organization:
+            raise HTTPException(
+                404,
+                f"{identity.email} has no account. Start an organization, or "
+                "ask your admin for an invitation.",
+            )
+        user = await start_organization(
+            session, request.organization, identity.name, identity.email
+        )
     return await signed_in(session, user)
 
 

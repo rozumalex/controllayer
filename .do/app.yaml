@@ -69,6 +69,9 @@ services:
       - key: OPENAI_API_KEY
         value: "${OPENAI_API_KEY}"
         type: SECRET
+      # Sign in with Google; unset, it is off. Not a secret.
+      - key: GOOGLE_CLIENT_ID
+        value: "${GOOGLE_CLIENT_ID}"
 
 workers:
   # Worker and beat in one process. Keep one instance, or beat sends every
@@ -119,6 +122,9 @@ static_sites:
         scope: BUILD_TIME
       - key: VITE_SENTRY_ENVIRONMENT
         value: production
+        scope: BUILD_TIME
+      - key: VITE_GOOGLE_CLIENT_ID
+        value: "${GOOGLE_CLIENT_ID}"
         scope: BUILD_TIME
 
 databases:

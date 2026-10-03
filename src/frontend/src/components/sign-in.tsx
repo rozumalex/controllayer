@@ -1,6 +1,7 @@
 import { LogOut } from "lucide-react"
 import {
   useEffect,
+  useRef,
   useState,
   type ComponentProps,
   type FormEvent,
@@ -8,6 +9,7 @@ import {
 } from "react"
 
 import { COMPANY, Logo } from "@/components/brand"
+import { GoogleButton } from "@/components/google-button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -16,9 +18,11 @@ import type { Employee } from "@/lib/policy"
 import { SessionContext, useSession } from "@/lib/session"
 import {
   fetchMe,
+  googleEnabled,
   initials,
   signIn,
   signInToDemo,
+  signInWithGoogle,
   signOut,
   signUp,
 } from "@/lib/users"
@@ -66,10 +70,21 @@ function Field({
   )
 }
 
+function Divider({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex items-center gap-3 text-xs text-muted-foreground">
+      <span className="h-px flex-1 bg-border" />
+      {children}
+      <span className="h-px flex-1 bg-border" />
+    </div>
+  )
+}
+
 function SignIn({ onSignedIn }: { onSignedIn: (user: Employee) => void }) {
   const [mode, setMode] = useState<"sign-in" | "sign-up">("sign-in")
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const organization = useRef<HTMLInputElement>(null)
   const signingUp = mode === "sign-up"
 
   async function run(action: () => Promise<Employee>) {
@@ -82,6 +97,15 @@ function SignIn({ onSignedIn }: { onSignedIn: (user: Employee) => void }) {
     } finally {
       setBusy(false)
     }
+  }
+
+  function google(credential: string) {
+    const name = organization.current?.value.trim()
+    if (signingUp && !name) {
+      setError("Name your organization first, then continue with Google.")
+      return
+    }
+    void run(() => signInWithGoogle(credential, signingUp ? name : undefined))
   }
 
   function submit(event: FormEvent<HTMLFormElement>) {
@@ -124,18 +148,33 @@ function SignIn({ onSignedIn }: { onSignedIn: (user: Employee) => void }) {
           </p>
         </div>
 
-        <div className="flex items-center gap-3 text-xs text-muted-foreground">
-          <span className="h-px flex-1 bg-border" />
-          or with your email
-          <span className="h-px flex-1 bg-border" />
-        </div>
+        {googleEnabled && <Divider>or</Divider>}
+        {signingUp && (
+          // Outside the form, as Google sign-up needs it too; the form
+          // attribute still sends it with the form.
+          <Field
+            key="organization"
+            ref={organization}
+            name="organization"
+            label="Organization"
+            form="credentials"
+            autoFocus
+          />
+        )}
+        <GoogleButton
+          text={signingUp ? "signup_with" : "signin_with"}
+          onCredential={google}
+        />
+        <Divider>or with your email</Divider>
 
-        <form key={mode} onSubmit={submit} className="flex flex-col gap-4">
+        <form
+          id="credentials"
+          key={mode}
+          onSubmit={submit}
+          className="flex flex-col gap-4"
+        >
           {signingUp && (
-            <>
-              <Field name="organization" label="Organization" autoFocus />
-              <Field name="name" label="Your name" autoComplete="name" />
-            </>
+            <Field name="name" label="Your name" autoComplete="name" />
           )}
           <Field
             name="email"

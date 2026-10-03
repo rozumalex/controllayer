@@ -108,6 +108,9 @@ class Settings(BaseSettings):
     control_flow_hash_key: str = ""
     # How long a sign-in lasts.
     auth_session_days: int = 30
+    # The OAuth client ID of Sign in with Google, from the Google Cloud
+    # console. Empty turns Google sign-in off.
+    google_client_id: str = ""
     # The demo account the seed creates in the demo organization, and that
     # "Try the demo" signs in as.
     demo_email: str = "demo@controllayer.net"

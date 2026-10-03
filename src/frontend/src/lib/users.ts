@@ -73,6 +73,16 @@ export const signUp = (fields: {
 
 export const signInToDemo = () => authenticate("demo")
 
+// Whether Sign in with Google is on, see GoogleButton.
+export const googleEnabled = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID)
+
+// With an organization, a Google user who has no account yet starts it.
+export const signInWithGoogle = (credential: string, organization?: string) =>
+  authenticate(
+    "google",
+    organization ? { credential, organization } : { credential }
+  )
+
 export async function signOut() {
   await fetch("/api/auth/sign-out", {
     method: "POST",
