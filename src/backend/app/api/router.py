@@ -9,6 +9,7 @@ from app.api.endpoints import (
     identity,
     mcp_servers,
     policy,
+    policy_assistant,
     scim,
     sso,
     traces,
@@ -32,3 +33,4 @@ router.include_router(traces.router, dependencies=privileged)
 router.include_router(mcp_servers.router, dependencies=privileged)
 router.include_router(policy.router, dependencies=privileged)
 router.include_router(identity.router, dependencies=privileged)
+router.include_router(policy_assistant.router, dependencies=privileged)

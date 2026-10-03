@@ -1,6 +1,7 @@
 import { Search } from "lucide-react"
 import { useCallback, useEffect, useState, type ReactNode } from "react"
 
+import { PolicyAssistant } from "@/components/policy-assistant"
 import { PolicySheet, type Editing } from "@/components/policy-sheet"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -275,6 +276,8 @@ export function Policy() {
           Could not load the policy: {error}
         </p>
       )}
+
+      <PolicyAssistant onApplied={load} />
 
       <Card>
         <CardHeader className="flex items-center justify-between gap-3">

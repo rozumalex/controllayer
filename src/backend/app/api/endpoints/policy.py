@@ -26,9 +26,10 @@ Session = Annotated[AsyncSession, Depends(get_session)]
 Gateway = Annotated[McpGateway, Depends(mcp_gateway)]
 
 
-async def save(
+async def stage(
     session: AsyncSession, role: str, settings: PolicySettings, user: User
 ) -> None:
+    """Saves the role's policy, by the user, when the session commits."""
     values = {
         "org_id": user.org_id,
         "role": role,
@@ -47,6 +48,12 @@ async def save(
             },
         )
     )
+
+
+async def save(
+    session: AsyncSession, role: str, settings: PolicySettings, user: User
+) -> None:
+    await stage(session, role, settings, user)
     await session.commit()
 
 
