@@ -8,6 +8,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
 
+from app.api.deps import PRIVILEGED
 from app.core.config import settings
 from app.db.base import Base
 from app.db.models import ControlEvent, User
@@ -79,7 +80,9 @@ async def tester() -> User:
     async with SessionLocal() as session:
         user = await session.scalar(select(User).where(User.email == TESTER_EMAIL))
         if user is None:
-            user = User(email=TESTER_EMAIL, name="Test User")
+            user = User(
+                email=TESTER_EMAIL, name="Test User", clearance_level=PRIVILEGED
+            )
             session.add(user)
             await session.commit()
         return user
@@ -87,8 +90,8 @@ async def tester() -> User:
 
 @pytest.fixture
 def user() -> User:
-    """The user the test signs in as. Ask for it after db, which empties the
-    users table."""
+    """The user the test signs in as, privileged so it can open the admin
+    pages. Ask for it after db, which empties the users table."""
     return asyncio.run(tester())
 
 

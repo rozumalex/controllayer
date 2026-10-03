@@ -199,6 +199,18 @@ def test_me_is_the_picked_employee(staff: TestClient) -> None:
     assert response.json() == bob
 
 
+def test_sign_in_lists_staff_without_their_details(staff: TestClient) -> None:
+    # given
+    client = TestClient(app)
+
+    # when
+    listed = client.get("/api/employees/sign-in").json()
+
+    # then
+    assert [e["name"] for e in listed] == ["Ann Lee", "Bob Ray", "Cy Fox"]
+    assert set(listed[0]) == {"id", "name", "role", "team", "clearance_level"}
+
+
 @pytest.mark.parametrize("headers", [{}, {"User-Id": str(uuid.uuid4())}])
 def test_me_without_a_known_user_is_401(headers: dict[str, str]) -> None:
     # given

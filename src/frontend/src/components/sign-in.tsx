@@ -5,9 +5,15 @@ import { COMPANY, Logo } from "@/components/brand"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { fetchEmployees, type Employee } from "@/lib/policy"
+import type { Employee } from "@/lib/policy"
 import { SessionContext, useSession } from "@/lib/session"
-import { fetchMe, initials, storeUserId } from "@/lib/users"
+import {
+  fetchMe,
+  fetchSignInEmployees,
+  initials,
+  storeUserId,
+  type SignInEmployee,
+} from "@/lib/users"
 
 // A demo sign-in: the user picks who they are from the staff list. Nothing
 // proves it, the pick only names the user to the API.
@@ -25,9 +31,10 @@ export function SignedIn({ children }: { children: ReactNode }) {
   if (user === null) {
     return (
       <SignIn
-        onPick={(picked) => {
+        onPick={async (picked) => {
           storeUserId(picked.id)
-          setUser(picked)
+          // The sign-in list holds only a few details; load the rest.
+          setUser(await fetchMe().catch(() => null))
         }}
       />
     )
@@ -43,19 +50,19 @@ export function SignedIn({ children }: { children: ReactNode }) {
   )
 }
 
-function SignIn({ onPick }: { onPick: (user: Employee) => void }) {
+function SignIn({ onPick }: { onPick: (user: SignInEmployee) => void }) {
   const [query, setQuery] = useState("")
-  const [users, setUsers] = useState<Employee[]>([])
+  const [users, setUsers] = useState<SignInEmployee[]>([])
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     let current = true
     // Waits for a pause in typing, so each key press is not a request.
     const timer = setTimeout(() => {
-      fetchEmployees({ q: query.trim(), role: "", limit: 12, offset: 0 })
+      fetchSignInEmployees(query.trim())
         .then((found) => {
           if (!current) return
-          setUsers(found.employees)
+          setUsers(found)
           setError(null)
         })
         .catch((e: Error) => {
