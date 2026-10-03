@@ -16,6 +16,7 @@ from app.control.audit import (
     UserEventSink,
 )
 from app.control.guard import Guard
+from app.control.guards.loop import LoopGuard
 from app.control.guards.policy import (
     BudgetGuard,
     ClearanceGuard,
@@ -41,6 +42,7 @@ from app.db.policy import (
     data_catalog,
     monthly_usage,
     recent_questions,
+    recent_tool_calls,
     role_policy,
 )
 from app.db.session import SessionLocal
@@ -215,6 +217,13 @@ async def mcp_gateway(user: CurrentUser, policy: UserPolicy) -> McpGateway:
     sink = UserEventSink(event_sink(), user.id)
     async with SessionLocal() as session:
         catalog = await data_catalog(session)
+        recent = await recent_tool_calls(
+            session, user.id, settings.control_loop_window_seconds
+        )
+    # First, so it counts every call, even one another guard blocks.
+    loop = LoopGuard(
+        settings.control_loop_repeat_limit, settings.control_loop_call_limit, recent
+    )
     clearance = ClearanceGuard(
         catalog,
         policy.clearance,
@@ -225,7 +234,10 @@ async def mcp_gateway(user: CurrentUser, policy: UserPolicy) -> McpGateway:
     patterns = sensitive_data(policy)
     return McpGateway(
         control_layer(
-            sink, policy, [tool_access(policy), patterns], [clearance, patterns]
+            sink,
+            policy,
+            [loop, tool_access(policy), patterns],
+            [clearance, patterns],
         ),
         mcp_connect(),
         enabled_mcp_servers,

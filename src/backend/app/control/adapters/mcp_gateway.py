@@ -23,6 +23,7 @@ from mcp.shared._httpx_utils import create_mcp_http_client
 
 from app.control.audit import EventSink, LogEventSink
 from app.control.envelope import Action, Direction, Envelope
+from app.control.guards.loop import LoopGuard
 from app.control.guards.sensitive_data import scrub
 from app.control.layer import ControlLayer
 from app.control.pipeline import Decision
@@ -93,6 +94,9 @@ class McpGateway:
         self.servers = servers
         self.log_payloads = log_payloads
         self.sink = sink or LogEventSink(logger)
+        # Whether the loop guard blocked a call. A loop doesn't end by
+        # itself, so the agent stops asking for tools.
+        self.looping = False
 
     async def list_tools(self) -> list[types.Tool]:
         tools = []
@@ -138,6 +142,7 @@ class McpGateway:
         )
         decision = await self.inspect(inbound)
         if decision.action is Action.BLOCK:
+            self.looping |= decision.verdicts[-1].guard == LoopGuard.name
             return await self.respond(trace_id, error(BLOCKED_CALL.format(tool=name)))
 
         async with self.connect(server) as client:

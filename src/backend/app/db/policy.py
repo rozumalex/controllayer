@@ -5,6 +5,7 @@ from decimal import Decimal
 from sqlalchemy import BigInteger, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.control.guards.loop import Call, LoopGuard
 from app.core.config import settings
 from app.core.schema.policy import Budget, Clearance, PolicySettings, ToolAction
 from app.db.models import BankDataCatalog, ControlEvent, Policy
@@ -95,3 +96,23 @@ async def recent_questions(session: AsyncSession, user_id: uuid.UUID) -> int:
         )
     )
     return count or 0
+
+
+async def recent_tool_calls(
+    session: AsyncSession, user_id: uuid.UUID, seconds: int
+) -> list[Call]:
+    """The tool calls the user made in the last seconds, blocked ones too, as
+    the loop guard's verdicts saved them: server, tool and arguments hash."""
+    start = datetime.now(UTC) - timedelta(seconds=seconds)
+    data = ControlEvent.data
+    rows = await session.execute(
+        select(
+            data["server"].astext, data["tool"].astext, data["payload_sha256"].astext
+        ).where(
+            ControlEvent.user_id == user_id,
+            ControlEvent.event == "verdict",
+            data["guard"].astext == LoopGuard.name,
+            ControlEvent.created_at >= start,
+        )
+    )
+    return [(server, tool, sha) for server, tool, sha in rows]

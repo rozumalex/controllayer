@@ -35,6 +35,13 @@ class Settings(BaseSettings):
     chat_max_tokens: int = 4096
     # Chat questions per user per minute; 0 turns the limit off.
     control_rate_limit_per_minute: int = 20
+    # Runaway agent loops: in any window of this many seconds, a user's agent
+    # may make the same tool call (same tool, same arguments) at most the
+    # repeat limit times, and at most the call limit tool calls of any kind.
+    # 0 turns a limit off.
+    control_loop_window_seconds: int = 60
+    control_loop_repeat_limit: int = 3
+    control_loop_call_limit: int = 30
     # The semantic injection guard asks this model whether a message is an
     # attack. It runs only with an OpenAI key, and needs a model that takes
     # temperature and structured outputs, so not a reasoning model.

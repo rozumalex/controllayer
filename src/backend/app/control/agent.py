@@ -4,8 +4,9 @@ The model gets every tool of every enabled server. When it asks for some, the
 agent runs each call through the gateway, whose guards check the call before
 the server sees it and the result before the model does, and sends the
 results back to the model. It repeats until the model answers, at most
-MAX_STEPS times. The calls go into the chat's trace, so the dashboard shows a
-question and the tools it used together.
+MAX_STEPS times. Once the gateway blocks a call as a loop, the next step
+answers without tools. The calls go into the chat's trace, so the dashboard
+shows a question and the tools it used together.
 """
 
 import json
@@ -80,7 +81,7 @@ class Agent:
         request: dict[str, Any] = {"messages": messages}
         if tools:
             request["tools"] = tools
-            if step == MAX_STEPS - 1:
+            if step == MAX_STEPS - 1 or self.gateway.looping:
                 request["tool_choice"] = "none"
         return request
 
