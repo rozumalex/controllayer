@@ -1,3 +1,4 @@
+import { REGEXP_ONLY_DIGITS } from "input-otp"
 import { LogOut } from "lucide-react"
 import {
   useEffect,
@@ -12,6 +13,11 @@ import { GoogleButton } from "@/components/google-button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import {
+  InputOTP,
+  InputOTPGroup,
+  InputOTPSlot,
+} from "@/components/ui/input-otp"
 import { Label } from "@/components/ui/label"
 import type { Employee } from "@/lib/policy"
 import { SessionContext, useSession } from "@/lib/session"
@@ -84,6 +90,9 @@ function Divider({ children }: { children: ReactNode }) {
 function SignIn({ onSignedIn }: { onSignedIn: (user: Employee) => void }) {
   // The email a code went to, or null before one is sent.
   const [codeSentTo, setCodeSentTo] = useState<string | null>(null)
+  const [code, setCode] = useState("")
+  // Not an error: news about the code, such as one sent moments ago.
+  const [notice, setNotice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -107,11 +116,24 @@ function SignIn({ onSignedIn }: { onSignedIn: (user: Employee) => void }) {
 
   function askForCode(email: string) {
     void run(async () => {
-      const user = await sendCode(email)
+      const answer = await sendCode(email)
       // The demo's email signs in at once; any other gets a code.
-      if (!user) setCodeSentTo(email)
-      return user
+      if (typeof answer !== "string") return answer
+      setCode("")
+      setCodeSentTo(email)
+      setNotice(
+        answer === "recent"
+          ? "A code went out moments ago. Use it, or ask for a new one in half a minute."
+          : null
+      )
+      return null
     })
+  }
+
+  function enterCode(value: string) {
+    setCode(value)
+    if (value.length === 6 && codeSentTo)
+      void run(() => signInWithCode(codeSentTo, value))
   }
 
   return (
@@ -169,22 +191,39 @@ function SignIn({ onSignedIn }: { onSignedIn: (user: Employee) => void }) {
         ) : (
           <form
             onSubmit={(e) => {
-              const code = field(e, "code")
-              void run(() => signInWithCode(codeSentTo, code))
+              e.preventDefault()
+              enterCode(code)
             }}
             className="flex flex-col gap-4"
           >
-            <Field
-              name="code"
-              label={`The code we sent to ${codeSentTo}`}
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              pattern="\d{6}"
-              maxLength={6}
-              autoFocus
-            />
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="code">The code we sent to {codeSentTo}</Label>
+              <InputOTP
+                id="code"
+                maxLength={6}
+                pattern={REGEXP_ONLY_DIGITS}
+                value={code}
+                onChange={enterCode}
+                disabled={busy}
+                autoFocus
+                containerClassName="w-full"
+              >
+                <InputOTPGroup className="w-full">
+                  {[0, 1, 2, 3, 4, 5].map((index) => (
+                    <InputOTPSlot
+                      key={index}
+                      index={index}
+                      className="h-8 flex-1 bg-background text-base"
+                    />
+                  ))}
+                </InputOTPGroup>
+              </InputOTP>
+            </div>
+            {notice && (
+              <p className="text-sm text-muted-foreground">{notice}</p>
+            )}
             {error && <p className="text-sm text-destructive">{error}</p>}
-            <Button type="submit" disabled={busy}>
+            <Button type="submit" disabled={busy || code.length < 6}>
               Sign in
             </Button>
             <div className="flex justify-between text-sm">
@@ -194,6 +233,7 @@ function SignIn({ onSignedIn }: { onSignedIn: (user: Employee) => void }) {
                 className="h-auto p-0"
                 onClick={() => {
                   setError(null)
+                  setNotice(null)
                   setCodeSentTo(null)
                 }}
               >

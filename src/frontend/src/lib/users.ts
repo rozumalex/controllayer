@@ -40,6 +40,16 @@ export async function fetchMe(): Promise<Employee | null> {
 // What a sign-in returns, see SignedIn in the backend.
 type SignedIn = { token: string; user: Employee }
 
+// A failed request, with its HTTP status.
+class RequestError extends Error {
+  readonly status: number
+
+  constructor(message: string, status: number) {
+    super(message)
+    this.status = status
+  }
+}
+
 async function post<T>(
   path: string,
   body?: Record<string, string>
@@ -54,7 +64,10 @@ async function post<T>(
     const detail = Array.isArray(error.detail)
       ? error.detail[0]?.msg
       : error.detail
-    throw new Error(detail ?? `The request failed with ${response.status}.`)
+    throw new RequestError(
+      detail ?? `The request failed with ${response.status}.`,
+      response.status
+    )
   }
   return response.json()
 }
@@ -64,11 +77,19 @@ function keep(signed: SignedIn): Employee {
   return signed.user
 }
 
-// Emails a sign-in code. The demo account's email signs in at once instead,
-// and the user comes back.
-export async function sendCode(email: string): Promise<Employee | null> {
-  const answer = await post<SignedIn | { sent: true }>("email", { email })
-  return "token" in answer ? keep(answer) : null
+// Emails a sign-in code: "sent", or "recent" when one went out moments ago
+// and still works. The demo account's email signs in at once instead, and
+// the user comes back.
+export async function sendCode(
+  email: string
+): Promise<Employee | "sent" | "recent"> {
+  try {
+    const answer = await post<SignedIn | { sent: true }>("email", { email })
+    return "token" in answer ? keep(answer) : "sent"
+  } catch (e) {
+    if (e instanceof RequestError && e.status === 429) return "recent"
+    throw e
+  }
 }
 
 export const signInWithCode = async (email: string, code: string) =>
