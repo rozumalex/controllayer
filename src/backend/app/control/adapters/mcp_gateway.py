@@ -23,6 +23,7 @@ from mcp.shared._httpx_utils import create_mcp_http_client
 
 from app.control.audit import EventSink, LogEventSink
 from app.control.envelope import Action, Direction, Envelope
+from app.control.guards.sensitive_data import scrub
 from app.control.layer import ControlLayer
 from app.control.pipeline import Decision
 
@@ -99,7 +100,9 @@ class McpGateway:
             try:
                 upstream = await list_upstream_tools(server, self.connect)
             except Exception as exc:
-                logger.warning("can't list the tools of %s: %r", server.name, exc)
+                logger.warning(
+                    "can't list the tools of %s: %s", server.name, scrub(repr(exc))
+                )
                 continue
             for tool in upstream:
                 name = f"{server.name}{SEPARATOR}{tool.name}"
@@ -196,6 +199,9 @@ class McpGateway:
 
     async def log(self, trace_id: str, stage: str, **data: Any) -> None:
         # Arguments and results may hold secrets, like prompts in the chat.
+        payloads = ("arguments", "body")
         if not self.log_payloads:
-            data = {k: v for k, v in data.items() if k not in ("arguments", "body")}
+            data = {k: v for k, v in data.items() if k not in payloads}
+        # PII and secrets never reach the logs, even with the payloads.
+        data = {k: scrub(v) if k in payloads else v for k, v in data.items()}
         await self.sink.write({"event": stage, "trace_id": trace_id, **data})

@@ -1,4 +1,5 @@
 import asyncio
+import json
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -8,20 +9,21 @@ from fastapi.testclient import TestClient
 from mcp import Client
 from mcp.server.mcpserver import MCPServer
 
-from app.api.deps import control_layer
+from app.api.deps import control_layer, sensitive_data
 from app.control.adapters.mcp_gateway import McpGateway, UpstreamServer
 from app.control.adapters.openai_chat import ChatControl
 from app.control.agent import Agent
 from app.control.envelope import Direction
 from app.control.guards.policy import ClearanceGuard, ToolAccessGuard
 from app.control.guards.prompt_injection import PromptInjectionGuard
+from app.control.upstream import MockUpstream
 from app.core.schema.policy import Budget, Clearance, PolicySettings, ToolAction
 from app.db.models import Policy, User
 from app.db.policy import DEFAULT_ROLE, builtin_policy
 from app.db.session import SessionLocal
 from app.main import app
 from tests.conftest import signed_in
-from tests.test_agent import QUESTION, ToolUsingUpstream
+from tests.test_agent import QUESTION, ListSink, ToolUsingUpstream
 from tests.test_mcp_gateway import Upstream, text
 
 URL = "/api/chat"
@@ -197,3 +199,57 @@ def test_model_never_sees_a_blocked_tool() -> None:
     # then
     names = {t["function"]["name"] for t in upstream.requests[0]["tools"]}
     assert names == {"crm__get_client"}
+
+
+def test_model_never_sees_pii_from_the_prompt_on_any_step() -> None:
+    # given
+    settings = policy(clearance=Clearance.INTERNAL)
+    upstream = ToolUsingUpstream("crm__get_client", {"client_id": "C1"})
+    layer = control_layer(policy=settings, inbound=[sensitive_data(settings)])
+    control = ChatControl(layer, upstream, False, check_tools=False)
+    subject = Agent(control, gateway(settings))
+    question = [{"role": "user", "content": "Card 4111 1111 1111 1111 for C1?"}]
+
+    # when
+    asyncio.run(subject.complete(question, "trace"))
+
+    # then
+    prompts = [r["messages"][0]["content"] for r in upstream.requests]
+    assert len(prompts) == 2
+    assert prompts == ["Card [redacted: payment_card] for C1?"] * 2
+
+
+@pytest.mark.parametrize(
+    "message", ["Mail eleanor@beaconcrest.com", "My key is AKIAIOSFODNN7EXAMPLE"]
+)
+def test_pii_and_secrets_never_logged(message: str) -> None:
+    # given
+    settings = policy(clearance=Clearance.INTERNAL)
+    sink = ListSink()
+    layer = control_layer(sink, settings, inbound=[sensitive_data(settings)])
+    control = ChatControl(layer, MockUpstream(delay=0), True, sink)
+    request = {"messages": [{"role": "user", "content": message}]}
+
+    # when
+    asyncio.run(control.complete(request, "trace"))
+
+    # then
+    logged = json.dumps(sink.events)
+    assert "eleanor@" not in logged
+    assert "AKIA" not in logged
+
+
+def test_secret_never_reaches_the_model() -> None:
+    # given
+    settings = policy(clearance=Clearance.RESTRICTED)
+    upstream = ToolUsingUpstream("crm__get_client", {"client_id": "C1"})
+    layer = control_layer(policy=settings, inbound=[sensitive_data(settings)])
+    control = ChatControl(layer, upstream, False, check_tools=False)
+    question = [{"role": "user", "content": "Use key AKIAIOSFODNN7EXAMPLE"}]
+
+    # when
+    response = asyncio.run(Agent(control, gateway(settings)).complete(question, "t"))
+
+    # then
+    assert upstream.requests == []
+    assert response["choices"][0]["finish_reason"] == "content_filter"

@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.api.deps import CurrentUser, chat_agent
 from app.control.agent import Agent
+from app.control.guards.sensitive_data import scrub
 from app.control.upstream import UpstreamError
 from app.core.assistant import conversation
 from app.core.schema.chat import ChatRequest, ChatResponse
@@ -47,7 +48,7 @@ async def chat(
             trace_id,
             user.id,
             error.status_code,
-            error.body,
+            scrub(error.body),
         )
         return JSONResponse(UPSTREAM_FAILED, status_code=502)
     choice = response["choices"][0]
@@ -97,7 +98,7 @@ async def chat_stream(
                 trace_id,
                 user.id,
                 error.status_code,
-                error.body,
+                scrub(error.body),
             )
             yield event(type="error", **UPSTREAM_FAILED)
             return

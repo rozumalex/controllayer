@@ -27,6 +27,16 @@ class ToolAction(StrEnum):
     BLOCK = "block"
 
 
+class PiiKind(StrEnum):
+    """The PII the sensitive data guard finds in free text."""
+
+    EMAIL = "email"
+    PHONE = "phone"
+    IBAN = "iban"
+    PAYMENT_CARD = "payment_card"
+    PESEL = "pesel"
+
+
 class Budget(BaseModel):
     monthly_tokens: int | None = Field(
         default=None,
@@ -51,6 +61,12 @@ class PolicySettings(BaseModel):
     )
     above_clearance: ToolAction = Field(
         description="What happens to data above the clearance: redact or block."
+    )
+    pii: dict[PiiKind, ToolAction] = Field(
+        default={},
+        description="What happens to each kind of PII in prompts and tool "
+        "results: allow, redact or block. A kind it doesn't name is handled "
+        "by the clearance, like the catalog field that holds it.",
     )
     allowed_models: list[str] = Field(description="The LLMs the role may use.")
     budget: Budget

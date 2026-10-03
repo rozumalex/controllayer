@@ -17,6 +17,7 @@ import mcp_types as types
 
 from app.control.adapters.mcp_gateway import McpGateway
 from app.control.adapters.openai_chat import ChatControl, arguments
+from app.control.guards.sensitive_data import scrub
 
 logger = logging.getLogger("app.control.agent")
 
@@ -94,7 +95,9 @@ class Agent:
             content = result_text(result)
         except Exception as exc:
             # A server that fails mid-call ends the call, not the chat.
-            logger.warning("tool %s failed: trace_id=%s %r", name, trace_id, exc)
+            logger.warning(
+                "tool %s failed: trace_id=%s %s", name, trace_id, scrub(repr(exc))
+            )
             content = FAILED.format(tool=name)
         return {"role": "tool", "tool_call_id": call.get("id"), "content": content}
 

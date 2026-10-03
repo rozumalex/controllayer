@@ -37,7 +37,8 @@ def test_streamed_chat_traced_with_every_stage(client: TestClient) -> None:
     events = [e["event"] for e in trace["events"]]
     assert events == [
         "request",
-        # The model, the budget and the injection guard.
+        # The model, the budget, the sensitive data and the injection guard.
+        "verdict",
         "verdict",
         "verdict",
         "verdict",
@@ -94,7 +95,10 @@ def test_blocked_message_traced_with_finding(client: TestClient) -> None:
 
     # then
     assert summary["outcome"] == "blocked"
-    [finding] = summary["findings"]
+    # The email in the message is redacted before the injection guard blocks.
+    redacted, finding = summary["findings"]
+    assert redacted["guard"] == "sensitive_data"
+    assert redacted["action"] == "modify"
     assert finding["guard"] == "prompt_injection"
     assert finding["action"] == "block"
     assert finding["tool"] == "user_prompt"
@@ -217,7 +221,8 @@ def test_analytics_counts_outcomes_tokens_and_findings(client: TestClient) -> No
     assert sum(b["blocked"] for b in timeline) == 1
     assert sum(b["completion_tokens"] for b in timeline) > 0
     assert [(f["guard"], f["count"]) for f in body["findings"]] == [
-        ("prompt_injection", 1)
+        ("sensitive_data", 1),
+        ("prompt_injection", 1),
     ]
 
 

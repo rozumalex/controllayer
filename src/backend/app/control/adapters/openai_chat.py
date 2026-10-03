@@ -16,6 +16,7 @@ from uuid import uuid4
 
 from app.control.audit import EventSink, LogEventSink
 from app.control.envelope import Action, Direction, Envelope
+from app.control.guards.sensitive_data import scrub
 from app.control.layer import ControlLayer
 from app.control.pipeline import Decision
 from app.control.upstream import ChatUpstream, UpstreamError, chunk, completion
@@ -66,6 +67,8 @@ class ChatControl:
         # call and result itself: checking them here too would wrap each
         # result twice and pay for the AI check twice.
         self.check_tools = check_tools
+        # The user prompts the layer changed, by their original text.
+        self.prompts: dict[str, str] = {}
 
     async def complete(self, request: dict[str, Any], trace_id: str) -> dict[str, Any]:
         trace = Trace(trace_id, agent_id=request.get("user") or "anonymous")
@@ -206,13 +209,21 @@ class ChatControl:
             for call in message.get("tool_calls") or []:
                 tool_names[call.get("id")] = call.get("function", {}).get("name")
             role = message.get("role")
+            text = text_of(message.get("content"))
             if role == "user" and index >= new_from:
-                payload = {"content": text_of(message.get("content"))}
                 decision = await self.inspect(
-                    Direction.INBOUND, "llm", "user_prompt", payload, trace
+                    Direction.INBOUND, "llm", "user_prompt", {"content": text}, trace
                 )
                 if decision.action is Action.BLOCK:
                     return checked, True
+                if decision.action is Action.MODIFY:
+                    content = decision.envelope.payload["content"]
+                    self.prompts[text] = content
+                    message = {**message, "content": content}
+            elif role == "user" and text in self.prompts:
+                # A prompt the layer changed on an earlier step, such as one
+                # with PII taken out, goes to the model changed every time.
+                message = {**message, "content": self.prompts[text]}
             elif role == "tool" and self.check_tools:
                 # Every tool result is checked, so the model never sees one
                 # raw, even from an earlier turn.
@@ -284,8 +295,11 @@ class ChatControl:
         )
 
     async def log(self, trace: Trace, stage: str, **data: Any) -> None:
+        payloads = ("messages", "body")
         if not self.log_payloads:
-            data = {k: v for k, v in data.items() if k not in ("messages", "body")}
+            data = {k: v for k, v in data.items() if k not in payloads}
+        # PII and secrets never reach the logs, even with the payloads.
+        data = {k: scrub(v) if k in payloads else v for k, v in data.items()}
         await self.sink.write({"event": stage, "trace_id": trace.trace_id, **data})
 
 
