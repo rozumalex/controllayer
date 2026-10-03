@@ -16,6 +16,7 @@ from app.control.upstream import (
     chunk,
     completion,
 )
+from app.core.assistant import SYSTEM_PROMPT
 from app.core.config import settings
 from app.main import app
 
@@ -403,3 +404,34 @@ def test_unreachable_upstream_stream_raises_502() -> None:
 
     # then
     assert error.value.status_code == 502
+
+
+class RecordingUpstream(MockUpstream):
+    def __init__(self) -> None:
+        super().__init__(delay=0)
+        self.requests: list[dict[str, Any]] = []
+
+    async def complete(self, request: dict[str, Any]) -> dict[str, Any]:
+        self.requests.append(request)
+        return await super().complete(request)
+
+
+def test_model_gets_the_bank_instructions_first(client: TestClient) -> None:
+    # given
+    upstream = RecordingUpstream()
+    app.dependency_overrides[chat_control] = lambda: ChatControl(
+        control_layer(), upstream, log_payloads=False
+    )
+    request = {"message": "Hi"}
+
+    # when
+    try:
+        client.post(URL, json=request)
+    finally:
+        app.dependency_overrides.clear()
+
+    # then
+    system, user = upstream.requests[0]["messages"]
+    assert system == {"role": "system", "content": SYSTEM_PROMPT}
+    assert "Golden Socks" in system["content"]
+    assert user == {"role": "user", "content": "Hi"}
