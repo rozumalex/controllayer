@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from app.api.deps import chat_control
 from app.control.adapters.openai_chat import ChatControl
 from app.control.upstream import UpstreamError
+from app.core.assistant import conversation
 from app.core.schema.chat import ChatRequest, ChatResponse
 
 logger = logging.getLogger("app.control.chat")
@@ -33,7 +34,7 @@ async def chat(
     request: ChatRequest, control: Annotated[ChatControl, Depends(chat_control)]
 ) -> Any:
     trace_id = uuid4().hex
-    completion = {"messages": [{"role": "user", "content": request.message}]}
+    completion = {"messages": conversation(request.message)}
     try:
         response = await control.complete(completion, trace_id)
     except UpstreamError as error:
@@ -75,7 +76,7 @@ async def chat_stream(
     request: ChatRequest, control: Annotated[ChatControl, Depends(chat_control)]
 ) -> StreamingResponse:
     trace_id = uuid4().hex
-    completion = {"messages": [{"role": "user", "content": request.message}]}
+    completion = {"messages": conversation(request.message)}
 
     async def events() -> AsyncIterator[str]:
         blocked = False
