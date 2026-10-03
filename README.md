@@ -2,18 +2,54 @@
 
 A control layer between AI agents and their tools: a pipeline of guards that inspects every tool call and result.
 
-## TODO
+## Architecture
 
-- [ ] `src/frontend/public/favicon.svg`: replace the Vite logo with your own icon.
-- [ ] Sentry: create a project on [sentry.io](https://sentry.io/) and set `SENTRY_DSN` and `VITE_SENTRY_DSN`, see [Environment variables](#environment-variables). Leave them empty to keep Sentry off.
-- [ ] New Relic: create an account on [newrelic.com](https://newrelic.com/), copy an ingest license key and set `NEW_RELIC_LICENSE_KEY`, see [Environment variables](#environment-variables). For the deploy, add it as the GitHub Actions secret `NEW_RELIC_LICENSE_KEY`. Leave it empty to keep New Relic off.
-- [ ] Set up the [deploy](#deploy) to DigitalOcean:
-  - [ ] Create a DigitalOcean [personal access token](https://cloud.digitalocean.com/account/api/tokens) with full access.
-  - [ ] Install the [DigitalOcean GitHub app](https://github.com/apps/digitalocean) on the repository.
-  - [ ] In the repository settings on GitHub, under **Secrets and variables → Actions**, add the secret `DIGITALOCEAN_ACCESS_TOKEN` with the token, and the variable `DIGITALOCEAN_APP_NAME` with a name for the app.
-  - [ ] Push to `main`, or run the Main workflow from the Actions tab, and open the URL from the deploy job's log.
-  - [ ] When the hackathon ends, run the Destroy workflow, so the app stops costing money.
-- [ ] Delete this TODO section.
+```mermaid
+flowchart LR
+    user(["Bank employee"]) --> app["Frontend<br/>chat, /admin"]
+    app -- "/api" --> api
+
+    subgraph api ["API (FastAPI)"]
+        chat["Chat endpoint<br/>agent loop"]
+        subgraph chatpipe ["Chat pipeline"]
+            direction TB
+            cin["Prompt in:<br/>model, budget, PII and secrets,<br/>injection heuristic, injection classifier"]
+        end
+        subgraph gateway ["MCP gateway"]
+            direction TB
+            gin["Tool call in:<br/>tool access, PII and secrets,<br/>injection heuristic, injection classifier"]
+            gout["Tool result out:<br/>clearance, PII and secrets,<br/>injection heuristic, injection classifier,<br/>spotlight"]
+        end
+        bank["Bank MCP server<br/>/api/bank/mcp"]
+        chat --> cin
+        chat -- "tool calls" --> gin
+        gout -- "tool results" --> chat
+    end
+
+    cin --> openai["OpenAI<br/>chat model"]
+    gin --> bank
+    gin --> other["Other MCP servers"]
+    bank --> gout
+    other --> gout
+
+    policy[("Role policies")] -. "build the guards<br/>on every request" .-> api
+    api -- "every verdict" --> events[("control_events")]
+    events --> app
+
+    subgraph db ["Postgres"]
+        policy
+        events
+        bankdata[("bank_ tables")]
+    end
+    bank --> bankdata
+```
+
+The chat sends the user's prompt through the chat pipeline before the model sees it. When the model asks for a tool, the call goes through the MCP gateway: its guards check the call before the server sees it, and the result before the model does. Each guard returns allow, modify or block, and in `enforce` mode the first block stops the message. The guards are built on every request from the signed-in user's role policy, and every verdict is saved with labels, scores and hashes only, never the message text. The admin pages read those events back as traces.
+
+- **Policy guards** run first, because they are cheap: allowed models, the monthly budget, tool access, and the data clearance, which hides fields above the user's level using the bank's data catalog.
+- **PII and secrets** finds them in free text by pattern. The policy says whether each kind of PII is allowed, redacted or blocked; a secret is always blocked.
+- **Injection** is a regex heuristic that blocks the obvious attacks first, then an LLM classifier for the rest. Without `OPENAI_API_KEY`, the classifier is off and the chat uses a mock model.
+- **Spotlight** wraps every tool result that passes as untrusted data, so the model treats it as data, not instructions.
 
 ## Backend
 
