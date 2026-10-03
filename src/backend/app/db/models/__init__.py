@@ -11,6 +11,7 @@ from app.db.models.bank import (
 )
 from app.db.models.control_event import ControlEvent
 from app.db.models.email_code import EmailCode
+from app.db.models.identity_provider import IdentityProvider, SsoLogin
 from app.db.models.mcp_server import McpServer
 from app.db.models.organization import Organization
 from app.db.models.policy import Policy
@@ -27,8 +28,10 @@ __all__ = [
     "BankTransaction",
     "ControlEvent",
     "EmailCode",
+    "IdentityProvider",
     "McpServer",
     "Organization",
     "Policy",
+    "SsoLogin",
     "User",
 ]

@@ -51,7 +51,8 @@ def sign_in_email(code: str, link: str, minutes: int, welcome: bool) -> SignInEm
     <span style="font-family:Georgia,'Times New Roman',serif;font-size:22px;
       font-weight:bold;color:#ffffff;letter-spacing:0.5px">Portcullis</span>
     <span style="display:block;margin-top:4px;font-size:12px;color:{GOLD};
-      letter-spacing:2px;text-transform:uppercase">The control layer for AI agents</span>
+      letter-spacing:2px;text-transform:uppercase">The control layer for AI
+      agents</span>
   </td></tr>
   <tr><td style="padding:36px 32px 8px">
     <h1 style="margin:0 0 8px;font-family:Georgia,'Times New Roman',serif;

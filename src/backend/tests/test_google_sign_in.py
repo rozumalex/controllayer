@@ -10,6 +10,7 @@ from jwt.algorithms import RSAAlgorithm
 
 from app.core import google
 from app.core.config import settings
+from app.core.oidc import by_id
 from app.main import app
 
 pytestmark = pytest.mark.usefixtures("db")
@@ -33,7 +34,7 @@ def google_keys(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(google.GOOGLE_KEYS, "fetched", 0.0)
 
     async def fetch() -> dict[str, jwt.PyJWK]:
-        return google.by_id(jwk_set())
+        return by_id(jwk_set())
 
     monkeypatch.setattr(google.GOOGLE_KEYS, "fetch", fetch)
 

@@ -32,6 +32,33 @@ class GoogleSignIn(BaseModel):
     )
 
 
+class SsoStart(BaseModel):
+    email: str | None = Field(
+        default=None,
+        max_length=320,
+        description="A work email: its domain picks the provider.",
+    )
+    organization: str | None = Field(
+        default=None,
+        max_length=64,
+        description="Or the organization's slug, such as demo.",
+    )
+
+    @field_validator("email")
+    @classmethod
+    def normalize(cls, value: str | None) -> str | None:
+        return value.strip().lower() if value else value
+
+
+class SsoRedirect(BaseModel):
+    url: str = Field(description="Where to send the browser.")
+
+
+class SsoCallback(BaseModel):
+    code: str = Field(max_length=4096)
+    state: str = Field(max_length=512)
+
+
 class SignedIn(BaseModel):
     token: str = Field(
         description=(

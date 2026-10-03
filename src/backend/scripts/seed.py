@@ -36,7 +36,7 @@ from app.api.deps import PRIVILEGED
 from app.core.config import Settings, settings
 from app.db import models  # noqa: F401  registers the models in Base.metadata
 from app.db.base import Base
-from app.db.models import Organization, Policy, User
+from app.db.models import IdentityProvider, Organization, Policy, User
 from app.db.models.organization import DEMO_SLUG
 from scripts.policies import POLICIES
 
@@ -50,6 +50,22 @@ OWN_COLUMNS = {"org_id"}
 # The demo account's job title, so its policy is the Vice President's: most
 # tools, but no payments, and data above CONFIDENTIAL masked.
 DEMO_ROLE = "Vice President"
+# The demo's single sign-on: Duende's public demo IdentityServer, whose test
+# users anyone can sign in as. Its ID tokens carry no groups, so the rules
+# match the user's sub: alice (1) and bob (2) get two different policies.
+DEMO_IDP = {
+    "name": "Duende demo IdP",
+    "issuer": "https://demo.duendesoftware.com",
+    "client_id": "interactive.public",
+    "scopes": "openid profile email",
+    "domains": [],
+    "role_rules": [
+        {"claim": "sub", "value": "1", "role": "Compliance Officer", "admin": True},
+        {"claim": "sub", "value": "2", "role": "Analyst", "admin": False},
+    ],
+    "default_role": None,
+    "enabled": True,
+}
 # The tables whose rows belong to an organization, and may predate them.
 ORG_TABLES = ["users", "mcp_servers", "control_events"]
 
@@ -187,6 +203,14 @@ async def seed(url: str) -> None:
                 .on_conflict_do_update(index_elements=[User.email], set_=account)
             )
             print(f"demo account: {settings.demo_email}, a {DEMO_ROLE}")
+            await connection.execute(
+                insert(IdentityProvider)
+                .values(org_id=demo, **DEMO_IDP)
+                .on_conflict_do_update(
+                    index_elements=[IdentityProvider.org_id], set_=DEMO_IDP
+                )
+            )
+            print(f"demo single sign-on: {DEMO_IDP['name']}")
     finally:
         await engine.dispose()
 
