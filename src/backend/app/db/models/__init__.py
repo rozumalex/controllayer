@@ -10,6 +10,7 @@ from app.db.models.bank import (
     BankTransaction,
 )
 from app.db.models.control_event import ControlEvent
+from app.db.models.directory_group import DirectoryGroup, group_members
 from app.db.models.email_code import EmailCode
 from app.db.models.identity_provider import IdentityProvider, SsoLogin
 from app.db.models.mcp_server import McpServer
@@ -27,6 +28,7 @@ __all__ = [
     "BankTrade",
     "BankTransaction",
     "ControlEvent",
+    "DirectoryGroup",
     "EmailCode",
     "IdentityProvider",
     "McpServer",
@@ -34,4 +36,5 @@ __all__ = [
     "Policy",
     "SsoLogin",
     "User",
+    "group_members",
 ]

@@ -35,6 +35,7 @@ async def token_user(session: AsyncSession, token: str) -> User | None:
         .where(
             AuthToken.token_hash == token_hash(token),
             AuthToken.expires_at > datetime.now(UTC),
+            User.active,
         )
     )
 

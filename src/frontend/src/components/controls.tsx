@@ -164,7 +164,12 @@ export function Employees() {
             {list?.employees.map((employee) => (
               <TableRow key={employee.id}>
                 <TableCell>
-                  <div className="font-medium">{employee.name}</div>
+                  <div className="flex items-center gap-2 font-medium">
+                    {employee.name}
+                    {!employee.active && (
+                      <Badge variant="destructive">Inactive</Badge>
+                    )}
+                  </div>
                   <div className="text-xs text-muted-foreground">
                     {employee.email}
                   </div>

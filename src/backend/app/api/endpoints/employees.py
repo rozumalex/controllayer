@@ -73,4 +73,5 @@ def employee(user: User) -> Employee:
         office=user.office,
         clearance_level=user.clearance_level,
         employment_status=user.employment_status,
+        active=user.active,
     )

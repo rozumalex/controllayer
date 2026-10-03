@@ -28,10 +28,15 @@ export type IdentityProviderWrite = Omit<
   "has_secret" | "redirect_uri"
 > & { client_secret?: string }
 
+export type ScimStatus = { base_url: string; has_token: boolean }
+
+// Shown once: only its hash is stored.
+export type ScimToken = { token: string; base_url: string }
+
 const URL = "/api/identity-provider"
 
-async function request<T>(init: RequestInit = {}): Promise<T> {
-  const response = await fetch(URL, {
+async function request<T>(init: RequestInit = {}, path = ""): Promise<T> {
+  const response = await fetch(URL + path, {
     ...init,
     headers: { "Content-Type": "application/json", ...userHeaders() },
   })
@@ -54,3 +59,8 @@ export const saveProvider = (provider: IdentityProviderWrite) =>
   request<IdentityProvider>({ method: "PUT", body: JSON.stringify(provider) })
 
 export const deleteProvider = () => request<void>({ method: "DELETE" })
+
+export const fetchScim = () => request<ScimStatus>({}, "/scim")
+
+export const newScimToken = () =>
+  request<ScimToken>({ method: "POST" }, "/scim-token")

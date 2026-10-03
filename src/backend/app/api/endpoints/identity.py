@@ -1,6 +1,8 @@
 """The organization's identity provider, which its admins connect on the
 Identity page. Every endpoint works on the signed-in admin's organization."""
 
+import hashlib
+import secrets
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response
@@ -9,9 +11,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import OrgId
 from app.api.endpoints.sso import callback_url, discover
+from app.core.config import settings
 from app.core.oidc import OidcError
-from app.core.schema.identity import IdentityProviderRead, IdentityProviderWrite
-from app.db.models import IdentityProvider
+from app.core.schema.identity import (
+    IdentityProviderRead,
+    IdentityProviderWrite,
+    ScimStatus,
+    ScimToken,
+)
+from app.db.models import IdentityProvider, Organization
 from app.db.session import get_session
 
 router = APIRouter(prefix="/identity-provider", tags=["identity"])
@@ -80,6 +88,34 @@ async def save_provider(
         idp.client_secret = request.client_secret or None
     await session.commit()
     return IdentityProviderRead.of(idp, callback_url())
+
+
+def scim_base_url() -> str:
+    return f"{settings.app_url.rstrip('/')}{settings.api_prefix}/scim/v2"
+
+
+@router.get("/scim", summary="Show the SCIM base URL and whether a token is set")
+async def scim_status(session: Session, org_id: OrgId) -> ScimStatus:
+    org = await session.get(Organization, org_id)
+    assert org is not None
+    return ScimStatus(base_url=scim_base_url(), has_token=bool(org.scim_token_hash))
+
+
+@router.post(
+    "/scim-token",
+    summary="Make a new SCIM token for the IdP's provisioning",
+    description=(
+        "The IdP pushes the organization's users and groups to `/api/scim/v2` "
+        "with it. Shown once and stored as a hash; a new one replaces the old."
+    ),
+)
+async def new_scim_token(session: Session, org_id: OrgId) -> ScimToken:
+    token = f"scim_{secrets.token_urlsafe(32)}"
+    org = await session.get(Organization, org_id)
+    assert org is not None
+    org.scim_token_hash = hashlib.sha256(token.encode()).hexdigest()
+    await session.commit()
+    return ScimToken(token=token, base_url=scim_base_url())
 
 
 @router.delete(

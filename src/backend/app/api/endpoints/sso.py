@@ -4,13 +4,12 @@ without an invitation, with the role that the provider's claims map to."""
 
 import hashlib
 from datetime import UTC, datetime, timedelta
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import PRIVILEGED
 from app.api.endpoints.auth import signed_in
 from app.core.config import settings
 from app.core.oidc import (
@@ -22,6 +21,7 @@ from app.core.oidc import (
     new_login,
 )
 from app.core.schema.auth import SignedIn, SsoCallback, SsoRedirect, SsoStart
+from app.db.directory import give_role, role_for, with_groups
 from app.db.models import IdentityProvider, Organization, SsoLogin, User
 from app.db.session import get_session
 
@@ -39,20 +39,6 @@ def state_hash(state: str) -> str:
 
 def callback_url() -> str:
     return f"{settings.app_url.rstrip('/')}/auth/callback"
-
-
-def role_for(claims: dict[str, Any], idp: IdentityProvider) -> tuple[str, bool] | None:
-    """The role and whether the user administers the organization: from the
-    first rule whose claim has the value, or the default role, which gives no
-    admin rights. None when neither applies."""
-    for rule in idp.role_rules:
-        value = claims.get(rule.get("claim", ""))
-        values = value if isinstance(value, list) else [value]
-        if str(rule.get("value")) in {str(v) for v in values if v is not None}:
-            return rule["role"], bool(rule.get("admin"))
-    if idp.default_role:
-        return idp.default_role, False
-    return None
 
 
 async def provider_for(session: AsyncSession, request: SsoStart) -> IdentityProvider:
@@ -143,19 +129,21 @@ async def callback(request: SsoCallback, session: Session) -> SignedIn:
     email = str(claims.get("email") or "").strip().lower()
     if not email or claims.get("email_verified") is False:
         raise HTTPException(401, f"{idp.name} gave no verified email")
-    role = role_for(claims, idp)
-    if role is None:
-        raise HTTPException(403, f"{idp.name} gives you no role here")
-    title, admin = role
     user = await session.scalar(select(User).where(User.email == email))
     if user is not None and user.org_id != idp.org_id:
         raise HTTPException(409, "This email belongs to another organization")
+    if user is not None and not user.active:
+        raise HTTPException(403, f"{idp.name} has deactivated you")
+    # The groups SCIM synced count too, as some IdPs leave them out of tokens.
+    user_id = user.id if user else None
+    role = role_for(await with_groups(session, user_id, claims), idp)
+    if role is None:
+        raise HTTPException(403, f"{idp.name} gives you no role here")
     if user is None:
         user = User(email=email, name=str(claims.get("name") or email))
         session.add(user)
     # The provider is the source of truth: each sign-in takes its role again.
     user.org_id = idp.org_id
-    user.title = title
-    user.clearance_level = PRIVILEGED if admin else "STANDARD"
+    give_role(user, role)
     await session.commit()
     return await signed_in(session, user)

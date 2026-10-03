@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, func
+from sqlalchemy import DateTime, ForeignKey, String, func, true
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -39,3 +39,9 @@ class User(Base):
     # LOW, STANDARD or PRIVILEGED, the levels of the identity profiles.
     clearance_level: Mapped[str | None]
     employment_status: Mapped[str | None]
+
+    # The IdP's own ID for the user, when its SCIM provisioning made them.
+    external_id: Mapped[str | None] = mapped_column(String(255))
+    # False once the IdP deactivates the user: they can't sign in, and their
+    # sessions end.
+    active: Mapped[bool] = mapped_column(default=True, server_default=true())
