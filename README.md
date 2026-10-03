@@ -1,17 +1,10 @@
-# hackaton-fullstack-template
+# AI control layer
 
-## TODO: make this project your own
+A control layer between AI agents and their tools: a pipeline of guards that inspects every tool call and result.
 
-After you create a new repository from this template, remove every reference to the template:
+## TODO
 
-- [ ] `README.md`: replace the `# hackaton-fullstack-template` title and add a short description of the project.
-- [ ] `src/backend/pyproject.toml`: set `name` and `description`. The API docs show them as the app title and description. Then run `uv lock` to update `uv.lock`.
-- [ ] `src/backend/app/worker.py`: rename the Celery app from `"app"` in `Celery("app", ...)` to your project's name.
-- [ ] `docker-compose.yml`: set the `NEW_RELIC_APP_NAME` default from `backend` to your project's name. The deploy sets it to the DigitalOcean app name.
-- [ ] `src/frontend/package.json`: set `name`. Then run `pnpm install` to update `pnpm-lock.yaml`.
-- [ ] `src/frontend/index.html`: replace the `<title>Hackathon template</title>` page title.
 - [ ] `src/frontend/public/favicon.svg`: replace the Vite logo with your own icon.
-- [ ] `src/frontend/src/App.tsx`: replace the "Hackathon template" heading and the counter demo.
 - [ ] Sentry: create a project on [sentry.io](https://sentry.io/) and set `SENTRY_DSN` and `VITE_SENTRY_DSN`, see [Environment variables](#environment-variables). Leave them empty to keep Sentry off.
 - [ ] New Relic: create an account on [newrelic.com](https://newrelic.com/), copy an ingest license key and set `NEW_RELIC_LICENSE_KEY`, see [Environment variables](#environment-variables). For the deploy, add it as the GitHub Actions secret `NEW_RELIC_LICENSE_KEY`. Leave it empty to keep New Relic off.
 - [ ] Set up the [deploy](#deploy) to DigitalOcean:
@@ -21,7 +14,6 @@ After you create a new repository from this template, remove every reference to 
   - [ ] Push to `master`, or run the Master workflow from the Actions tab, and open the URL from the deploy job's log.
   - [ ] When the hackathon ends, run the Destroy workflow, so the app stops costing money.
 - [ ] Delete this TODO section.
-- [ ] Check that nothing is left: `git grep -niI "template\|hackaton\|hackathon"`.
 
 ## Backend
 
