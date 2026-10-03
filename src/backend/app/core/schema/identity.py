@@ -90,3 +90,8 @@ class IdentityProviderRead(BaseModel):
             enabled=idp.enabled,
             redirect_uri=redirect_uri,
         )
+
+
+class ScimToken(BaseModel):
+    token: str = Field(description="Shown once: paste it into the IdP.")
+    base_url: str = Field(description="The SCIM base URL to paste with it.")

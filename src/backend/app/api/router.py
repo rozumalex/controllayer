@@ -9,6 +9,7 @@ from app.api.endpoints import (
     identity,
     mcp_servers,
     policy,
+    scim,
     sso,
     traces,
 )
@@ -23,6 +24,8 @@ privileged = [Depends(privileged_user)]
 router.include_router(health.router)
 router.include_router(auth.router)
 router.include_router(sso.router)
+# Signs in with the organization's SCIM token, not a user's session.
+router.include_router(scim.router)
 router.include_router(employees.router)
 router.include_router(chat.router, dependencies=signed_in)
 router.include_router(traces.router, dependencies=privileged)
