@@ -9,15 +9,20 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet"
 import { formatDuration, formatNumber } from "@/lib/format"
-import { fetchTrace, type TraceDetail, type TraceEvent } from "@/lib/traces"
+import {
+  fetchTrace,
+  type TraceDetail,
+  type TraceEvent,
+  type TraceSummary,
+} from "@/lib/traces"
 import { cn } from "@/lib/utils"
 
 // One line on what an event says, by its kind.
-function describe({ event, data }: TraceEvent): string {
+function describe({ event, data }: TraceEvent, { user }: TraceSummary): string {
   const usage = data.usage as { total_tokens?: number } | null | undefined
   switch (event) {
     case "request":
-      return `from ${data.agent_id ?? "anonymous"}`
+      return `from ${user?.name ?? data.agent_id ?? "anonymous"}`
     case "verdict":
       return [
         `${data.guard}: ${data.action}`,
@@ -52,7 +57,13 @@ function dotColor({ event, action }: TraceEvent) {
   return "bg-primary"
 }
 
-function Timeline({ events }: { events: TraceEvent[] }) {
+function Timeline({
+  events,
+  summary,
+}: {
+  events: TraceEvent[]
+  summary: TraceSummary
+}) {
   const start = new Date(events[0].created_at).getTime()
   return (
     <ol className="relative flex flex-col gap-4 border-l pl-5">
@@ -70,7 +81,9 @@ function Timeline({ events }: { events: TraceEvent[] }) {
               +{formatDuration(new Date(event.created_at).getTime() - start)}
             </span>
           </div>
-          <p className="text-sm text-muted-foreground">{describe(event)}</p>
+          <p className="text-sm text-muted-foreground">
+            {describe(event, summary)}
+          </p>
           <details className="mt-1">
             <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
               Data
@@ -153,7 +166,7 @@ export function TraceSheet({
               <h3 className="mb-3 text-xs font-medium text-muted-foreground uppercase">
                 Timeline
               </h3>
-              <Timeline events={trace.events} />
+              <Timeline events={trace.events} summary={summary} />
             </section>
           </div>
         )}

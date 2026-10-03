@@ -2,6 +2,7 @@ import hashlib
 import json
 import logging
 from typing import Any, Protocol
+from uuid import UUID
 
 from app.control.envelope import Envelope, Verdict
 
@@ -34,6 +35,18 @@ class FanOutSink:
     async def write(self, event: dict[str, Any]) -> None:
         for sink in self.sinks:
             await sink.write(event)
+
+
+class UserEventSink:
+    """Adds the ID of the signed-in user to each event, so every log line and
+    saved event names who made the request."""
+
+    def __init__(self, sink: EventSink, user_id: UUID) -> None:
+        self.sink = sink
+        self.user_id = user_id
+
+    async def write(self, event: dict[str, Any]) -> None:
+        await self.sink.write({**event, "user_id": str(self.user_id)})
 
 
 class AuditSink(Protocol):

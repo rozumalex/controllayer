@@ -22,6 +22,7 @@ from app.core.schema.traces import (
     TraceEvent,
     TraceList,
     TraceSummary,
+    TraceUser,
     Usage,
 )
 from app.db.models import ControlEvent
@@ -74,6 +75,11 @@ def usage(events: Sequence[ControlEvent]) -> Usage:
     return total
 
 
+def user(events: Sequence[ControlEvent]) -> TraceUser | None:
+    found = next((e.user for e in events if e.user), None)
+    return TraceUser(id=found.id, name=found.name) if found else None
+
+
 def summary(events: Sequence[ControlEvent]) -> TraceSummary:
     request = next((e for e in events if e.event == "request"), None)
     started, ended = events[0].created_at, events[-1].created_at
@@ -81,6 +87,7 @@ def summary(events: Sequence[ControlEvent]) -> TraceSummary:
         trace_id=events[0].trace_id,
         started_at=started,
         agent_id=request.data.get("agent_id") if request else None,
+        user=user(events),
         prompt=prompt(request),
         outcome=outcome(events),
         findings=[

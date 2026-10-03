@@ -1,11 +1,13 @@
+import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import BigInteger, DateTime, Identity, String, func
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Identity, String, func
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.db.models.user import User
 
 
 class ControlEvent(Base):
@@ -19,6 +21,12 @@ class ControlEvent(Base):
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
     trace_id: Mapped[str] = mapped_column(String(64), index=True)
     event: Mapped[str] = mapped_column(String(32))
+    # The signed-in user the request came from; empty for events with none.
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", name="control_events_user_id_fkey"), index=True
+    )
+    # Loaded with the event, so the dashboard can name the user.
+    user: Mapped[User | None] = relationship(lazy="joined")
     # The verdict's or the decision's action; empty for the other events.
     action: Mapped[str | None] = mapped_column(String(16))
     # The whole event, as the logs have it.

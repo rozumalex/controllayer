@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import mcp_connect
+from app.api.deps import CurrentUser, mcp_connect
 from app.control.adapters.mcp_gateway import Connect, list_upstream_tools
 from app.core.schema.mcp_servers import (
     McpServerCreate,
@@ -19,7 +19,7 @@ from app.db.models import McpServer
 from app.db.session import get_session
 
 # Whoever manages the servers decides which tools every agent gets. Open to
-# anyone for now: access control comes with the users.
+# every signed-in user for now.
 router = APIRouter(prefix="/mcp-servers", tags=["mcp servers"])
 
 Session = Annotated[AsyncSession, Depends(get_session)]
@@ -71,10 +71,14 @@ async def list_servers(session: Session) -> list[McpServerRead]:
     ),
 )
 async def create_server(
-    request: McpServerCreate, session: Session, connect: ConnectDep
+    request: McpServerCreate, session: Session, connect: ConnectDep, user: CurrentUser
 ) -> McpServerRead:
     server = McpServer(
-        name=request.name, url=str(request.url), auth_header=request.auth_header
+        name=request.name,
+        url=str(request.url),
+        auth_header=request.auth_header,
+        created_by_id=user.id,
+        updated_by_id=user.id,
     )
     await tools_of(server, connect)
     session.add(server)
@@ -87,9 +91,10 @@ async def create_server(
 
 @router.patch("/{id}", summary="Turn an MCP server on or off")
 async def update_server(
-    request: McpServerUpdate, server: Server, session: Session
+    request: McpServerUpdate, server: Server, session: Session, user: CurrentUser
 ) -> McpServerRead:
     server.enabled = request.enabled
+    server.updated_by_id = user.id
     await session.commit()
     return McpServerRead.of(server)
 

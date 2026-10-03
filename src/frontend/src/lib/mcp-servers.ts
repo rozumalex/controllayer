@@ -1,3 +1,5 @@
+import { userHeaders } from "@/lib/users"
+
 // The API at /api/mcp-servers, see app/core/schema/mcp_servers.py.
 
 export type McpServer = {
@@ -42,7 +44,7 @@ function reason(body: unknown, status: number) {
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`${URL}${path}`, {
     ...init,
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...userHeaders() },
   })
   if (response.status === 204) return undefined as T
   const body = await response.json().catch(() => null)

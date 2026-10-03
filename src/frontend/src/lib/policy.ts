@@ -1,3 +1,5 @@
+import { userHeaders } from "@/lib/users"
+
 // The policy API, see app/core/schema/policy.py.
 
 export const CLEARANCES = [
@@ -59,7 +61,10 @@ export type Employee = {
 export type EmployeeList = { total: number; employees: Employee[] }
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, init)
+  const response = await fetch(url, {
+    ...init,
+    headers: { ...init?.headers, ...userHeaders() },
+  })
   if (!response.ok) {
     // FastAPI puts the reason in detail: a string, or a list of field errors.
     const body = await response.json().catch(() => null)

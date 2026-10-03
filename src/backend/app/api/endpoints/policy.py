@@ -5,7 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import mcp_gateway
+from app.api.deps import CurrentUser, mcp_gateway
 from app.control.adapters.mcp_gateway import McpGateway
 from app.core.schema.policy import (
     GatewayTool,
@@ -25,14 +25,24 @@ Session = Annotated[AsyncSession, Depends(get_session)]
 Gateway = Annotated[McpGateway, Depends(mcp_gateway)]
 
 
-async def save(session: AsyncSession, role: str, settings: PolicySettings) -> None:
-    values = {"role": role, "settings": settings.model_dump(mode="json")}
+async def save(
+    session: AsyncSession, role: str, settings: PolicySettings, user: User
+) -> None:
+    values = {
+        "role": role,
+        "settings": settings.model_dump(mode="json"),
+        "updated_by_id": user.id,
+    }
     await session.execute(
         insert(Policy)
         .values(values)
         .on_conflict_do_update(
             index_elements=[Policy.role],
-            set_={"settings": values["settings"], "updated_at": func.now()},
+            set_={
+                "settings": values["settings"],
+                "updated_by_id": user.id,
+                "updated_at": func.now(),
+            },
         )
     )
     await session.commit()
@@ -90,8 +100,10 @@ async def get_policy(session: Session) -> PolicyOverview:
 
 
 @router.put("/default", summary="Save the default policy")
-async def save_default(request: PolicySettings, session: Session) -> PolicyRead:
-    await save(session, DEFAULT_ROLE, request)
+async def save_default(
+    request: PolicySettings, session: Session, user: CurrentUser
+) -> PolicyRead:
+    await save(session, DEFAULT_ROLE, request, user)
     return PolicyRead(customized=True, settings=request)
 
 
@@ -107,9 +119,9 @@ async def reset_default(session: Session) -> Response:
 
 @router.put("/roles/{role}", summary="Save a role's policy")
 async def save_role(
-    request: PolicySettings, role: Role, session: Session
+    request: PolicySettings, role: Role, session: Session, user: CurrentUser
 ) -> PolicyRead:
-    await save(session, role, request)
+    await save(session, role, request, user)
     return PolicyRead(customized=True, settings=request)
 
 

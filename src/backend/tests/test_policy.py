@@ -8,9 +8,10 @@ from fastapi.testclient import TestClient
 
 from app.api.deps import mcp_gateway
 from app.core.config import settings
-from app.db.models import User
+from app.db.models import Policy, User
 from app.db.session import SessionLocal
 from app.main import app
+from tests.conftest import signed_in
 from tests.test_mcp_gateway import gateway
 
 URL = "/api/policy"
@@ -39,9 +40,9 @@ async def add_staff() -> None:
 
 
 @pytest.fixture
-def staff(db: None) -> Iterator[TestClient]:
+def staff(db: None, user: User) -> Iterator[TestClient]:
     asyncio.run(add_staff())
-    with TestClient(app) as client:
+    with TestClient(app, headers=signed_in(user)) as client:
         yield client
 
 
@@ -90,6 +91,24 @@ def test_role_policy_overrides_default(staff: TestClient) -> None:
     assert analyst["settings"]["budget"]["monthly_tokens"] == 100000
     assert engineer["customized"] is False
     assert engineer["settings"]["clearance"] == "INTERNAL"
+
+
+async def saved_policy(role: str) -> Policy | None:
+    async with SessionLocal() as session:
+        return await session.get(Policy, role)
+
+
+def test_policy_records_who_saved_it_last(staff: TestClient, user: User) -> None:
+    # given
+    staff.put(f"{URL}/roles/Analyst", json=POLICY)
+
+    # when
+    staff.put(f"{URL}/roles/Analyst", json=POLICY | {"injection_threshold": 0.7})
+
+    # then
+    policy = asyncio.run(saved_policy("Analyst"))
+    assert policy is not None
+    assert policy.updated_by_id == user.id
 
 
 def test_reset_role_follows_default_again(staff: TestClient) -> None:
@@ -181,8 +200,9 @@ def test_me_is_the_picked_employee(staff: TestClient) -> None:
 
 
 @pytest.mark.parametrize("headers", [{}, {"User-Id": str(uuid.uuid4())}])
-def test_me_without_a_known_user_is_401(
-    staff: TestClient, headers: dict[str, str]
-) -> None:
+def test_me_without_a_known_user_is_401(headers: dict[str, str]) -> None:
+    # given
+    client = TestClient(app, headers=headers)
+
     # when / then
-    assert staff.get("/api/employees/me", headers=headers).status_code == 401
+    assert client.get("/api/employees/me").status_code == 401
