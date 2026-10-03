@@ -84,4 +84,6 @@ class EventAuditSink:
             "latency_ms": round(latency_ms, 3),
             "payload_sha256": payload_hash(envelope),
         }
+        if verdict.memory:
+            event["memory"] = verdict.memory
         await self.sink.write(event)

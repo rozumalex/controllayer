@@ -67,6 +67,11 @@ class Settings(BaseSettings):
     control_signature_refresh: float = 30.0
     # A signature at or above this severity blocks; a lower one is logged.
     control_signature_threshold: float = 0.7
+    # The data flow guard remembers what a user's tool results carried for
+    # this many minutes, across requests. It keeps keyed hashes, not values;
+    # set the key so every API process makes the same ones.
+    control_flow_window_minutes: int = 30
+    control_flow_hash_key: str = ""
     # The bearer token of the example bank MCP server at /api/bank/mcp. While
     # it is empty, the server refuses every request.
     bank_mcp_token: str = ""

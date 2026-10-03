@@ -36,3 +36,6 @@ class Verdict:
     reason: str = ""
     # The new payload, set only when action is MODIFY.
     payload: dict[str, Any] | None = None
+    # What the guard keeps for the user's next requests, saved with the
+    # verdict: labels and hashes only, never the message's text.
+    memory: dict[str, list[str]] | None = None
