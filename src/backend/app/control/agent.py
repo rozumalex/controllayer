@@ -10,7 +10,7 @@ question and the tools it used together.
 
 import json
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from typing import Any
 
 import mcp_types as types
@@ -46,16 +46,27 @@ def result_text(result: types.CallToolResult) -> str:
 
 class Agent:
     def __init__(
-        self, control: ChatControl, gateway: McpGateway, agent_id: str = "anonymous"
+        self,
+        control: ChatControl,
+        gateway: McpGateway,
+        agent_id: str = "anonymous",
+        allows: Callable[[str], bool] = lambda name: True,
     ) -> None:
         self.control = control
         self.gateway = gateway
+        # Whether the user's policy lets them call a tool. The model never
+        # sees the others; the gateway blocks them too, in case it asks.
+        self.allows = allows
         # Whom the agent works for, so the guards can decide what they may
         # see. Everyone is anonymous until the app has users.
         self.agent_id = agent_id
 
     async def tools(self) -> list[dict[str, Any]]:
-        tools = [openai_tool(tool) for tool in await self.gateway.list_tools()]
+        tools = [
+            openai_tool(tool)
+            for tool in await self.gateway.list_tools()
+            if self.allows(tool.name)
+        ]
         if len(tools) > MAX_TOOLS:
             logger.warning(
                 "%d tools, the model gets the first %d", len(tools), MAX_TOOLS

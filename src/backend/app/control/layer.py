@@ -1,3 +1,5 @@
+from collections.abc import Sequence
+
 from app.control.audit import AuditSink, EventAuditSink
 from app.control.envelope import Direction, Envelope
 from app.control.guard import Guard
@@ -21,20 +23,26 @@ def build_layer(
     injection_threshold: float,
     audit: AuditSink | None = None,
     semantic: Guard | None = None,
+    inbound: Sequence[Guard] = (),
+    outbound: Sequence[Guard] = (),
 ) -> ControlLayer:
     """semantic is the AI-based injection guard. It runs after the heuristic
-    one, so an obvious attack is blocked without a model call."""
+    one, so an obvious attack is blocked without a model call.
+
+    inbound and outbound are the policy's guards. They run first: they are
+    cheap, a blocked prompt costs no model call, and the injection guards see
+    a tool result only after the data above the clearance is taken out."""
     audit = audit or EventAuditSink()
     injection: list[Guard] = [PromptInjectionGuard(threshold=injection_threshold)]
     if semantic:
         injection.append(semantic)
     return ControlLayer(
         {
-            Direction.INBOUND: Pipeline("inbound", injection, audit, mode),
+            Direction.INBOUND: Pipeline("inbound", [*inbound, *injection], audit, mode),
             # Tool results are where indirect injection comes from. Whatever
             # passes is still marked as untrusted data.
             Direction.OUTBOUND: Pipeline(
-                "outbound", [*injection, SpotlightGuard()], audit, mode
+                "outbound", [*outbound, *injection, SpotlightGuard()], audit, mode
             ),
         }
     )

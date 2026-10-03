@@ -95,6 +95,8 @@ class ChatControl:
                 trace,
                 "upstream_response",
                 latency_ms=latency_ms,
+                # The model that answered, so a budget can price the usage.
+                model=response.get("model") or model,
                 usage=response.get("usage"),
                 body=response,
             )
@@ -137,9 +139,11 @@ class ChatControl:
         calls: dict[int, dict[str, Any]] = {}
         finish_reason = "stop"
         usage = None
+        served = model
         try:
             async for part in self.upstream.stream(upstream_request):
                 usage = part.get("usage") or usage
+                served = part.get("model") or served
                 for choice in part.get("choices", [])[:1]:
                     delta = choice.get("delta") or {}
                     for call in delta.get("tool_calls") or []:
@@ -163,6 +167,7 @@ class ChatControl:
             trace,
             "upstream_response",
             latency_ms=latency_ms,
+            model=served,
             usage=usage,
             body=response,
         )
