@@ -34,8 +34,9 @@ from app.control.guards.sensitive_data import SensitiveDataGuard
 from app.control.guards.signatures import BUNDLED, Feed, SignatureGuard
 from app.control.layer import ControlLayer, build_layer
 from app.control.upstream import ChatUpstream, MockUpstream, OpenAIUpstream
-from app.core.assistant import SYSTEM_PROMPT
+from app.core.assistant import ASSISTANT_MODEL, SYSTEM_PROMPT
 from app.core.config import settings
+from app.core.schema.chat import ChatCompletionRequest
 from app.core.schema.policy import PolicySettings
 from app.db.event_sink import DatabaseEventSink
 from app.db.models import McpServer, User
@@ -50,14 +51,35 @@ from app.db.policy import (
 from app.db.session import SessionLocal
 
 
+def bearer_user_id(authorization: str | None) -> uuid.UUID | None:
+    scheme, _, token = (authorization or "").partition(" ")
+    if scheme.lower() != "bearer":
+        return None
+    try:
+        return uuid.UUID(token.strip())
+    except ValueError:
+        return None
+
+
 async def current_user(
     user_id: Annotated[
         uuid.UUID | None,
         Header(description="The ID of the user picked on the sign-in screen."),
     ] = None,
+    authorization: Annotated[
+        str | None,
+        Header(
+            description=(
+                "`Bearer <user ID>`, as OpenAI clients send their API key. Used "
+                "when there is no User-Id header."
+            )
+        ),
+    ] = None,
 ) -> User:
-    """The user the caller picked on the sign-in screen. It is a demo sign-in:
-    the header names the user, and nothing proves the caller is them."""
+    """The user the caller picked on the sign-in screen, from the User-Id
+    header, or from the API key of an OpenAI client. It is a demo sign-in:
+    the caller names the user, and nothing proves the caller is them."""
+    user_id = user_id or bearer_user_id(authorization)
     async with SessionLocal() as session:
         user = await session.get(User, user_id) if user_id else None
     if user is None:
@@ -195,9 +217,16 @@ def control_layer(
     )
 
 
-async def chat_control(user: CurrentUser, policy: UserPolicy) -> ChatControl:
+async def chat_control(
+    user: CurrentUser, policy: UserPolicy, request: ChatCompletionRequest
+) -> ChatControl:
+    """The control layer for one chat completion. For the bank assistant, the
+    server runs the conversation and its tools, through the MCP gateway. For
+    a model from the pool, the client runs them, so the layer checks the
+    tool calls and results in the messages itself."""
     sink = UserEventSink(event_sink(), user.id)
-    model = chat_model(policy)
+    assistant = request.model == ASSISTANT_MODEL
+    model = chat_model(policy) if assistant else request.model
     async with SessionLocal() as session:
         tokens, usd = await monthly_usage(session, user.id)
         recent = await recent_questions(session, user.id)
@@ -208,17 +237,18 @@ async def chat_control(user: CurrentUser, policy: UserPolicy) -> ChatControl:
         sensitive_data(policy),
     ]
     # The answer is checked too: the model may write PII the policy hides,
-    # a secret, or its own instructions.
-    answer = [sensitive_data(policy), PromptLeakGuard(SYSTEM_PROMPT)]
-    upstream = chat_upstream(model)
-    # The tools run through the MCP gateway, which checks every call and
-    # result, so the chat leaves them to it.
+    # a secret, or the assistant's instructions.
+    answer: list[Guard] = [sensitive_data(policy)]
+    if assistant:
+        answer.append(PromptLeakGuard(SYSTEM_PROMPT))
+    # The assistant's tools run through the MCP gateway, which checks every
+    # call and result, so the chat leaves them to it.
     return ChatControl(
         control_layer(sink, policy, inbound=guards, response=answer),
-        upstream,
+        chat_upstream(model),
         settings.control_log_payloads,
         sink,
-        check_tools=False,
+        check_tools=not assistant,
     )
 
 

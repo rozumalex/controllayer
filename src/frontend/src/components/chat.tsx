@@ -14,11 +14,14 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { isPrivileged, useSession } from "@/lib/session"
 import { userHeaders } from "@/lib/users"
 
-// The events of POST /api/chat/stream, see chat_stream in the backend.
+// The model that runs the bank assistant, with its tools, on the server.
+const ASSISTANT_MODEL = "golden-socks-assistant"
+
+// The events of POST /api/v1/chat/completions with stream: OpenAI's chunks,
+// or an error.
 type ChatEvent =
-  | { type: "delta"; text: string }
-  | { type: "done"; blocked: boolean }
-  | { type: "error"; detail: string }
+  | { choices: { delta: { content?: string } }[] }
+  | { error: { message: string } }
 
 // Everyday tasks of a bank employee. The last one pastes a vendor email with
 // an injection hidden in it, which the control layer blocks.
@@ -43,7 +46,8 @@ const SUGGESTIONS = [
   },
 ]
 
-// Reads the server-sent events of a response, one JSON object each.
+// Reads the server-sent events of a response, one JSON object each, up to
+// the [DONE] that ends them.
 async function* readEvents(response: Response): AsyncGenerator<ChatEvent> {
   const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader()
   let buffer = ""
@@ -54,23 +58,30 @@ async function* readEvents(response: Response): AsyncGenerator<ChatEvent> {
     const events = buffer.split("\n\n")
     buffer = events.pop()!
     for (const event of events) {
+      if (event === "data: [DONE]") return
       if (event.startsWith("data: ")) yield JSON.parse(event.slice(6))
     }
   }
 }
 
-// The endpoint takes one message, so only the last one is sent. The control
-// layer checks it before the model sees it.
+// The whole conversation goes to the control layer's OpenAI-compatible API,
+// which checks the new message before the model sees it.
 const controlLayer: ChatModelAdapter = {
   async *run({ messages, abortSignal }) {
-    const message = messages
-      .at(-1)!
-      .content.map((part) => (part.type === "text" ? part.text : ""))
-      .join("\n")
-    const response = await fetch("/api/chat/stream", {
+    const conversation = messages.map((message) => ({
+      role: message.role,
+      content: message.content
+        .map((part) => (part.type === "text" ? part.text : ""))
+        .join("\n"),
+    }))
+    const response = await fetch("/api/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", ...userHeaders() },
-      body: JSON.stringify({ message }),
+      body: JSON.stringify({
+        model: ASSISTANT_MODEL,
+        messages: conversation,
+        stream: true,
+      }),
       signal: abortSignal,
     })
     if (!response.ok) {
@@ -78,9 +89,10 @@ const controlLayer: ChatModelAdapter = {
     }
     let text = ""
     for await (const event of readEvents(response)) {
-      if (event.type === "error") throw new Error(event.detail)
-      if (event.type === "delta") {
-        text += event.text
+      if ("error" in event) throw new Error(event.error.message)
+      const piece = event.choices[0]?.delta.content
+      if (piece) {
+        text += piece
         yield { content: [{ type: "text", text }] }
       }
     }
