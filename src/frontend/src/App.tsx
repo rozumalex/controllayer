@@ -1,14 +1,14 @@
 import { Chat } from "@/components/chat"
+import { Controls } from "@/components/controls"
 import { Dashboard } from "@/components/dashboard"
 
-// Two pages, so the path picks one; no router needed. The host serves
+// A few pages, so the path picks one; no router needed. The host serves
 // index.html for every path.
 function App() {
-  return window.location.pathname.startsWith("/dashboard") ? (
-    <Dashboard />
-  ) : (
-    <Chat />
-  )
+  const path = window.location.pathname
+  if (path.startsWith("/dashboard")) return <Dashboard />
+  if (path.startsWith("/controls")) return <Controls />
+  return <Chat />
 }
 
 export default App
