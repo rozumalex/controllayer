@@ -60,7 +60,11 @@ class OpenAIUpstream:
             except ValueError:
                 body = {"error": {"message": response.text}}
             raise UpstreamError(response.status_code, body)
-        return response.json()
+        try:
+            return response.json()
+        except ValueError as error:
+            message = f"upstream returned a body that is not JSON: {response.text}"
+            raise UpstreamError(502, {"error": {"message": message}}) from error
 
 
 class MockUpstream:

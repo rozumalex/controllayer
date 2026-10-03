@@ -9,7 +9,7 @@ tool call it asks for (inbound, agent -> tool).
 import json
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from app.control.envelope import Action, Direction, Envelope
@@ -46,7 +46,6 @@ def reason_of(decision: Decision) -> str:
 class Trace:
     trace_id: str
     agent_id: str
-    verdicts: list[dict[str, Any]] = field(default_factory=list)
 
 
 class ChatControl:
@@ -75,7 +74,6 @@ class ChatControl:
             self.log(trace, "upstream_response", latency_ms=latency_ms, body=response)
             response = await self.check_response(response, trace)
 
-        response["control_layer"] = {"trace_id": trace_id, "verdicts": trace.verdicts}
         self.log(trace, "response", body=response)
         return response
 
@@ -153,19 +151,7 @@ class ChatControl:
             payload=payload,
             trace_id=trace.trace_id,
         )
-        decision = await self.layer.inspect(envelope)
-        trace.verdicts.extend(
-            {
-                "direction": direction,
-                "tool": tool,
-                "guard": v.guard,
-                "action": v.action,
-                "score": v.score,
-                "reason": v.reason,
-            }
-            for v in decision.verdicts
-        )
-        return decision
+        return await self.layer.inspect(envelope)
 
     def log(self, trace: Trace, stage: str, **data: Any) -> None:
         if not self.log_payloads:

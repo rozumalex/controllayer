@@ -21,12 +21,11 @@ class Settings(BaseSettings):
     # The control layer blocks in "enforce" mode and only logs in "monitor".
     control_mode: Mode = Mode.ENFORCE
     control_injection_threshold: float = 0.7
-    # Log message contents at each stage of a chat completion. Handy for a
-    # demo; turn it off where prompts may hold secrets.
-    control_log_payloads: bool = True
-    # The OpenAI model behind /api/v1/chat/completions, whatever model the
-    # client asks for. With no key, a mock model echoes what it receives, so
-    # the demo runs offline.
+    # Log message contents at each stage of a chat completion. Prompts and
+    # tool results may hold secrets, so turn it on only for a demo.
+    control_log_payloads: bool = False
+    # The OpenAI model behind /api/chat. With no key, a mock model echoes what
+    # it receives, so the demo runs offline.
     openai_api_key: str = ""
     openai_model: str = "gpt-4.1-mini"
 

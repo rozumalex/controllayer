@@ -60,10 +60,10 @@ PATTERNS: list[tuple[str, float, re.Pattern[str]]] = [
         0.7,
         # Zero-width characters, bidi overrides and the Unicode tag block,
         # which hide text from a human reader but not from the model.
-        # U+200D, the zero-width joiner, is left out: emoji such as 👩‍💻 use it.
-        re.compile(
-            "[\u200b\u200c\u200e\u200f\u202a-\u202e\u2060-\u2064\U000e0000-\U000e007f]"
-        ),
+        # Characters that normal text uses are left out: the zero-width joiner
+        # U+200D (emoji such as 👩‍💻), the non-joiner U+200C (Persian) and the
+        # direction marks U+200E and U+200F (Hebrew, Arabic).
+        re.compile("[\u200b\u202a-\u202e\u2060-\u2064\U000e0000-\U000e007f]"),
     ),
 ]
 
