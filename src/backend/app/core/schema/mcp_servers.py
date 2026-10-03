@@ -53,3 +53,9 @@ class McpTool(BaseModel):
     name: str
     description: str | None
     input_schema: dict[str, Any]
+    # The server's own hints, so not proof: a server can label any tool read
+    # only.
+    read_only: bool | None = Field(description="The tool changes nothing.")
+    destructive: bool | None = Field(
+        description="The tool's changes are hard to undo, such as moving money."
+    )

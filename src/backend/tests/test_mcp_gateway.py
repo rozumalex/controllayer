@@ -18,7 +18,7 @@ bank = MCPServer("bank")
 calls: list[dict[str, Any]] = []
 
 
-@bank.tool()
+@bank.tool(annotations=types.ToolAnnotations(read_only_hint=True))
 def get_client(client_id: str) -> str:
     """Looks up a client."""
     calls.append({"client_id": client_id})

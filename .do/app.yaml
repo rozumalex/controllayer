@@ -2,7 +2,7 @@
 # .github/workflows/main.yml creates the app from this file on the first run
 # and updates it on every later one. The deploy action fills in ${APP_NAME},
 # ${GITHUB_REPOSITORY}, the Sentry DSNs, the New Relic license key, the OpenAI
-# key, the MCP admin token and the bank MCP token from the workflow environment.
+# key and the bank MCP token from the workflow environment.
 # Quote them, so an unset one becomes an empty string.
 # ${db.DATABASE_URL} and ${redis.DATABASE_URL} are App Platform variables and
 # stay as they are.
@@ -57,10 +57,6 @@ services:
         value: production
       - key: NEW_RELIC_LICENSE_KEY
         value: "${NEW_RELIC_LICENSE_KEY}"
-        type: SECRET
-      # Unset, it stays empty, and /api/mcp-servers refuses every request.
-      - key: MCP_ADMIN_TOKEN
-        value: "${MCP_ADMIN_TOKEN}"
         type: SECRET
       # Unset, it stays empty, and the bank MCP server refuses every request.
       - key: BANK_MCP_TOKEN

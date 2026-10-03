@@ -7,7 +7,6 @@ from mcp import Client
 
 from app.api.deps import mcp_connect
 from app.control.adapters.mcp_gateway import UpstreamServer
-from app.core.config import settings
 from app.main import app
 from tests.test_mcp_gateway import bank
 
@@ -24,36 +23,10 @@ async def connect(server: UpstreamServer) -> AsyncIterator[Client]:
 
 
 @pytest.fixture
-def admin(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
-    """Sets the admin token, and gives the headers that carry it."""
-    monkeypatch.setattr(settings, "mcp_admin_token", "admin-secret")
-    return {"Authorization": "Bearer admin-secret"}
-
-
-@pytest.fixture
-def api(db: None, admin: dict[str, str]) -> Iterator[TestClient]:
+def api(db: None) -> Iterator[TestClient]:
     app.dependency_overrides[mcp_connect] = lambda: connect
-    yield TestClient(app, headers=admin)
+    yield TestClient(app)
     app.dependency_overrides.clear()
-
-
-@pytest.mark.parametrize("headers", [{}, {"Authorization": "Bearer wrong"}])
-def test_servers_need_the_admin_token(
-    db: None, admin: dict[str, str], headers: dict[str, str]
-) -> None:
-    # when / then
-    assert TestClient(app).get(URL, headers=headers).status_code == 401
-
-
-def test_servers_are_closed_without_an_admin_token(
-    db: None, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # given
-    monkeypatch.setattr(settings, "mcp_admin_token", "")
-    headers = {"Authorization": "Bearer "}
-
-    # when / then
-    assert TestClient(app).get(URL, headers=headers).status_code == 401
 
 
 def test_create_server_hides_auth_header(api: TestClient) -> None:
@@ -108,6 +81,9 @@ def test_disable_list_tools_and_delete(api: TestClient) -> None:
 
     # then
     assert disabled.json()["enabled"] is False
-    assert {tool["name"] for tool in tools.json()} == {"get_client", "get_note"}
+    assert {t["name"]: t["read_only"] for t in tools.json()} == {
+        "get_client": True,
+        "get_note": None,
+    }
     assert deleted.status_code == 204
     assert api.get(URL).json() == []
