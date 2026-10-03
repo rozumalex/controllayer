@@ -92,6 +92,7 @@ Manage the stack with the `./dev` script in the repo root. Every command except 
 | `./dev migrate [revision]`       | Apply the migrations, up to `head` by default                                                                 |
 | `./dev makemigrations <message>` | Create a migration from the model changes                                                                     |
 | `./dev checkmigrations`          | Check that the migrations apply to a fresh database and cover every model change                              |
+| `./dev seed [--url URL] [-y]`    | Load the Golden Socks bank data; asks first unless `-y` when the URL is not local                             |
 | `./dev lint [hook]`              | Run every pre-commit hook on the host, or only the given one. Needs the [pre-commit setup](#pre-commit-hooks) |
 | `./dev test [pytest args...]`    | Run the backend tests; paths are relative to `src/backend`                                                    |
 
@@ -103,6 +104,8 @@ Extra arguments go straight to the tool:
 ./dev logs api                                 # only the backend logs
 ./dev makemigrations "add posts table"
 ```
+
+`./dev seed` replaces the rows of the `bank_` tables with the synthetic Golden Socks bank data in `src/backend/scripts/bank_data` (clients, accounts, trades, transactions, research, employees, and the sensitivity of every field). It leaves the other tables alone, so you can run it again. Apply the migrations first. To seed production, pass its URL: `./dev seed --url "postgresql://..."`.
 
 The database data lives in the `db-data` volume, so it stays between `down` and `up`. Only `./dev destroy` deletes it.
 

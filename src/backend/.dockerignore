@@ -7,3 +7,5 @@ tests/
 Dockerfile
 .dockerignore
 .env
+# Seed data: ./dev seed reads it from the mounted source code.
+scripts/bank_data/
