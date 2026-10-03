@@ -1,10 +1,11 @@
-from typing import Any
+from typing import Annotated, Any
 from uuid import uuid4
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 
 from app.api.deps import chat_control
+from app.control.adapters.openai_chat import ChatControl
 from app.control.upstream import UpstreamError
 from app.core.schema.chat import ChatRequest, ChatResponse
 
@@ -20,11 +21,13 @@ router = APIRouter(tags=["chat"])
         "the tool calls the model returns. The response lists every verdict."
     ),
 )
-async def chat(request: ChatRequest) -> Any:
+async def chat(
+    request: ChatRequest, control: Annotated[ChatControl, Depends(chat_control)]
+) -> Any:
     trace_id = uuid4().hex
     completion = {"messages": [{"role": "user", "content": request.message}]}
     try:
-        response = await chat_control().complete(completion, trace_id)
+        response = await control.complete(completion, trace_id)
     except UpstreamError as error:
         return JSONResponse(error.body, status_code=error.status_code)
     choice = response["choices"][0]
