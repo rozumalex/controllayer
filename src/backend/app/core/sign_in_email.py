@@ -19,7 +19,7 @@ class SignInEmail:
 def sign_in_email(code: str, link: str, minutes: int, welcome: bool) -> SignInEmail:
     subject = "Welcome to Portcullis" if welcome else "Sign in to Portcullis"
     lead = (
-        "Welcome! Your account and your organization are one click away."
+        "Welcome! Your account is one click away."
         if welcome
         else "Here's your way back in."
     )
@@ -27,8 +27,9 @@ def sign_in_email(code: str, link: str, minutes: int, welcome: bool) -> SignInEm
         f"{subject}\n\n{lead}\n\n"
         f"Sign in with this link:\n{link}\n\n"
         f"Or enter this code: {code}\n\n"
-        f"Both work once, for {minutes} minutes. If you didn't ask to sign in, "
-        "ignore this email."
+        f"Both work once, for {minutes} minutes.\n"
+        "If you didn't ask to sign in, ignore this email: no one gets in "
+        "without it."
     )
     digits = "".join(
         f'<span style="display:inline-block;width:40px;margin:0 3px;'
@@ -72,8 +73,9 @@ def sign_in_email(code: str, link: str, minutes: int, welcome: bool) -> SignInEm
   <tr><td style="padding:28px 32px 32px">
     <p style="margin:0;padding-top:20px;border-top:1px solid #f0f0f1;
       font-size:12px;line-height:18px;color:{MUTED}">
-      The link and the code work once, for {minutes} minutes. If you didn't ask
-      to sign in, ignore this email: no one gets in without it.</p>
+      The link and the code work once, for {minutes} minutes.<br>
+      If you didn't ask to sign in, ignore this email: no one gets in without
+      it.</p>
   </td></tr>
 </table>
 </td></tr>
