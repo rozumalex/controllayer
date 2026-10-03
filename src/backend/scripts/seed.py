@@ -1,7 +1,8 @@
 """Load the Golden Socks bank data into a database.
 
-Empties the bank_ tables and removes the bank's staff from users, then copies
-every row from scripts/bank_data into them, all in one transaction. It also
+Empties the bank_ tables and copies every row from scripts/bank_data into
+them, all in one transaction. The bank's staff in users are updated in place,
+so the rows that refer to them, such as the control events, are kept. It also
 saves the policies in scripts/policies.py for the roles that have none, so a
 policy someone changed is kept. Other users and tables are left alone, so it
 is safe to run again. Apply the migrations first.
@@ -79,6 +80,28 @@ def load(table: Table) -> tuple[list[str], list[tuple[Any, ...]]]:
     return columns, rows
 
 
+async def upsert_staff(
+    raw: Any, columns: list[str], rows: list[tuple[Any, ...]]
+) -> None:
+    """Update the staff in users to the rows, add the new ones and remove the
+    ones the rows don't have. Other tables refer to users, so a staff member's
+    row must stay rather than be deleted and copied again."""
+    await raw.execute(
+        "CREATE TEMP TABLE staff (LIKE users INCLUDING DEFAULTS) ON COMMIT DROP"
+    )
+    await raw.copy_records_to_table("staff", records=rows, columns=columns)
+    names = ", ".join(columns)
+    updates = ", ".join(f"{c} = EXCLUDED.{c}" for c in columns if c != "id")
+    await raw.execute(
+        f"INSERT INTO users ({names}) SELECT {names} FROM staff "
+        f"ON CONFLICT (id) DO UPDATE SET {updates}"
+    )
+    await raw.execute(
+        "DELETE FROM users WHERE email LIKE $1 AND id NOT IN (SELECT id FROM staff)",
+        f"%@{STAFF_DOMAIN}",
+    )
+
+
 async def seed(url: str) -> None:
     tables = seeded_tables()
     engine = create_async_engine(url, poolclass=NullPool)
@@ -98,18 +121,17 @@ async def seed(url: str) -> None:
                 )
             names = ", ".join(t.name for t in tables if t.name != "users")
             await connection.execute(text(f"TRUNCATE {names}"))
-            await connection.execute(
-                text("DELETE FROM users WHERE email LIKE :staff"),
-                {"staff": f"%@{STAFF_DOMAIN}"},
-            )
             # COPY, through asyncpg, loads the rows far faster than INSERT.
             raw = (await connection.get_raw_connection()).driver_connection
             assert raw is not None
             for table in tables:
                 columns, rows = load(table)
-                await raw.copy_records_to_table(
-                    table.name, records=rows, columns=columns
-                )
+                if table.name == "users":
+                    await upsert_staff(raw, columns, rows)
+                else:
+                    await raw.copy_records_to_table(
+                        table.name, records=rows, columns=columns
+                    )
                 print(f"{table.name}: {len(rows)} rows")
             added = await connection.execute(
                 insert(Policy)
