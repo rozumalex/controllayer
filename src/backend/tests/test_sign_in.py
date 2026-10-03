@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.api.deps import PRIVILEGED
 from app.api.endpoints import auth
@@ -75,7 +75,27 @@ def test_code_goes_to_the_email(inbox: list[dict[str, str]]) -> None:
     assert response.json() == {"sent": True}
     [mail] = inbox
     assert mail["to"] == "eve.adams@acme.com"
-    assert code_in(mail) in mail["subject"]
+    assert mail["subject"] == "Welcome to Portcullis"
+
+
+def test_returning_user_is_asked_to_sign_in(inbox: list[dict[str, str]]) -> None:
+    # given
+    client = TestClient(app)
+    sign_in(client, inbox, EVE)
+    asyncio.run(forget_code_times())
+
+    # when
+    client.post("/api/auth/email", json={"email": EVE})
+
+    # then
+    assert inbox[-1]["subject"] == "Sign in to Portcullis"
+
+
+async def forget_code_times() -> None:
+    """Lets the next code go out at once, as if half a minute had passed."""
+    async with SessionLocal() as session:
+        await session.execute(delete(EmailCode))
+        await session.commit()
 
 
 def test_code_is_stored_hashed(inbox: list[dict[str, str]]) -> None:

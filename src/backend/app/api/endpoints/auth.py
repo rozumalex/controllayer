@@ -118,13 +118,17 @@ async def email(request: EmailSignIn, session: Session) -> CodeSent | SignedIn:
     if code is None:
         raise HTTPException(429, "A code was just sent. Check your email.")
     minutes = settings.email_code_minutes
+    # The mail goes to the email's owner, so saying whether it has an
+    # account tells no one else anything.
+    known = await session.scalar(select(User.id).where(User.email == request.email))
+    subject = "Sign in to Portcullis" if known else "Welcome to Portcullis"
     text = (
         f"Your Portcullis sign-in code is {code}.\n\n"
         f"It works for {minutes} minutes. If you didn't ask for it, ignore "
         "this email."
     )
     try:
-        await send_mail(request.email, f"{code} is your Portcullis code", text)
+        await send_mail(request.email, subject, text)
     except MailError as error:
         raise HTTPException(503, "The email didn't go out. Try again.") from error
     return CodeSent()

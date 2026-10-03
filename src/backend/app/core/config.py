@@ -2,7 +2,7 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import NamedTuple
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 
@@ -122,7 +122,10 @@ class Settings(BaseSettings):
     smtp_tls: str = "starttls"
     smtp_username: str = ""
     smtp_password: str = ""
-    smtp_from: str = "Portcullis <noreply@controllayer.net>"
+    smtp_from: str = "Portcullis <hello@controllayer.net>"
+    # A Resend API key sends the codes through Resend's SMTP server, in place
+    # of the SMTP settings above.
+    resend_api_key: str = ""
     # How long a sign-in code works, how often one may be sent to an email,
     # and how many wrong codes void it.
     email_code_minutes: int = 10
@@ -146,6 +149,16 @@ class Settings(BaseSettings):
             query["ssl"] = query.pop("sslmode")
             url = url.set(query=query)
         return url.render_as_string(hide_password=False)
+
+    @model_validator(mode="after")
+    def use_resend(self) -> Settings:
+        if self.resend_api_key:
+            self.smtp_host = "smtp.resend.com"
+            self.smtp_port = 587
+            self.smtp_tls = "starttls"
+            self.smtp_username = "resend"
+            self.smtp_password = self.resend_api_key
+        return self
 
     @field_validator("redis_url")
     @classmethod

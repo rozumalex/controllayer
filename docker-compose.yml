@@ -68,7 +68,10 @@ services:
       OLLAMA_URL: ${OLLAMA_URL:-}
       # Sign in with Google; empty turns it off.
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
-      # Sign-in codes go to Mailpit, whose inbox is at http://localhost:8025.
+      # Sign-in codes go out through Resend when RESEND_API_KEY is set, and to
+      # Mailpit otherwise, whose inbox is at http://localhost:8025.
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      SMTP_FROM: ${SMTP_FROM:-Portcullis <hello@controllayer.net>}
       SMTP_HOST: ${SMTP_HOST:-mailpit}
       SMTP_PORT: ${SMTP_PORT:-1025}
       SMTP_TLS: ${SMTP_TLS:-none}

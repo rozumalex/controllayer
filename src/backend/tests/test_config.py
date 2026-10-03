@@ -40,3 +40,13 @@ def test_redis_url_plain_unchanged() -> None:
 
     # when / then
     assert Settings(redis_url=url).redis_url == url
+
+
+def test_resend_api_key_sends_through_resend() -> None:
+    # when
+    settings = Settings(resend_api_key="re_test", smtp_host="mailpit")
+
+    # then
+    assert (settings.smtp_host, settings.smtp_port) == ("smtp.resend.com", 587)
+    assert (settings.smtp_username, settings.smtp_password) == ("resend", "re_test")
+    assert settings.smtp_tls == "starttls"
