@@ -59,6 +59,9 @@ services:
       SENTRY_DSN: ${SENTRY_DSN:-}
       NEW_RELIC_LICENSE_KEY: ${NEW_RELIC_LICENSE_KEY:-}
       NEW_RELIC_APP_NAME: ${NEW_RELIC_APP_NAME:-controllayer}
+      # Save the messages with the events, so the dashboard shows what was
+      # asked. Off in production, where prompts may hold secrets.
+      CONTROL_LOG_PAYLOADS: ${CONTROL_LOG_PAYLOADS:-true}
     ports:
       - "${API_PORT:-8000}:8000"
     volumes:
