@@ -37,6 +37,9 @@ def test_streamed_chat_traced_with_every_stage(client: TestClient) -> None:
     events = [e["event"] for e in trace["events"]]
     assert events == [
         "request",
+        # The model, the budget and the injection guard.
+        "verdict",
+        "verdict",
         "verdict",
         "decision",
         "upstream_request",

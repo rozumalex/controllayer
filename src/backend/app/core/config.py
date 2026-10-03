@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
@@ -35,6 +37,13 @@ class Settings(BaseSettings):
     # The models a policy may allow. A role allows the default model unless
     # its policy says otherwise.
     available_models: list[str] = ["gpt-4.1-mini", "gpt-4.1", "gpt-4o-mini", "o4-mini"]
+    # US dollars per million prompt and completion tokens, for the budgets.
+    model_prices: dict[str, tuple[Decimal, Decimal]] = {
+        "gpt-4.1-mini": (Decimal("0.40"), Decimal("1.60")),
+        "gpt-4.1": (Decimal("2.00"), Decimal("8.00")),
+        "gpt-4o-mini": (Decimal("0.15"), Decimal("0.60")),
+        "o4-mini": (Decimal("1.10"), Decimal("4.40")),
+    }
     control_semantic_timeout: float = 10.0
     # Block when the semantic check fails, for example when OpenAI is down.
     # Turn it off to fall back to the heuristic guard alone.
