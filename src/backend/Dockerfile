@@ -45,7 +45,7 @@ COPY pyproject.toml alembic.ini ./
 COPY migrations ./migrations
 COPY app ./app
 # The bank data and its loader, for the deploy's pre-deploy job.
-COPY scripts/__init__.py scripts/seed.py ./scripts/
+COPY scripts/__init__.py scripts/seed.py scripts/policies.py ./scripts/
 COPY scripts/bank_data ./scripts/bank_data
 
 ENV PATH="/opt/venv/bin:$PATH"
