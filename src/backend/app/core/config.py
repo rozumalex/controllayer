@@ -2,6 +2,8 @@ from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 
+from app.control.pipeline import Mode
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
@@ -16,6 +18,17 @@ class Settings(BaseSettings):
     sentry_dsn: str = ""
     sentry_environment: str = "development"
     sentry_traces_sample_rate: float = 1.0
+    # The control layer blocks in "enforce" mode and only logs in "monitor".
+    control_mode: Mode = Mode.ENFORCE
+    control_injection_threshold: float = 0.7
+    # Log message contents at each stage of a chat completion. Handy for a
+    # demo; turn it off where prompts may hold secrets.
+    control_log_payloads: bool = True
+    # The OpenAI model behind /api/v1/chat/completions, whatever model the
+    # client asks for. With no key, a mock model echoes what it receives, so
+    # the demo runs offline.
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4.1-mini"
 
     @field_validator("database_url")
     @classmethod

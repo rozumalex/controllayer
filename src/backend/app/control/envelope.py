@@ -1,0 +1,37 @@
+from dataclasses import dataclass, field
+from enum import StrEnum
+from typing import Any
+from uuid import uuid4
+
+
+class Direction(StrEnum):
+    INBOUND = "inbound"  # agent -> tool: the tool call and its arguments
+    OUTBOUND = "outbound"  # tool -> agent: the tool result
+
+
+class Action(StrEnum):
+    ALLOW = "allow"
+    MODIFY = "modify"
+    BLOCK = "block"
+
+
+@dataclass(frozen=True)
+class Envelope:
+    """One message crossing the layer. Guards see nothing else."""
+
+    direction: Direction
+    agent_id: str
+    server: str
+    tool: str
+    payload: dict[str, Any]
+    trace_id: str = field(default_factory=lambda: uuid4().hex)
+
+
+@dataclass(frozen=True)
+class Verdict:
+    action: Action
+    guard: str
+    score: float | None = None
+    reason: str = ""
+    # The new payload, set only when action is MODIFY.
+    payload: dict[str, Any] | None = None
