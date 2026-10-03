@@ -8,3 +8,7 @@ export const SessionContext = createContext<Session | null>(null)
 
 // The signed-in user, or null outside the sign-in gate.
 export const useSession = () => useContext(SessionContext)
+
+// Only privileged users may open the admin pages; the API checks it too.
+export const isPrivileged = (user?: Employee) =>
+  user?.clearance_level === "PRIVILEGED"

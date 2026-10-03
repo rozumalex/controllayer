@@ -1,15 +1,6 @@
-import {
-  ChevronRight,
-  LayoutDashboard,
-  Lock,
-  MessageSquare,
-  Plus,
-  Trash2,
-} from "lucide-react"
+import { ChevronRight, Lock, Plus, Trash2 } from "lucide-react"
 import { useCallback, useEffect, useState, type FormEvent } from "react"
 
-import { Header } from "@/components/brand"
-import { UserMenu } from "@/components/sign-in"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -48,27 +39,6 @@ import {
 
 // The gateway lists each tool as <server>__<tool>.
 const SEPARATOR = "__"
-
-function NavLink({
-  href,
-  label,
-  icon: Icon,
-}: {
-  href: string
-  label: string
-  icon: typeof MessageSquare
-}) {
-  return (
-    <a
-      href={href}
-      aria-label={label}
-      className="flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-primary-foreground/80 hover:bg-primary-foreground/10 hover:text-primary-foreground"
-    >
-      <Icon className="size-4" />
-      <span className="hidden sm:inline">{label}</span>
-    </a>
-  )
-}
 
 function ToolHint({ tool }: { tool: McpTool }) {
   if (tool.destructive) return <Badge variant="destructive">Destructive</Badge>
@@ -379,26 +349,18 @@ function Servers() {
   )
 }
 
-export function Config() {
+export function Mcps() {
   return (
-    <div className="flex min-h-svh flex-col bg-muted/40">
-      <Header product="Configuration">
-        <NavLink href="/dashboard" label="Dashboard" icon={LayoutDashboard} />
-        <NavLink href="/" label="Assistant" icon={MessageSquare} />
-        <UserMenu />
-      </Header>
-
-      <main className="mx-auto flex w-full max-w-4xl flex-col gap-6 p-4 md:p-6">
-        <div>
-          <h1 className="font-serif text-2xl font-semibold tracking-tight text-primary">
-            Configuration
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            The MCP servers whose tools the control layer gives to agents.
-          </p>
-        </div>
-        <Servers />
-      </main>
-    </div>
+    <>
+      <div>
+        <h1 className="font-serif text-2xl font-semibold tracking-tight text-primary">
+          MCP servers
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          The MCP servers whose tools the control layer gives to agents.
+        </p>
+      </div>
+      <Servers />
+    </>
   )
 }

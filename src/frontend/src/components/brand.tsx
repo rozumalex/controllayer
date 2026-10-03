@@ -1,3 +1,4 @@
+import type { LucideIcon } from "lucide-react"
 import type { ComponentProps, ReactNode } from "react"
 
 // Golden Socks, the fictional bank whose employees use the assistant.
@@ -39,5 +40,27 @@ export function Header({
       </span>
       <div className="ml-auto flex items-center gap-3">{children}</div>
     </header>
+  )
+}
+
+// A link to another page, for the right of the header.
+export function HeaderLink({
+  href,
+  label,
+  icon: Icon,
+}: {
+  href: string
+  label: string
+  icon: LucideIcon
+}) {
+  return (
+    <a
+      href={href}
+      aria-label={label}
+      className="flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-primary-foreground/80 hover:bg-primary-foreground/10 hover:text-primary-foreground"
+    >
+      <Icon className="size-4" />
+      <span className="hidden sm:inline">{label}</span>
+    </a>
   )
 }

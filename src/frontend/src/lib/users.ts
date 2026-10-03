@@ -36,6 +36,23 @@ export async function fetchMe(): Promise<Employee | null> {
   return response.json()
 }
 
+// What the sign-in screen shows of an employee, see sign_in_employees.
+export type SignInEmployee = Pick<
+  Employee,
+  "id" | "name" | "role" | "team" | "clearance_level"
+>
+
+export async function fetchSignInEmployees(
+  q: string
+): Promise<SignInEmployee[]> {
+  const query = new URLSearchParams({ limit: "12" })
+  if (q) query.set("q", q)
+  const response = await fetch(`/api/employees/sign-in?${query}`)
+  if (!response.ok)
+    throw new Error(`Loading the staff failed with ${response.status}.`)
+  return response.json()
+}
+
 export const initials = (name: string) =>
   name
     .split(/\s+/)

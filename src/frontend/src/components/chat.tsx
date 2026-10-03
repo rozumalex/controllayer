@@ -5,13 +5,13 @@ import {
   useLocalRuntime,
   type ChatModelAdapter,
 } from "@assistant-ui/react"
-import { ShieldCheck } from "lucide-react"
+import { Shield, ShieldCheck } from "lucide-react"
 
 import { Thread } from "@/components/assistant-ui/elements/thread.aui"
-import { Header, Logo } from "@/components/brand"
+import { Header, HeaderLink, Logo } from "@/components/brand"
 import { UserMenu } from "@/components/sign-in"
 import { TooltipProvider } from "@/components/ui/tooltip"
-import { useSession } from "@/lib/session"
+import { isPrivileged, useSession } from "@/lib/session"
 import { userHeaders } from "@/lib/users"
 
 // The events of POST /api/chat/stream, see chat_stream in the backend.
@@ -114,6 +114,7 @@ function Welcome() {
 
 export function Chat() {
   const runtime = useLocalRuntime(controlLayer)
+  const session = useSession()
   return (
     <AssistantRuntimeProvider runtime={runtime} config={config}>
       <TooltipProvider>
@@ -126,6 +127,9 @@ export function Chat() {
               </span>
               <span className="sm:hidden">Protected</span>
             </span>
+            {isPrivileged(session?.user) && (
+              <HeaderLink href="/admin" label="Admin" icon={Shield} />
+            )}
             <UserMenu />
           </Header>
           <div className="min-h-0 flex-1">

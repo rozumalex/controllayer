@@ -43,6 +43,17 @@ async def current_user(
 
 CurrentUser = Annotated[User, Depends(current_user)]
 
+# The clearance level that opens the admin pages: the dashboard, the MCP
+# servers and the policy.
+PRIVILEGED = "PRIVILEGED"
+
+
+async def privileged_user(user: CurrentUser) -> User:
+    """The signed-in user, or 403 if their clearance is not privileged."""
+    if user.clearance_level != PRIVILEGED:
+        raise HTTPException(403, "Only privileged users can open the admin pages")
+    return user
+
 
 def event_sink() -> EventSink:
     # Every event goes to the logs and to the database, where the dashboard

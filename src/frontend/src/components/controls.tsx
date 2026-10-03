@@ -1,8 +1,6 @@
-import { LayoutDashboard, MessageSquare, Search } from "lucide-react"
+import { Search } from "lucide-react"
 import { useCallback, useEffect, useState, type ReactNode } from "react"
 
-import { Header } from "@/components/brand"
-import { UserMenu } from "@/components/sign-in"
 import { PolicySheet, type Editing } from "@/components/policy-sheet"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -59,28 +57,8 @@ function toolSummary(settings: PolicySettings) {
     .join(" · ")
 }
 
-function NavLink({
-  href,
-  label,
-  icon: Icon,
-}: {
-  href: string
-  label: string
-  icon: typeof MessageSquare
-}) {
-  return (
-    <a
-      href={href}
-      aria-label={label}
-      className="flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-primary-foreground/80 hover:bg-primary-foreground/10 hover:text-primary-foreground"
-    >
-      <Icon className="size-4" />
-      <span className="hidden sm:inline">{label}</span>
-    </a>
-  )
-}
-
-function Employees({ roles }: { roles: string[] }) {
+export function Employees() {
+  const [roles, setRoles] = useState<string[]>([])
   const [query, setQuery] = useState("")
   const [role, setRole] = useState("")
   const [offset, setOffset] = useState(0)
@@ -100,6 +78,12 @@ function Employees({ roles }: { roles: string[] }) {
       clearTimeout(timer)
     }
   }, [query, role, offset])
+
+  useEffect(() => {
+    fetchPolicy()
+      .then((overview) => setRoles(overview.roles.map((r) => r.role)))
+      .catch(() => setRoles([]))
+  }, [])
 
   const total = list?.total ?? 0
 
@@ -222,7 +206,7 @@ function Employees({ roles }: { roles: string[] }) {
   )
 }
 
-export function Controls() {
+export function Policy() {
   const [overview, setOverview] = useState<PolicyOverview | null>(null)
   const [tools, setTools] = useState<GatewayTool[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -246,143 +230,131 @@ export function Controls() {
   const fallback = overview?.default
 
   return (
-    <div className="flex min-h-svh flex-col bg-muted/40">
-      <Header product="Controls">
-        <NavLink href="/dashboard" label="Dashboard" icon={LayoutDashboard} />
-        <NavLink href="/" label="Assistant" icon={MessageSquare} />
-        <UserMenu />
-      </Header>
+    <>
+      <div>
+        <h1 className="font-serif text-2xl font-semibold tracking-tight text-primary">
+          Policy
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          What each role may see, call and spend. An employee works under the
+          policy of their role.
+        </p>
+      </div>
 
-      <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-4 md:p-6">
-        <div>
-          <h1 className="font-serif text-2xl font-semibold tracking-tight text-primary">
-            Policy
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            What each role may see, call and spend. An employee works under the
-            policy of their role.
-          </p>
-        </div>
+      {error && (
+        <p className="text-sm text-destructive">
+          Could not load the policy: {error}
+        </p>
+      )}
 
-        {error && (
-          <p className="text-sm text-destructive">
-            Could not load the policy: {error}
-          </p>
-        )}
-
-        <Card>
-          <CardHeader className="flex items-center justify-between gap-3">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                Default policy
-                {fallback && !fallback.customized && (
-                  <Badge variant="secondary">from the environment</Badge>
-                )}
-              </CardTitle>
-              <p className="mt-1 text-sm text-muted-foreground">
-                For every role without a policy of its own.
-              </p>
-            </div>
-            <Button
-              variant="outline"
-              disabled={!fallback}
-              onClick={() =>
-                fallback && setEditing({ role: null, policy: fallback })
-              }
-            >
-              Edit
-            </Button>
-          </CardHeader>
-          {fallback && (
-            <CardContent className="grid grid-cols-2 gap-4 text-sm md:grid-cols-4">
-              <Summary label="Clearance">
-                {fallback.settings.clearance}, above it{" "}
-                {fallback.settings.above_clearance}
-              </Summary>
-              <Summary label="Injection threshold">
-                {fallback.settings.injection_threshold.toFixed(2)}
-              </Summary>
-              <Summary label="Models">
-                {fallback.settings.allowed_models.join(", ") || "None"}
-              </Summary>
-              <Summary label="Budget">{budget(fallback.settings)}</Summary>
-            </CardContent>
-          )}
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Roles</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Role</TableHead>
-                  <TableHead className="text-right">Employees</TableHead>
-                  <TableHead>Clearance</TableHead>
-                  <TableHead className="hidden md:table-cell">Models</TableHead>
-                  <TableHead className="hidden md:table-cell">Budget</TableHead>
-                  <TableHead className="hidden lg:table-cell">Tools</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {overview?.roles.length === 0 && (
-                  <TableRow>
-                    <TableCell
-                      colSpan={6}
-                      className="py-10 text-center text-muted-foreground"
-                    >
-                      No employees yet. Load the bank data with ./dev seed.
-                    </TableCell>
-                  </TableRow>
-                )}
-                {overview?.roles.map((role) => (
-                  <TableRow
-                    key={role.role}
-                    className="cursor-pointer"
-                    onClick={() =>
-                      setEditing({ role: role.role, policy: role })
-                    }
-                  >
-                    <TableCell>
-                      <div className="flex items-center gap-2 font-medium">
-                        {role.role}
-                        {role.customized ? (
-                          <Badge>own policy</Badge>
-                        ) : (
-                          <Badge variant="outline">default</Badge>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {role.employees}
-                    </TableCell>
-                    <TableCell>
-                      {role.settings.clearance}
-                      <span className="text-muted-foreground">
-                        {" "}
-                        · {role.settings.above_clearance} above
-                      </span>
-                    </TableCell>
-                    <TableCell className="hidden max-w-48 truncate font-mono text-xs md:table-cell">
-                      {role.settings.allowed_models.join(", ") || "None"}
-                    </TableCell>
-                    <TableCell className="hidden text-muted-foreground md:table-cell">
-                      {budget(role.settings)}
-                    </TableCell>
-                    <TableCell className="hidden text-muted-foreground lg:table-cell">
-                      {toolSummary(role.settings)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+      <Card>
+        <CardHeader className="flex items-center justify-between gap-3">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              Default policy
+              {fallback && !fallback.customized && (
+                <Badge variant="secondary">from the environment</Badge>
+              )}
+            </CardTitle>
+            <p className="mt-1 text-sm text-muted-foreground">
+              For every role without a policy of its own.
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            disabled={!fallback}
+            onClick={() =>
+              fallback && setEditing({ role: null, policy: fallback })
+            }
+          >
+            Edit
+          </Button>
+        </CardHeader>
+        {fallback && (
+          <CardContent className="grid grid-cols-2 gap-4 text-sm md:grid-cols-4">
+            <Summary label="Clearance">
+              {fallback.settings.clearance}, above it{" "}
+              {fallback.settings.above_clearance}
+            </Summary>
+            <Summary label="Injection threshold">
+              {fallback.settings.injection_threshold.toFixed(2)}
+            </Summary>
+            <Summary label="Models">
+              {fallback.settings.allowed_models.join(", ") || "None"}
+            </Summary>
+            <Summary label="Budget">{budget(fallback.settings)}</Summary>
           </CardContent>
-        </Card>
+        )}
+      </Card>
 
-        <Employees roles={overview?.roles.map((r) => r.role) ?? []} />
-      </main>
+      <Card>
+        <CardHeader>
+          <CardTitle>Roles</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Role</TableHead>
+                <TableHead className="text-right">Employees</TableHead>
+                <TableHead>Clearance</TableHead>
+                <TableHead className="hidden md:table-cell">Models</TableHead>
+                <TableHead className="hidden md:table-cell">Budget</TableHead>
+                <TableHead className="hidden lg:table-cell">Tools</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {overview?.roles.length === 0 && (
+                <TableRow>
+                  <TableCell
+                    colSpan={6}
+                    className="py-10 text-center text-muted-foreground"
+                  >
+                    No employees yet. Load the bank data with ./dev seed.
+                  </TableCell>
+                </TableRow>
+              )}
+              {overview?.roles.map((role) => (
+                <TableRow
+                  key={role.role}
+                  className="cursor-pointer"
+                  onClick={() => setEditing({ role: role.role, policy: role })}
+                >
+                  <TableCell>
+                    <div className="flex items-center gap-2 font-medium">
+                      {role.role}
+                      {role.customized ? (
+                        <Badge>own policy</Badge>
+                      ) : (
+                        <Badge variant="outline">default</Badge>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {role.employees}
+                  </TableCell>
+                  <TableCell>
+                    {role.settings.clearance}
+                    <span className="text-muted-foreground">
+                      {" "}
+                      · {role.settings.above_clearance} above
+                    </span>
+                  </TableCell>
+                  <TableCell className="hidden max-w-48 truncate font-mono text-xs md:table-cell">
+                    {role.settings.allowed_models.join(", ") || "None"}
+                  </TableCell>
+                  <TableCell className="hidden text-muted-foreground md:table-cell">
+                    {budget(role.settings)}
+                  </TableCell>
+                  <TableCell className="hidden text-muted-foreground lg:table-cell">
+                    {toolSummary(role.settings)}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
 
       <PolicySheet
         key={editing ? (editing.role ?? "default") : "closed"}
@@ -392,7 +364,7 @@ export function Controls() {
         onClose={() => setEditing(null)}
         onSaved={load}
       />
-    </div>
+    </>
   )
 }
 
