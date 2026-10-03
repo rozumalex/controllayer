@@ -69,7 +69,7 @@ def test_injected_message_blocked_before_model(client: TestClient) -> None:
     assert response.status_code == 200
     data = response.json()
     assert data["blocked"] is True
-    assert data["reply"].startswith("[control layer] The request")
+    assert data["reply"] == "[control layer] The request was blocked."
     assert "[mock model]" not in data["reply"]
 
 
@@ -121,7 +121,8 @@ def test_injected_tool_result_withheld() -> None:
 
     # then
     content = response["choices"][0]["message"]["content"]
-    assert "This tool result was withheld" in content
+    assert "This tool result was withheld." in content
+    assert "matched" not in content
     assert "evil@x.com" not in content
 
 
@@ -168,8 +169,8 @@ def test_injected_tool_call_from_model_blocked() -> None:
     choice = response["choices"][0]
     assert choice["finish_reason"] == "content_filter"
     assert "tool_calls" not in choice["message"]
-    assert choice["message"]["content"].startswith(
-        "[control layer] A call to send_email was blocked"
+    assert choice["message"]["content"] == (
+        "[control layer] A call to send_email was blocked."
     )
 
 

@@ -19,9 +19,11 @@ from app.control.upstream import ChatUpstream, completion
 
 logger = logging.getLogger("app.control.chat")
 
-WITHHELD = "[control layer] This tool result was withheld: {reason}"
-BLOCKED_PROMPT = "[control layer] The request was blocked: {reason}"
-BLOCKED_CALL = "[control layer] A call to {tool} was blocked: {reason}"
+# The messages don't say why: the matched patterns would show an attacker what
+# to reword. The reasons are in the logs, under the trace id.
+WITHHELD = "[control layer] This tool result was withheld."
+BLOCKED_PROMPT = "[control layer] The request was blocked."
+BLOCKED_CALL = "[control layer] A call to {tool} was blocked."
 
 
 def text_of(content: Any) -> str:
@@ -36,10 +38,6 @@ def text_of(content: Any) -> str:
             if isinstance(part, dict) and part.get("type") == "text"
         )
     return ""
-
-
-def reason_of(decision: Decision) -> str:
-    return "; ".join(v.reason for v in decision.verdicts if v.action is Action.BLOCK)
 
 
 @dataclass
@@ -63,8 +61,7 @@ class ChatControl:
 
         messages, blocked = await self.check_messages(request["messages"], trace)
         if blocked:
-            content = BLOCKED_PROMPT.format(reason=blocked)
-            response = completion(model, content, "content_filter")
+            response = completion(model, BLOCKED_PROMPT, "content_filter")
         else:
             upstream_request = {**request, "messages": messages, "stream": False}
             self.log(trace, "upstream_request", messages=messages)
@@ -79,8 +76,8 @@ class ChatControl:
 
     async def check_messages(
         self, messages: list[dict[str, Any]], trace: Trace
-    ) -> tuple[list[dict[str, Any]], str | None]:
-        """Returns the messages to send to the model, or the reason to block."""
+    ) -> tuple[list[dict[str, Any]], bool]:
+        """Returns the messages to send to the model, and whether to block."""
         # Clients resend the whole history every turn. Only the prompts after
         # the last answer are new; older ones were checked on their own turn.
         new_from = max(
@@ -99,7 +96,7 @@ class ChatControl:
                     Direction.INBOUND, "llm", "user_prompt", payload, trace
                 )
                 if decision.action is Action.BLOCK:
-                    return checked, reason_of(decision)
+                    return checked, True
             elif role == "tool":
                 # Every tool result is checked, so the model never sees one
                 # raw, even from an earlier turn.
@@ -109,13 +106,12 @@ class ChatControl:
                     Direction.OUTBOUND, "tool", tool, payload, trace
                 )
                 if decision.action is Action.BLOCK:
-                    content = WITHHELD.format(reason=reason_of(decision))
-                    message = {**message, "content": content}
+                    message = {**message, "content": WITHHELD}
                 elif decision.action is Action.MODIFY:
                     content = decision.envelope.payload["content"]
                     message = {**message, "content": content}
             checked.append(message)
-        return checked, None
+        return checked, False
 
     async def check_response(
         self, response: dict[str, Any], trace: Trace
@@ -129,7 +125,7 @@ class ChatControl:
                     Direction.INBOUND, "tool", tool, arguments(function), trace
                 )
                 if decision.action is Action.BLOCK:
-                    content = BLOCKED_CALL.format(tool=tool, reason=reason_of(decision))
+                    content = BLOCKED_CALL.format(tool=tool)
                     choice["message"] = {"role": "assistant", "content": content}
                     choice["finish_reason"] = "content_filter"
                     break
