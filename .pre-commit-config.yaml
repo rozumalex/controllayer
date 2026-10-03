@@ -11,6 +11,8 @@ repos:
       - id: check-toml
       - id: check-merge-conflict
       - id: check-added-large-files
+        # The bank seed data, about 10 MB of gzipped CSV.
+        exclude: ^src/backend/scripts/bank_data/
       - id: detect-private-key
   - repo: https://github.com/python-jsonschema/check-jsonschema
     rev: 0.38.2

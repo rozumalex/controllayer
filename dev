@@ -23,6 +23,7 @@ Database:
   migrate [revision]         Apply the migrations, up to head by default
   makemigrations <message>   Create a migration from the model changes
   checkmigrations            Check that the migrations apply and cover every model change
+  seed [--url URL] [-y]      Load the Golden Socks bank data, into DATABASE_URL by default
   psql                       Open psql in the database
 
 Checks:
@@ -34,6 +35,7 @@ Examples:
   ./dev test tests/test_health.py::test_health
   ./dev test -k health -x
   ./dev makemigrations "add posts table"
+  ./dev seed --url "$PRODUCTION_DATABASE_URL"
 USAGE
 }
 
@@ -90,6 +92,9 @@ case $command in
     docker compose up -d --wait db
     docker compose run --rm --no-deps -T migrate python -m scripts.check_migrations
     ;;
+  # Runs in the migrate service, which mounts the data files and has
+  # DATABASE_URL set to the Compose database.
+  seed) docker compose run --rm migrate python -m scripts.seed "$@" ;;
   psql) docker compose exec db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' ;;
   # pre-commit runs on the host, like the git commit hook, so it needs uv,
   # pnpm and pre-commit installed there.
