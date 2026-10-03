@@ -1,0 +1,238 @@
+# The policies of the AI Control Layer, one for each Golden Socks role.
+#
+# `./dev seed` saves the policy of every role below that has none in the
+# database yet, so a policy someone changed on the Policies page is kept. To
+# apply a change to this file to a role that already has a policy, reset that
+# role on the Policies page first, or delete its row in `policies`.
+#
+# A role is a job title in users. The role "*" is the default: it applies to
+# every job title without a policy of its own.
+#
+# The control layer checks every chat and every gateway call against the
+# policy of the employee who makes it:
+#
+#   injection_threshold  The prompt injection guard scores each prompt and
+#                        tool result from 0 (safe) to 1 (an attack). A score at
+#                        or above the threshold blocks the request, so a lower
+#                        threshold is stricter.
+#   clearance            The most sensitive bank data the role sees as it is:
+#                        PUBLIC, INTERNAL, CONFIDENTIAL or RESTRICTED. The data
+#                        catalog (bank_data_catalog) gives every field its
+#                        level.
+#   above_clearance      What happens to a tool result that holds fields
+#                        above the clearance:
+#                          redact - those fields come back masked, the rest
+#                                   of the result goes through;
+#                          block  - the whole result is withheld.
+#   pii                  What happens to each kind of PII found in free text,
+#                        in prompts and in tool results: allow, redact or
+#                        block. Kinds: email, phone, iban, payment_card, pesel.
+#                        A kind left out follows the clearance, like the
+#                        catalog field that holds it: allowed at or below it,
+#                        above_clearance above it. A kind set here wins over
+#                        the clearance, either way.
+#   allowed_models       The LLMs the role may chat with. Each must be one of
+#                        AVAILABLE_MODELS in the backend settings.
+#   budget               What each employee in the role may spend in a
+#                        calendar month (UTC): monthly_tokens and monthly_usd.
+#                        Leave one out, or set it to null, for no limit. The
+#                        chat stops once either is used up.
+#   default_tool_action  allow, redact or block, for gateway tools that
+#                        `tools` doesn't name.
+#   tools                Gateway tools, as <server>__<tool>, and what happens
+#                        when the role calls them:
+#                          allow  - the call goes through;
+#                          redact - the call goes through, and its result is
+#                                   masked down to public data, PII included;
+#                          block  - the call is refused.
+#
+# Secrets, such as API keys and passwords, are always blocked before they
+# reach a model. No policy can allow them.
+#
+# The file uses YAML anchors (&name) and merge keys (<<: *name), so a role
+# starts from one of the strictness levels and a set of tool groups, and then
+# sets or overrides its own keys. A key set in the role wins over the merged
+# one.
+
+# Strictness levels: how hard the guardrails hold. Every role starts from one.
+levels:
+  # For roles that need no client data, or sit behind an information barrier.
+  # Low injection threshold, a result with data above the clearance is
+  # withheld, and a prompt or result with any PII is blocked.
+  strict: &strict
+    injection_threshold: 0.5
+    above_clearance: block
+    pii:
+      email: block
+      phone: block
+      iban: block
+      payment_card: block
+      pesel: block
+
+  # For most of the bank. Data above the clearance comes back masked, so the
+  # answer still helps, and so does PII that moves money or names a person,
+  # whatever the clearance. Contact details follow the clearance.
+  balanced: &balanced
+    injection_threshold: 0.65
+    above_clearance: redact
+    pii:
+      iban: redact
+      payment_card: redact
+      pesel: redact
+
+  # For senior and control roles that work with clients every day. A prompt
+  # must look clearly malicious to be blocked, and contact details come
+  # through. Other PII follows the clearance, and data above it is still
+  # masked: no level shows it as it is.
+  permissive: &permissive
+    injection_threshold: 0.75
+    above_clearance: redact
+    pii:
+      email: allow
+      phone: allow
+
+# Groups of bank tools, merged into each role's `tools`. The tool names are
+# the ones the gateway serves when the bank MCP server is registered as
+# `bank`, as the README shows.
+tool_groups:
+  # Look up clients, accounts, trades and research.
+  read: &read
+    bank__search_clients: allow
+    bank__get_client: allow
+    bank__get_account: allow
+    bank__list_transactions: allow
+    bank__list_trades: allow
+    bank__search_research: allow
+  # Look after a client's relationship.
+  coverage: &coverage
+    bank__add_client_note: allow
+    bank__update_client_contact: allow
+  # Freeze an account, raise an AML alert, or open the account again.
+  control: &control
+    bank__flag_transaction: allow
+    bank__restrict_account: allow
+    bank__lift_restriction: allow
+
+policies:
+  # A new job title reads internal data, and calls no tool but search until
+  # its role gets a policy.
+  "*":
+    <<: *balanced
+    clearance: INTERNAL
+    allowed_models: [gpt-4.1-mini]
+    budget: {monthly_tokens: 500000, monthly_usd: 10}
+    default_tool_action: block
+    tools:
+      bank__search_clients: allow
+      bank__search_research: allow
+
+  # Juniors: read and take notes, but move nothing. Balances come back
+  # redacted.
+  Analyst:
+    <<: *balanced
+    clearance: INTERNAL
+    allowed_models: [gpt-4.1-mini, gpt-4o-mini]
+    budget: {monthly_tokens: 2000000, monthly_usd: 25}
+    default_tool_action: block
+    tools:
+      <<: *read
+      bank__get_account: redact
+      bank__add_client_note: allow
+
+  Associate:
+    <<: *balanced
+    clearance: INTERNAL
+    allowed_models: [gpt-4.1-mini, gpt-4o-mini]
+    budget: {monthly_tokens: 3000000, monthly_usd: 40}
+    default_tool_action: block
+    tools:
+      <<: [*read, *coverage]
+
+  # Seniors cover clients and trade for them, so every tool is allowed but
+  # the ones listed. Freezing accounts stays with risk and compliance.
+  Vice President:
+    <<: *balanced
+    clearance: CONFIDENTIAL
+    allowed_models: [gpt-4.1, gpt-4.1-mini]
+    budget: {monthly_tokens: 5000000, monthly_usd: 100}
+    default_tool_action: allow
+    tools:
+      bank__initiate_payment: block
+      bank__restrict_account: block
+      bank__lift_restriction: block
+
+  Executive Director:
+    <<: *permissive
+    clearance: CONFIDENTIAL
+    allowed_models: [gpt-4.1, gpt-4.1-mini, o4-mini]
+    budget: {monthly_tokens: 8000000, monthly_usd: 200}
+    default_tool_action: allow
+    tools:
+      bank__restrict_account: block
+      bank__lift_restriction: block
+
+  # No token limit, only a spending one.
+  Managing Director:
+    <<: *permissive
+    clearance: RESTRICTED
+    allowed_models: [gpt-4.1, gpt-4.1-mini, gpt-4o-mini, o4-mini]
+    budget: {monthly_tokens: null, monthly_usd: 500}
+    default_tool_action: allow
+    tools:
+      bank__restrict_account: block
+      bank__lift_restriction: block
+
+  # Second line: sees everything, can stop money, never moves it.
+  Compliance Officer:
+    <<: *permissive
+    clearance: RESTRICTED
+    allowed_models: [gpt-4.1, gpt-4.1-mini, o4-mini]
+    budget: {monthly_tokens: 6000000, monthly_usd: 150}
+    default_tool_action: block
+    tools:
+      <<: [*read, *control]
+      bank__add_client_note: allow
+
+  Risk Manager:
+    <<: *permissive
+    clearance: CONFIDENTIAL
+    allowed_models: [gpt-4.1, gpt-4.1-mini, o4-mini]
+    budget: {monthly_tokens: 5000000, monthly_usd: 120}
+    default_tool_action: block
+    tools:
+      <<: *read
+      bank__flag_transaction: allow
+      bank__restrict_account: allow
+
+  # Middle office: settles payments and trades, sees client data redacted.
+  Operations Specialist:
+    <<: *balanced
+    clearance: CONFIDENTIAL
+    allowed_models: [gpt-4.1-mini, gpt-4o-mini]
+    budget: {monthly_tokens: 3000000, monthly_usd: 40}
+    default_tool_action: block
+    tools:
+      <<: *read
+      bank__get_client: redact
+      bank__search_research: block
+      bank__initiate_payment: allow
+      bank__cancel_trade: allow
+      bank__flag_transaction: allow
+
+  # Behind the information barrier: research only, no client or trade data.
+  Research Analyst:
+    <<: *strict
+    clearance: INTERNAL
+    allowed_models: [gpt-4.1, gpt-4.1-mini, o4-mini]
+    budget: {monthly_tokens: 4000000, monthly_usd: 80}
+    default_tool_action: block
+    tools:
+      bank__search_research: allow
+
+  # Builds the systems, never touches client data, and calls no bank tool.
+  Engineer:
+    <<: *strict
+    clearance: PUBLIC
+    allowed_models: [gpt-4.1, gpt-4.1-mini, gpt-4o-mini, o4-mini]
+    budget: {monthly_tokens: 4000000, monthly_usd: 60}
+    default_tool_action: block
