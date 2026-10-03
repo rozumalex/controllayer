@@ -22,8 +22,8 @@ logger = logging.getLogger("app.control.chat")
 # The messages don't say why: the matched patterns would show an attacker what
 # to reword. The reasons are in the logs, under the trace id.
 WITHHELD = "[control layer] This tool result was withheld."
-BLOCKED_PROMPT = "[control layer] The request was blocked."
-BLOCKED_CALL = "[control layer] A call to {tool} was blocked."
+BLOCKED_PROMPT = "The request was blocked."
+BLOCKED_CALL = "A call to {tool} was blocked."
 
 
 def text_of(content: Any) -> str:

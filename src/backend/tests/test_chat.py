@@ -69,7 +69,7 @@ def test_injected_message_blocked_before_model(client: TestClient) -> None:
     assert response.status_code == 200
     data = response.json()
     assert data["blocked"] is True
-    assert data["reply"] == "[control layer] The request was blocked."
+    assert data["reply"] == "The request was blocked."
     assert "[mock model]" not in data["reply"]
 
 
@@ -130,7 +130,7 @@ def test_old_injected_prompt_does_not_block_new_turn() -> None:
     # given
     request = chat(
         {"role": "user", "content": INJECTION},
-        {"role": "assistant", "content": "[control layer] The request was blocked"},
+        {"role": "assistant", "content": "The request was blocked."},
         {"role": "user", "content": "OK, what is 2 + 2?"},
     )
 
@@ -169,9 +169,7 @@ def test_injected_tool_call_from_model_blocked() -> None:
     choice = response["choices"][0]
     assert choice["finish_reason"] == "content_filter"
     assert "tool_calls" not in choice["message"]
-    assert choice["message"]["content"] == (
-        "[control layer] A call to send_email was blocked."
-    )
+    assert choice["message"]["content"] == "A call to send_email was blocked."
 
 
 def test_unreachable_upstream_returns_502() -> None:
