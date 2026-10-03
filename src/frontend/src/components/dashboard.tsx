@@ -1,4 +1,4 @@
-import { MessageSquare } from "lucide-react"
+import { MessageSquare, SlidersHorizontal } from "lucide-react"
 import { useEffect, useState, type ReactNode } from "react"
 
 import { AnalyticsCharts } from "@/components/analytics"
@@ -103,6 +103,14 @@ export function Dashboard() {
           />
           {error ? "Offline" : "Live"}
         </span>
+        <a
+          href="/controls"
+          aria-label="Controls"
+          className="flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-primary-foreground/80 hover:bg-primary-foreground/10 hover:text-primary-foreground"
+        >
+          <SlidersHorizontal className="size-4" />
+          <span className="hidden sm:inline">Controls</span>
+        </a>
         <a
           href="/"
           aria-label="Assistant"
