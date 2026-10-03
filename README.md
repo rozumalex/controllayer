@@ -93,18 +93,18 @@ The control layer gives agents the tools of every registered MCP server, and run
 
 `app/servers/bank.py` is an example tool set to put behind the gateway: the Golden Socks core banking system over the data that `./dev seed` loads. It has no guards of its own. It checks the business rules a bank would, such as no payments from a frozen account, and returns whole rows, restricted fields included. Everything else is left to the control layer once the server is registered.
 
-| Tool                                   | Does                                                                     |
-| -------------------------------------- | ------------------------------------------------------------------------ |
-| `search_clients`, `get_client`         | Find clients; one client's profile with their accounts                   |
-| `get_account`                          | An account and its balance available for payments                        |
-| `list_transactions`, `list_trades`     | A client's or an account's transactions or trades, newest first          |
-| `search_research`                      | Research reports by symbol, sector or title                              |
-| `initiate_payment`                     | Send money out of an account; it waits as `PENDING` for payment ops      |
-| `flag_transaction`                     | Raise an AML alert; a pending payment is held                            |
-| `restrict_account`, `lift_restriction` | Freeze an account for a risk review or legal hold, or open it again      |
-| `book_trade`, `cancel_trade`           | Book a client trade; cancel one that has not settled                     |
-| `update_client_contact`                | Change a client's named contact, email or phone                          |
-| `add_client_note`                      | Add a dated note to a client's relationship notes                        |
+| Tool                                   | Does                                                                |
+| -------------------------------------- | ------------------------------------------------------------------- |
+| `search_clients`, `get_client`         | Find clients; one client's profile with their accounts              |
+| `get_account`                          | An account and its balance available for payments                   |
+| `list_transactions`, `list_trades`     | A client's or an account's transactions or trades, newest first     |
+| `search_research`                      | Research reports by symbol, sector or title                         |
+| `initiate_payment`                     | Send money out of an account; it waits as `PENDING` for payment ops |
+| `flag_transaction`                     | Raise an AML alert; a pending payment is held                       |
+| `restrict_account`, `lift_restriction` | Freeze an account for a risk review or legal hold, or open it again |
+| `book_trade`, `cancel_trade`           | Book a client trade; cancel one that has not settled                |
+| `update_client_contact`                | Change a client's named contact, email or phone                     |
+| `add_client_note`                      | Add a dated note to a client's relationship notes                   |
 
 Research, the data catalog, the identity profiles and the staff are read only. The tools carry MCP annotations: read only, write, or destructive for the ones that move money or freeze an account.
 
@@ -116,6 +116,31 @@ curl -X POST localhost:8000/api/mcp-servers -H "Content-Type: application/json" 
 ```
 
 Its tools then reach agents as `bank__search_clients` and so on.
+
+### Attack signatures
+
+The `attack_signatures` guard blocks the patterns of known exploits on AI systems in every prompt, tool call and tool result: code execution, unsafe deserialization such as pickle and PyYAML tags, model files and code from untrusted repositories, template injection, cloud metadata SSRF and path traversal. Each signature cites the CVEs or write-ups it comes from.
+
+The signatures live outside the code, in a JSON feed that a security team can maintain: `src/backend/app/control/signatures.json` by default, or any file or URL in `CONTROL_SIGNATURE_FEED`. The guard reads a file again when it changes, and a URL every `CONTROL_SIGNATURE_REFRESH` seconds, so an edit applies to the next message without a restart. If a new version is broken, the last good one stays, and a signature with a broken pattern is left out on its own.
+
+```json
+{
+  "version": "2026-10-03.1",
+  "signatures": [
+    {
+      "id": "CL-DESER-004",
+      "name": "PyYAML tag that builds Python objects",
+      "category": "deserialization",
+      "severity": 0.95,
+      "pattern": "!!python/(?:object|name|module)",
+      "references": ["CVE-2017-18342", "CVE-2020-1747"],
+      "enabled": true
+    }
+  ]
+}
+```
+
+A match blocks when its `severity` reaches `CONTROL_SIGNATURE_THRESHOLD`, `0.7` by default. A lower match is only logged, as `CL-SUPPLY-002` is for a pickle model file from a model hub. Set `enabled` to `false` to turn one signature off. The audit log holds the IDs of the signatures matched, never the text.
 
 ## Frontend
 
@@ -209,28 +234,31 @@ The static host must send requests under `/api/` to the backend unchanged, the w
 
 Every variable has a default, so the project runs without any setup.
 
-| Variable                    | Read by                    | Default                                                     | What it sets                                                                                  |
-| --------------------------- | -------------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `APP_PORT`                  | Compose                    | `3000`                                                      | Host port for the frontend                                                                    |
-| `API_PORT`                  | Compose                    | `8000`                                                      | Host port for the backend                                                                     |
-| `DB_PORT`                   | Compose                    | `5432`                                                      | Host port for Postgres                                                                        |
-| `REDIS_PORT`                | Compose                    | `6379`                                                      | Host port for Redis                                                                           |
-| `NGROK_AUTHTOKEN`           | Compose                    |                                                             | ngrok authtoken for `./dev ngrok`, from https://dashboard.ngrok.com                           |
-| `POSTGRES_USER`             | Compose                    | `postgres`                                                  | Database user                                                                                 |
-| `POSTGRES_PASSWORD`         | Compose                    | `postgres`                                                  | Database password                                                                             |
-| `POSTGRES_DB`               | Compose                    | `app`                                                       | Database name                                                                                 |
-| `DATABASE_URL`              | Backend                    | `postgresql+asyncpg://postgres:postgres@localhost:5432/app` | Database connection. It must use the `postgresql+asyncpg://` driver                           |
-| `REDIS_URL`                 | Backend                    | `redis://localhost:6379/0`                                  | Redis that Celery sends the tasks through                                                     |
-| `API_PREFIX`                | Backend                    | `/api`                                                      | Path prefix for every backend route                                                           |
-| `API_URL`                   | Frontend (Vite dev server) | `http://localhost:8000`                                     | Backend that the dev server sends `/api/` requests to                                         |
-| `SENTRY_DSN`                | Backend, Compose           | empty, Sentry off                                           | [Sentry](https://sentry.io/) project that the API and the worker send errors and traces to    |
-| `SENTRY_ENVIRONMENT`        | Backend                    | `development`                                               | Environment name on the Sentry events                                                         |
-| `SENTRY_TRACES_SAMPLE_RATE` | Backend                    | `1.0`                                                       | Share of the requests and tasks that send a trace, from `0.0` to `1.0`                        |
-| `VITE_SENTRY_DSN`           | Frontend (build), Compose  | empty, Sentry off                                           | Sentry project that the browser sends errors and traces to                                    |
-| `VITE_SENTRY_ENVIRONMENT`   | Frontend (build)           | the Vite mode, `production` in the Docker build             | Environment name on the browser's Sentry events                                               |
-| `NEW_RELIC_LICENSE_KEY`     | New Relic agent, Compose   | empty, New Relic off                                        | [New Relic](https://newrelic.com/) ingest license key that the API and the worker report with |
-| `NEW_RELIC_APP_NAME`        | New Relic agent, Compose   | `backend` in Compose                                        | App name in New Relic APM; the deploy sets it to the DigitalOcean app name                    |
-| `BANK_MCP_TOKEN`            | Backend, Compose           | `dev-bank` in Compose, else empty: server closed            | Bearer token for the bank MCP server at `/api/bank/mcp`. A repository secret in production    |
+| Variable                      | Read by                    | Default                                                     | What it sets                                                                                       |
+| ----------------------------- | -------------------------- | ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `APP_PORT`                    | Compose                    | `3000`                                                      | Host port for the frontend                                                                         |
+| `API_PORT`                    | Compose                    | `8000`                                                      | Host port for the backend                                                                          |
+| `DB_PORT`                     | Compose                    | `5432`                                                      | Host port for Postgres                                                                             |
+| `REDIS_PORT`                  | Compose                    | `6379`                                                      | Host port for Redis                                                                                |
+| `NGROK_AUTHTOKEN`             | Compose                    |                                                             | ngrok authtoken for `./dev ngrok`, from https://dashboard.ngrok.com                                |
+| `POSTGRES_USER`               | Compose                    | `postgres`                                                  | Database user                                                                                      |
+| `POSTGRES_PASSWORD`           | Compose                    | `postgres`                                                  | Database password                                                                                  |
+| `POSTGRES_DB`                 | Compose                    | `app`                                                       | Database name                                                                                      |
+| `DATABASE_URL`                | Backend                    | `postgresql+asyncpg://postgres:postgres@localhost:5432/app` | Database connection. It must use the `postgresql+asyncpg://` driver                                |
+| `REDIS_URL`                   | Backend                    | `redis://localhost:6379/0`                                  | Redis that Celery sends the tasks through                                                          |
+| `API_PREFIX`                  | Backend                    | `/api`                                                      | Path prefix for every backend route                                                                |
+| `API_URL`                     | Frontend (Vite dev server) | `http://localhost:8000`                                     | Backend that the dev server sends `/api/` requests to                                              |
+| `SENTRY_DSN`                  | Backend, Compose           | empty, Sentry off                                           | [Sentry](https://sentry.io/) project that the API and the worker send errors and traces to         |
+| `SENTRY_ENVIRONMENT`          | Backend                    | `development`                                               | Environment name on the Sentry events                                                              |
+| `SENTRY_TRACES_SAMPLE_RATE`   | Backend                    | `1.0`                                                       | Share of the requests and tasks that send a trace, from `0.0` to `1.0`                             |
+| `VITE_SENTRY_DSN`             | Frontend (build), Compose  | empty, Sentry off                                           | Sentry project that the browser sends errors and traces to                                         |
+| `VITE_SENTRY_ENVIRONMENT`     | Frontend (build)           | the Vite mode, `production` in the Docker build             | Environment name on the browser's Sentry events                                                    |
+| `NEW_RELIC_LICENSE_KEY`       | New Relic agent, Compose   | empty, New Relic off                                        | [New Relic](https://newrelic.com/) ingest license key that the API and the worker report with      |
+| `NEW_RELIC_APP_NAME`          | New Relic agent, Compose   | `backend` in Compose                                        | App name in New Relic APM; the deploy sets it to the DigitalOcean app name                         |
+| `BANK_MCP_TOKEN`              | Backend, Compose           | `dev-bank` in Compose, else empty: server closed            | Bearer token for the bank MCP server at `/api/bank/mcp`. A repository secret in production         |
+| `CONTROL_SIGNATURE_FEED`      | Backend                    | empty, the bundled `app/control/signatures.json`            | File path or http(s) URL of the attack signature feed, see [Attack signatures](#attack-signatures) |
+| `CONTROL_SIGNATURE_REFRESH`   | Backend                    | `30`                                                        | Seconds between two fetches of a feed URL. A file is read again when it changes                    |
+| `CONTROL_SIGNATURE_THRESHOLD` | Backend                    | `0.7`                                                       | Severity from which a signature match blocks; a lower one is only logged                           |
 
 Where to set them:
 

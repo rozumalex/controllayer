@@ -25,15 +25,20 @@ def build_layer(
     semantic: Guard | None = None,
     inbound: Sequence[Guard] = (),
     outbound: Sequence[Guard] = (),
+    signatures: Guard | None = None,
 ) -> ControlLayer:
     """semantic is the AI-based injection guard. It runs after the heuristic
     one, so an obvious attack is blocked without a model call.
 
     inbound and outbound are the policy's guards. They run first: they are
     cheap, a blocked prompt costs no model call, and the injection guards see
-    a tool result only after the data above the clearance is taken out."""
+    a tool result only after the data above the clearance is taken out.
+
+    signatures is the guard for known exploits. It is deterministic too, so
+    it runs before the injection guards, in both directions."""
     audit = audit or EventAuditSink()
-    injection: list[Guard] = [PromptInjectionGuard(threshold=injection_threshold)]
+    injection: list[Guard] = [signatures] if signatures else []
+    injection.append(PromptInjectionGuard(threshold=injection_threshold))
     if semantic:
         injection.append(semantic)
     return ControlLayer(

@@ -1,0 +1,204 @@
+{
+  "version": "2026-10-03.1",
+  "signatures": [
+    {
+      "id": "CL-DESER-001",
+      "name": "Pickle gadget that runs code on load",
+      "category": "deserialization",
+      "severity": 0.9,
+      "pattern": "__reduce(?:_ex)?__",
+      "references": [
+        "https://jfrog.com/blog/data-scientists-targeted-by-malicious-hugging-face-ml-models-with-silent-backdoor/"
+      ],
+      "enabled": true
+    },
+    {
+      "id": "CL-DESER-002",
+      "name": "Pickle protocol 0 global that loads a command runner",
+      "category": "deserialization",
+      "severity": 0.95,
+      "pattern": "\\bc(?:os|posix|nt|subprocess|builtins|__builtin__|runpy|pty)\\s*\\n\\s*(?:system|popen|exec|eval|call|run|check_output|Popen|spawn|_run_code)\\b",
+      "references": [
+        "https://docs.python.org/3/library/pickle.html#restricting-globals"
+      ],
+      "enabled": true
+    },
+    {
+      "id": "CL-DESER-003",
+      "name": "Base64-encoded pickle, protocol 2 to 5",
+      "category": "deserialization",
+      "severity": 0.8,
+      "pattern": "(?<![A-Za-z0-9+/])(?:gASV|gAWV|gAJ|gAN)[A-Za-z0-9+/]{20,}={0,2}",
+      "references": [
+        "https://github.com/protectai/modelscan"
+      ],
+      "enabled": true
+    },
+    {
+      "id": "CL-DESER-004",
+      "name": "PyYAML tag that builds Python objects",
+      "category": "deserialization",
+      "severity": 0.95,
+      "pattern": "!!python/(?:object|name|module)",
+      "references": [
+        "CVE-2017-18342",
+        "CVE-2020-1747"
+      ],
+      "enabled": true
+    },
+    {
+      "id": "CL-DESER-005",
+      "name": "torch.load with pickle loading turned on",
+      "category": "deserialization",
+      "severity": 0.8,
+      "pattern": "\\btorch\\.load\\s*\\([^)]*weights_only\\s*=\\s*False",
+      "references": [
+        "CVE-2025-32434"
+      ],
+      "enabled": true
+    },
+    {
+      "id": "CL-DESER-006",
+      "name": "Keras Lambda layer, which runs code when the model loads",
+      "category": "deserialization",
+      "severity": 0.8,
+      "pattern": "\\\"class_name\\\"\\s*:\\s*\\\"Lambda\\\"",
+      "references": [
+        "CVE-2024-3660"
+      ],
+      "enabled": true
+    },
+    {
+      "id": "CL-SUPPLY-001",
+      "name": "Model code from the repository is run",
+      "category": "supply_chain",
+      "severity": 0.8,
+      "pattern": "\\btrust_remote_code\\s*=\\s*True\\b",
+      "references": [
+        "https://huggingface.co/docs/transformers/custom_models"
+      ],
+      "enabled": true
+    },
+    {
+      "id": "CL-SUPPLY-002",
+      "name": "Pickle-based model file from a public model hub",
+      "category": "supply_chain",
+      "severity": 0.6,
+      "pattern": "(?i)\\b(?:huggingface\\.co|hf\\.co)/\\S+\\.(?:pkl|pickle|bin|pt|pth|ckpt|joblib)\\b",
+      "references": [
+        "https://huggingface.co/docs/hub/security-pickle"
+      ],
+      "enabled": true
+    },
+    {
+      "id": "CL-SUPPLY-003",
+      "name": "Package installed from an index over plain HTTP",
+      "category": "supply_chain",
+      "severity": 0.7,
+      "pattern": "(?i)\\bpip3?\\s+install\\b[^\\n]*--(?:extra-)?index-url[\\s=]+http://",
+      "references": [
+        "https://pip.pypa.io/en/stable/topics/secure-installs/"
+      ],
+      "enabled": true
+    },
+    {
+      "id": "CL-EXEC-001",
+      "name": "Python sandbox escape through dunder attributes",
+      "category": "code_execution",
+      "severity": 0.9,
+      "pattern": "__subclasses__\\s*\\(|__globals__|__builtins__|__import__\\s*\\(",
+      "references": [
+        "CVE-2023-29374",
+        "CVE-2023-36258"
+      ],
+      "enabled": true
+    },
+    {
+      "id": "CL-EXEC-002",
+      "name": "Python call that runs a shell command",
+      "category": "code_execution",
+      "severity": 0.8,
+      "pattern": "\\b(?:os\\.system|os\\.popen|subprocess\\.(?:run|call|Popen|check_output)|pty\\.spawn)\\s*\\(",
+      "references": [
+        "CVE-2023-39659"
+      ],
+      "enabled": true
+    },
+    {
+      "id": "CL-EXEC-003",
+      "name": "Script downloaded and piped to a shell",
+      "category": "code_execution",
+      "severity": 0.9,
+      "pattern": "(?i)\\b(?:curl|wget)\\b[^\\n|]{0,200}\\|\\s*(?:sudo\\s+)?(?:ba|z|da)?sh\\b",
+      "references": [
+        "CVE-2023-48022"
+      ],
+      "enabled": true
+    },
+    {
+      "id": "CL-EXEC-004",
+      "name": "Reverse shell",
+      "category": "code_execution",
+      "severity": 0.95,
+      "pattern": "/dev/tcp/\\S+/\\d+|\\bnc(?:at)?\\b[^\\n]{0,40}\\s-e\\s|\\bbash\\s+-i\\s+>&",
+      "references": [
+        "CVE-2023-48022"
+      ],
+      "enabled": true
+    },
+    {
+      "id": "CL-EXEC-005",
+      "name": "Recursive delete of the root directory",
+      "category": "code_execution",
+      "severity": 0.9,
+      "pattern": "\\brm\\s+-(?:rf|fr|r)\\s+(?:--no-preserve-root\\s+)?/(?:\\*|\\s|$)",
+      "references": [],
+      "enabled": true
+    },
+    {
+      "id": "CL-EXEC-006",
+      "name": "Log4Shell JNDI lookup",
+      "category": "code_execution",
+      "severity": 0.95,
+      "pattern": "(?i)\\$\\{\\s*jndi\\s*:\\s*(?:ldaps?|rmi|dns|iiop|http)",
+      "references": [
+        "CVE-2021-44228"
+      ],
+      "enabled": true
+    },
+    {
+      "id": "CL-SSTI-001",
+      "name": "Jinja2 template injection through Python internals",
+      "category": "template_injection",
+      "severity": 0.9,
+      "pattern": "\\{\\{[^}]*(?:__class__|__mro__|__subclasses__|__globals__|__init__|\\bconfig\\b|\\bself\\._)",
+      "references": [
+        "CVE-2024-34359"
+      ],
+      "enabled": true
+    },
+    {
+      "id": "CL-SSRF-001",
+      "name": "Cloud metadata endpoint, where instance credentials are",
+      "category": "ssrf",
+      "severity": 0.9,
+      "pattern": "169\\.254\\.169\\.254|\\bmetadata\\.google\\.internal\\b|100\\.100\\.100\\.200|\\[?fd00:ec2::254\\]?",
+      "references": [
+        "https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/configuring-instance-metadata-service.html"
+      ],
+      "enabled": true
+    },
+    {
+      "id": "CL-PATH-001",
+      "name": "Path traversal out of the working directory",
+      "category": "path_traversal",
+      "severity": 0.8,
+      "pattern": "(?:\\.\\.[/\\\\]){2,}|/etc/(?:passwd|shadow)\\b",
+      "references": [
+        "CVE-2024-37032",
+        "CVE-2023-1177"
+      ],
+      "enabled": true
+    }
+  ]
+}

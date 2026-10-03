@@ -48,6 +48,13 @@ class Settings(BaseSettings):
     # Block when the semantic check fails, for example when OpenAI is down.
     # Turn it off to fall back to the heuristic guard alone.
     control_semantic_fail_closed: bool = True
+    # The attack signatures: a JSON file path or an http(s) URL. Empty means
+    # the feed that comes with the app, app/control/signatures.json. A file
+    # is read again when it changes, a URL every refresh seconds.
+    control_signature_feed: str = ""
+    control_signature_refresh: float = 30.0
+    # A signature at or above this severity blocks; a lower one is logged.
+    control_signature_threshold: float = 0.7
     # The bearer token of the example bank MCP server at /api/bank/mcp. While
     # it is empty, the server refuses every request.
     bank_mcp_token: str = ""
