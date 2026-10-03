@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from starlette.routing import Route
 
 from app.api.endpoints.scim import ScimError, error
+from app.api.mcp import gateway_mcp_app
 from app.api.router import router as api_router
 from app.control.http import OPENAI_HTTP
 from app.core.config import settings
@@ -23,7 +24,7 @@ init_sentry()
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    async with bank_mcp_app.run():
+    async with bank_mcp_app.run(), gateway_mcp_app.run():
         yield
     await OPENAI_HTTP.aclose()
     await engine.dispose()
@@ -50,3 +51,5 @@ async def scim_error(request: Request, exc: ScimError) -> JSONResponse:
 # The example bank tools, for the gateway to connect to like any MCP server.
 # A Route, not a Mount, so the path has no trailing slash to redirect to.
 app.router.routes.append(Route(f"{settings.api_prefix}/bank/mcp", bank_mcp_app))
+# The gateway itself, for agents outside Portcullis, under the user's policy.
+app.router.routes.append(Route(f"{settings.api_prefix}/mcp", gateway_mcp_app))

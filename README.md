@@ -141,10 +141,26 @@ Then `./dev restart api`. To add a model, pull it, and add it to `MODELS` and to
 
 ### MCP gateway
 
-The control layer gives agents the tools of every registered MCP server, and runs each call and result through its guards. The gateway runs inside the API and has no URL of its own: the chat calls it for the signed-in user, whose clearance decides what the guards let through.
+The control layer gives agents the tools of every registered MCP server, and runs each call and result through its guards. The gateway runs inside the API. The chat calls it for the signed-in user, and [outside agents](#connect-your-own-agent) reach it at `/api/mcp`. Either way, the user's role policy decides what the guards let through.
 
 - **Servers** are managed on the Configuration page at `/config`, or at `/api/mcp-servers`. Whoever manages them decides which tools every agent gets, and for now that is anyone: access control comes with the users.
 - **Keep the servers behind it internal.** An agent that can reach an MCP server directly goes around the guards. Run each one without a public port in Compose and without a public route on DigitalOcean, so only the API reaches it.
+
+#### Connect your own agent
+
+`/api/mcp` serves the gateway as an MCP server over Streamable HTTP, so Claude Code, Cursor or any MCP client can plug in and get only the tools the user's role allows:
+
+```sh
+claude mcp add --transport http portcullis http://localhost:8000/api/mcp \
+  --header "Authorization: Bearer <session token>"
+```
+
+The plug button next to the user's name in the header shows this command with the user's own token, ready to copy.
+
+- The token is the session token of a [sign-in](#sign-in), the same one `/api/v1` takes. Without a valid one, or for a deactivated user, the server answers 401. Signing out ends it.
+- `tools/list` leaves out every tool the role's policy blocks. `tools/call` runs the call through all the role's guards, as the chat does, and each call is a trace of its own under the user, with the agent id `mcp-client`.
+- The server is stateless: each request signs in with its own token, and nothing is kept between requests.
+- Not built yet: MCP's OAuth 2.1 discovery, so a client can sign the user in by itself. For now the token is pasted in by hand.
 
 #### Bank MCP server
 
@@ -210,7 +226,7 @@ How the guards cover the [OWASP Top 10 for LLM Applications 2025](https://genai.
 | LLM03 Supply chain                     | `attack_signatures` blocks model code run from a repository (`trust_remote_code`) and packages installed over plain HTTP, and logs pickle model files from a public hub. A security team keeps the signatures in a feed outside the code.                                                                                                                                                        | `test_signatures.py`                                                                                                                                                   |
 | LLM04 Data and model poisoning          | In part. The layer trains no model. Poisoned data reaches the model through tool results, and those pass the injection guards and `spotlight`. `data_flow` ignores free text, so a note planted in a record can't make an account look seen.                                                                                                                                                       | `test_data_flow.py`; corpus: `indirect_injection`                                                                                                                      |
 | LLM05 Improper output handling         | `attack_signatures` checks the tool call arguments the model writes before a tool gets them: code execution, pickle and YAML deserialization, template injection, cloud metadata SSRF and path traversal. `sensitive_data` and `prompt_leak` check the answer before the user gets it.                                                                                                             | `test_signatures.py`, `test_answer_checks.py`                                                                                                                          |
-| LLM06 Excessive agency                 | `policy_tools` allows, redacts or blocks each tool for each role, and the model never sees a blocked tool. Only the gateway holds the MCP servers' tokens, so agents reach tools only through the guards. `loop` blocks the same call repeated and too many calls a minute. `data_flow` blocks payments to accounts the session hasn't seen.                                                      | `test_policy_guards.py`, `test_policy_enforcement.py`, `test_bank_mcp.py`, `test_loop_guard.py`, `test_data_flow.py`                                                   |
+| LLM06 Excessive agency                 | `policy_tools` allows, redacts or blocks each tool for each role, and the model never sees a blocked tool. Only the gateway holds the MCP servers' tokens, so agents reach tools only through the guards. `loop` blocks the same call repeated and too many calls a minute. `data_flow` blocks payments to accounts the session hasn't seen. Outside agents at `/api/mcp` see the same tools.     | `test_policy_guards.py`, `test_policy_enforcement.py`, `test_gateway_mcp.py`, `test_bank_mcp.py`, `test_loop_guard.py`, `test_data_flow.py`                            |
 | LLM07 System prompt leakage            | `prompt_leak` blocks an answer that quotes 8 words of the instructions in a row, also in a stream. The injection guards block requests to show them.                                                                                                                                                                                                                                              | `test_answer_checks.py`; corpus: `prompt_leak`                                                                                                                         |
 | LLM08 Vector and embedding weaknesses  | Not covered: the demo has no vector store. Search results, such as `search_research`, pass the same guards as any tool result.                                                                                                                                                                                                                                                                   |                                                                                                                                                                        |
 | LLM09 Misinformation                   | Not covered: the guards check what goes in and out, not whether an answer is true.                                                                                                                                                                                                                                                                                                               |                                                                                                                                                                        |

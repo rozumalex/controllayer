@@ -1,7 +1,8 @@
 """Gives an agent the tools of every registered MCP server, as one set.
 
 The gateway runs inside the API, and the agent reaches the servers only
-through it: nothing exposes it on its own URL. Each tool is listed as
+through it: the chat calls it, and outside agents reach it at /api/mcp
+(app/api/mcp.py). Each tool is listed as
 `<server>__<tool>`. A call is checked before it reaches the server (inbound,
 agent -> tool), and its result before the agent sees it (outbound, tool ->
 agent). The agent id says whom the agent works for, so the guards can decide
