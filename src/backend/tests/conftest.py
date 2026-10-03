@@ -62,6 +62,14 @@ def no_rate_limit(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "control_rate_limit_per_minute", 0)
 
 
+@pytest.fixture(autouse=True)
+def no_loop_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Turns the loop limits off, so the tests can call a tool as often as
+    they need. The loop guard tests turn them back on."""
+    monkeypatch.setattr(settings, "control_loop_repeat_limit", 0)
+    monkeypatch.setattr(settings, "control_loop_call_limit", 0)
+
+
 @pytest.fixture
 def db() -> None:
     """Starts the test with empty tables."""
