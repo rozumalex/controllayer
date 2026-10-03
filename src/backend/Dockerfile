@@ -15,9 +15,10 @@ ENV UV_COMPILE_BYTECODE=1 \
 WORKDIR /app
 
 # Install the dependencies first, so this layer is cached until uv.lock changes.
+# COPY, not a bind mount: DigitalOcean builds with kaniko, which ignores bind
+# mounts.
+COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
-    --mount=type=bind,source=uv.lock,target=uv.lock \
-    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     uv sync --locked --no-dev --no-install-project
 
 # Dev stage: adds the dev dependencies and reloads on code changes. Compose
@@ -25,8 +26,6 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 FROM build AS dev
 
 RUN --mount=type=cache,target=/root/.cache/uv \
-    --mount=type=bind,source=uv.lock,target=uv.lock \
-    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     uv sync --locked --no-install-project
 
 EXPOSE 8000

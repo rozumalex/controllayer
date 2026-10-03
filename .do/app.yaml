@@ -1,5 +1,5 @@
 # DigitalOcean App Platform spec for the production stack. The deploy job in
-# .github/workflows/master.yml creates the app from this file on the first run
+# .github/workflows/main.yml creates the app from this file on the first run
 # and updates it on every later one. The deploy action fills in ${APP_NAME},
 # ${GITHUB_REPOSITORY}, the Sentry DSNs and the New Relic license key from the
 # workflow environment.
@@ -8,6 +8,14 @@
 # stay as they are.
 name: ${APP_NAME}
 region: fra
+
+# The DNS for controllayer.net lives in Cloudflare: a CNAME on @ and on www to
+# the app's ondigitalocean.app hostname, DNS only (not proxied).
+domains:
+  - domain: controllayer.net
+    type: PRIMARY
+  - domain: www.controllayer.net
+    type: ALIAS
 
 ingress:
   rules:
@@ -28,7 +36,7 @@ services:
   - name: api
     github: &github
       repo: ${GITHUB_REPOSITORY}
-      branch: master
+      branch: main
       # The deploy job deploys after the checks pass, so a push alone does not.
       deploy_on_push: false
     source_dir: src/backend

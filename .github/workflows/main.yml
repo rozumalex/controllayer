@@ -1,8 +1,8 @@
-name: Master
+name: Main
 
 on:
   push:
-    branches: [master]
+    branches: [main]
   # Lets you run the checks and deploy again from the Actions tab.
   workflow_dispatch:
 

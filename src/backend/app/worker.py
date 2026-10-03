@@ -9,7 +9,9 @@ init_sentry()
 # Run the worker and the scheduler together in one process:
 # celery -A app.worker worker --beat. Run one copy only, because every
 # scheduler sends the scheduled tasks again.
-celery_app = Celery("app", broker=settings.redis_url, include=["app.tasks.ping"])
+celery_app = Celery(
+    "controllayer-celery", broker=settings.redis_url, include=["app.tasks.ping"]
+)
 
 # On a deploy, the worker waits up to 60 seconds for the running tasks to
 # finish (see .do/app.yaml). Acknowledge a task when it ends, not when it
