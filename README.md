@@ -130,6 +130,7 @@ Manage the stack with the `./dev` script in the repo root. Every command except 
 | `./dev seed [--url URL] [-y]`    | Load the Golden Socks bank data; asks first unless `-y` when the URL is not local                             |
 | `./dev lint [hook]`              | Run every pre-commit hook on the host, or only the given one. Needs the [pre-commit setup](#pre-commit-hooks) |
 | `./dev test [pytest args...]`    | Run the backend tests; paths are relative to `src/backend`                                                    |
+| `./dev attacks [args...]`        | Run the attack corpus through the control layer and report the pass rate                                      |
 
 Extra arguments go straight to the tool:
 
@@ -141,6 +142,8 @@ Extra arguments go straight to the tool:
 ```
 
 `./dev seed` replaces the rows of the `bank_` tables, and the bank's staff in `users` (emails at `goldensocks.com`), with the Golden Socks bank data in `src/backend/scripts/bank_data`: clients, accounts, trades, payments, research and staff, made up but consistent with each other, and the sensitivity of every field. `scripts/generate_bank_data.py` writes the files; change it and run `uv run python -m scripts.generate_bank_data` in `src/backend` to regenerate them. It leaves other users and tables alone, so you can run it again. Apply the migrations first. Every deploy to DigitalOcean seeds production too, right after the migrations, so it starts from the same rows. To seed it by hand, pass its URL: `./dev seed --url "postgresql://..."`.
+
+`./dev attacks` sends every case in `src/backend/scripts/attack_corpus.json` through the control layer, built as the chat and the gateway build it for the default role, and prints the pass rate for each category. The corpus holds attacks the layer should block, such as instruction overrides in English and Polish, prompt leaks, jailbreaks, encoded and hidden text, injections in tool results, exfiltration and secrets. It also holds benign prompts, tool calls and results that it should let through, so the report counts false alarms too. The report shows case IDs and scores, never the text of a case. It runs the semantic guard when `OPENAI_API_KEY` is set. Pass `--heuristic` to run without it, `--role <title>` to use another role's policy, `--json /app/report.json` to save the report to `src/backend`, and `--fail-under 0.9` to fail below a pass rate. To add a case, add it to the JSON file with the `block` or `allow` it should get.
 
 The database data lives in the `db-data` volume, so it stays between `down` and `up`. Only `./dev destroy` deletes it.
 

@@ -29,6 +29,7 @@ Database:
 Checks:
   lint [hook]                Run every pre-commit hook, or only the given one
   test [pytest args...]      Run the backend tests; paths are relative to src/backend
+  attacks [args...]          Run the attack corpus through the control layer and report the pass rate
 
 Examples:
   ./dev logs api
@@ -36,6 +37,7 @@ Examples:
   ./dev test -k health -x
   ./dev makemigrations "add posts table"
   ./dev seed --url "$PRODUCTION_DATABASE_URL"
+  ./dev attacks --heuristic --fail-under 0.9
 USAGE
 }
 
@@ -100,6 +102,7 @@ case $command in
   # pnpm and pre-commit installed there.
   lint) pre-commit run --all-files "$@" ;;
   test) in_service api pytest "$@" ;;
+  attacks) in_service api python -m scripts.attacks "$@" ;;
   help | -h | --help) usage ;;
   *)
     echo "Unknown command: $command" >&2
