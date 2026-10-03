@@ -1,8 +1,8 @@
 """add golden socks bank tables
 
-Revision ID: 2efb005e8710
-Revises: cbcb85758011
-Create Date: 2026-10-03 13:31:21.010222
+Revision ID: 9541ef184c5d
+Revises: d9468defef33
+Create Date: 2026-10-03 13:41:09.114473
 
 """
 
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "2efb005e8710"
-down_revision: str | Sequence[str] | None = "cbcb85758011"
+revision: str = "9541ef184c5d"
+down_revision: str | Sequence[str] | None = "d9468defef33"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
