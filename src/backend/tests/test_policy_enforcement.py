@@ -24,9 +24,10 @@ from app.db.session import SessionLocal
 from app.main import app
 from tests.conftest import signed_in
 from tests.test_agent import QUESTION, ListSink, ToolUsingUpstream
+from tests.test_chat import ask, blocked
 from tests.test_mcp_gateway import Upstream, text
 
-URL = "/api/chat"
+URL = "/api/v1/chat/completions"
 
 crm = MCPServer("crm")
 calls: list[str] = []
@@ -104,16 +105,16 @@ def test_chat_blocked_when_policy_allows_no_model(db: None, user: User) -> None:
 
     # when
     with TestClient(app, headers=signed_in(user)) as client:
-        data = client.post(URL, json={"message": "What is 2 + 2?"}).json()
+        data = client.post(URL, json=ask("What is 2 + 2?")).json()
 
     # then
-    assert data["blocked"] is True
+    assert blocked(data) is True
 
 
 def test_chat_blocked_once_monthly_tokens_are_used(db: None, user: User) -> None:
     # given
     asyncio.run(save(DEFAULT_ROLE, policy(budget=Budget(monthly_tokens=1))))
-    request = {"message": "What is 2 + 2?"}
+    request = ask("What is 2 + 2?")
 
     # when
     with TestClient(app, headers=signed_in(user)) as client:
@@ -121,8 +122,8 @@ def test_chat_blocked_once_monthly_tokens_are_used(db: None, user: User) -> None
         second = client.post(URL, json=request).json()
 
     # then
-    assert first["blocked"] is False
-    assert second["blocked"] is True
+    assert blocked(first) is False
+    assert blocked(second) is True
 
 
 def test_role_policy_applies_over_the_default(analyst: TestClient) -> None:
@@ -130,10 +131,10 @@ def test_role_policy_applies_over_the_default(analyst: TestClient) -> None:
     asyncio.run(save("Analyst", policy(allowed_models=[])))
 
     # when
-    data = analyst.post(URL, json={"message": "What is 2 + 2?"}).json()
+    data = analyst.post(URL, json=ask("What is 2 + 2?")).json()
 
     # then
-    assert data["blocked"] is True
+    assert blocked(data) is True
 
 
 def test_policy_sets_the_injection_threshold() -> None:

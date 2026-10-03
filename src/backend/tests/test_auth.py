@@ -33,8 +33,8 @@ async def staff(clearance: str | None) -> User:
 @pytest.mark.parametrize(
     ("method", "url"),
     [
-        ("POST", "/api/chat"),
-        ("POST", "/api/chat/stream"),
+        ("POST", "/api/v1/chat/completions"),
+        ("GET", "/api/v1/models"),
         *ADMIN_URLS,
     ],
 )

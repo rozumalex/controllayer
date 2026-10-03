@@ -238,12 +238,14 @@ class ChatControl:
         )
         tool_names: dict[str, str] = {}
         checked = []
+        asked = False
         for index, message in enumerate(messages):
             for call in message.get("tool_calls") or []:
                 tool_names[call.get("id")] = call.get("function", {}).get("name")
             role = message.get("role")
             text = text_of(message.get("content"))
             if role == "user" and index >= new_from:
+                asked = True
                 decision = await self.inspect(
                     Direction.INBOUND, "llm", "user_prompt", {"content": text}, trace
                 )
@@ -271,6 +273,15 @@ class ChatControl:
                     content = decision.envelope.payload["content"]
                     message = {**message, "content": content}
             checked.append(message)
+        if self.check_tools and not asked:
+            # A client that runs its own tools may send only their results.
+            # The request still counts as a question, so the guards on the
+            # model, the budget and the rate limit apply to it too.
+            decision = await self.inspect(
+                Direction.INBOUND, "llm", "user_prompt", {"content": ""}, trace
+            )
+            if decision.action is Action.BLOCK:
+                return checked, True
         return checked, False
 
     async def check_answer(

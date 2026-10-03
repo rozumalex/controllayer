@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from app.control.envelope import Action, Direction, Envelope
 from app.control.guards.rate_limit import RateLimitGuard
 from app.core.config import settings
-from tests.test_chat import URL
+from tests.test_chat import URL, ask, blocked
 
 
 def prompt() -> Envelope:
@@ -34,10 +34,10 @@ def test_chat_blocked_past_the_rate_limit(
 ) -> None:
     # given
     monkeypatch.setattr(settings, "control_rate_limit_per_minute", 2)
-    request = {"message": "What is 2 + 2?"}
+    request = ask("What is 2 + 2?")
 
     # when
     replies = [client.post(URL, json=request).json() for _ in range(3)]
 
     # then
-    assert [r["blocked"] for r in replies] == [False, False, True]
+    assert [blocked(r) for r in replies] == [False, False, True]

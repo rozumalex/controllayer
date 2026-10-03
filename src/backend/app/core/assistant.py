@@ -3,6 +3,9 @@ client can't change or drop them."""
 
 from typing import Any
 
+# The name the assistant has among the models of /api/v1/models.
+ASSISTANT_MODEL = "golden-socks-assistant"
+
 SYSTEM_PROMPT = """You are the internal AI assistant of Golden Socks, a bank. \
 Your users are Golden Socks employees: relationship managers, analysts, \
 operations and back-office staff. You help them with everyday work, such as \
@@ -22,10 +25,9 @@ placeholder such as [amount].
 returns, approvals or outcomes on the bank's behalf."""
 
 
-def conversation(message: str) -> list[dict[str, Any]]:
-    """The messages for the model: the instructions, then the user's
-    message."""
-    return [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": message},
-    ]
+def conversation(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The messages for the model: the instructions, then the client's
+    conversation. The client's own instructions are left out, so they can't
+    replace the bank's."""
+    kept = [m for m in messages if m.get("role") not in ("system", "developer")]
+    return [{"role": "system", "content": SYSTEM_PROMPT}, *kept]

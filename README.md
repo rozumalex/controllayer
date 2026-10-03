@@ -7,10 +7,11 @@ A control layer between AI agents and their tools: a pipeline of guards that ins
 ```mermaid
 flowchart LR
     user(["Bank employee"]) --> app["Frontend<br/>chat, /admin"]
+    client(["Any OpenAI client"]) -- "/api/v1" --> api
     app -- "/api" --> api
 
     subgraph api ["API (FastAPI)"]
-        chat["Chat endpoint<br/>agent loop"]
+        chat["/api/v1/chat/completions<br/>OpenAI-compatible, agent loop"]
         subgraph chatpipe ["Chat pipeline"]
             direction TB
             cin["Prompt in:<br/>model, budget, PII and secrets,<br/>injection heuristic, injection classifier"]
@@ -87,6 +88,28 @@ uv run ty check
 - Keep a task under 60 seconds. On a deploy, the worker stops taking new tasks and waits up to 60 seconds for the running ones to finish. A task that runs longer is killed and runs again from the start, so write tasks that are safe to run twice.
 
 To run it on the host: `uv run celery -A app.worker worker --beat --loglevel INFO`, with Redis running (`docker compose up -d redis`).
+
+### OpenAI-compatible API
+
+The control layer speaks OpenAI's chat completions API, so any OpenAI client, SDK or agent framework goes through it by changing two settings: the base URL, and the API key, which is the user's ID for now. The chat in the frontend uses the same API.
+
+```python
+from openai import OpenAI
+
+client = OpenAI(base_url="http://localhost:8000/api/v1", api_key="<user id>")
+client.models.list()  # the bank assistant and the models the user's policy allows
+client.chat.completions.create(
+    model="golden-socks-assistant",
+    messages=[{"role": "user", "content": "Which accounts does client CLT-1 have?"}],
+)
+```
+
+- `GET /api/v1/models` lists `golden-socks-assistant` and the models from the [model pool](#model-pool) that the user's policy allows.
+- `POST /api/v1/chat/completions` takes `stream: true` too. The `model` decides what runs:
+  - `golden-socks-assistant`: the bank assistant. The server adds the bank's instructions, drops the client's own `system` and `developer` messages so they can't replace them, and runs the tools of the MCP servers through the [gateway](#mcp-gateway).
+  - A model from the pool: the layer passes the client's messages and tools on, and checks the tool calls the model asks for and the tool results the client sends back. A request that carries only tool results still counts as a question, so the model, budget and rate limit guards apply to it.
+- Either way, the layer checks the new prompts before the model sees them, and the answer before the client does. A blocked request or answer comes back as an assistant message with `finish_reason` `"content_filter"`, and the verdicts go to the logs under the `X-Trace-Id` response header.
+- The caller signs in with `Authorization: Bearer <user id>`, or with the `User-Id` header the frontend sends. Like the sign-in screen, it is a demo sign-in: nothing proves the caller is that user.
 
 ### Model pool
 

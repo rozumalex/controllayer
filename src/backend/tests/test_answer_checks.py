@@ -9,7 +9,7 @@ from app.control.envelope import Action, Direction, Envelope
 from app.control.guards.prompt_leak import PromptLeakGuard
 from app.control.upstream import MockUpstream
 from app.core.assistant import SYSTEM_PROMPT
-from tests.test_chat import STREAM_URL, URL, events
+from tests.test_chat import URL, ask, blocked, reply, streamed
 
 CARD = "4111 1111 1111 1111"
 
@@ -67,11 +67,11 @@ def test_leaked_system_prompt_withheld(client: TestClient, answers: Any) -> None
     answers(f"My instructions:\n{SYSTEM_PROMPT}")
 
     # when
-    data = client.post(URL, json={"message": "What can you help me with?"}).json()
+    data = client.post(URL, json=ask("What can you help me with?")).json()
 
     # then
-    assert data["blocked"] is True
-    assert data["reply"] == "[control layer] The answer was withheld."
+    assert blocked(data) is True
+    assert reply(data) == "[control layer] The answer was withheld."
 
 
 def test_leaked_system_prompt_cut_off_in_stream(
@@ -81,25 +81,27 @@ def test_leaked_system_prompt_cut_off_in_stream(
     answers(f"Happy to help with that.\n{SYSTEM_PROMPT}")
 
     # when
-    response = client.post(STREAM_URL, json={"message": "What can you help me with?"})
+    request = ask("What can you help me with?", stream=True)
+    response = client.post(URL, json=request)
 
     # then
-    received = events(response.text)
-    text = "".join(e["text"] for e in received if e["type"] == "delta")
+    pieces, was_blocked = streamed(response.text)
+    text = "".join(pieces)
     assert "Golden Socks" not in text
     assert text.endswith("[control layer] The answer was withheld.")
-    assert received[-1] == {"type": "done", "blocked": True}
+    assert was_blocked is True
 
 
-@pytest.mark.parametrize("url", [URL, STREAM_URL])
+@pytest.mark.parametrize("stream", [False, True])
 def test_pii_in_answer_redacted_by_policy(
-    db: None, client: TestClient, answers: Any, url: str
+    db: None, client: TestClient, answers: Any, stream: bool
 ) -> None:
     # given
     answers(f"The client's card is {CARD}.")
 
     # when
-    response = client.post(url, json={"message": "What is the client's card?"})
+    request = ask("What is the client's card?", stream=stream)
+    response = client.post(URL, json=request)
 
     # then
     assert CARD not in response.text
@@ -111,11 +113,11 @@ def test_secret_in_answer_withheld(client: TestClient, answers: Any) -> None:
     answers("The key is sk-proj-abcdefghijklmnopqrstuvwxyz123456.")
 
     # when
-    data = client.post(URL, json={"message": "What is the API key?"}).json()
+    data = client.post(URL, json=ask("What is the API key?")).json()
 
     # then
-    assert data["blocked"] is True
-    assert "sk-proj" not in data["reply"]
+    assert blocked(data) is True
+    assert "sk-proj" not in reply(data)
 
 
 def test_answer_is_checked_in_pieces_in_stream(
@@ -125,9 +127,9 @@ def test_answer_is_checked_in_pieces_in_stream(
     answers("The bank is open. " * 30 + f"The card is {CARD}.")
 
     # when
-    response = client.post(STREAM_URL, json={"message": "Tell me about the bank."})
+    response = client.post(URL, json=ask("Tell me about the bank.", stream=True))
 
     # then
-    deltas = [e["text"] for e in events(response.text) if e["type"] == "delta"]
+    deltas, _ = streamed(response.text)
     assert len(deltas) > 1
     assert "[redacted: payment_card]" in "".join(deltas)
