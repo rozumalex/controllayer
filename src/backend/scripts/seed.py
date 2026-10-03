@@ -3,7 +3,7 @@
 Empties the bank_ tables and copies every row from scripts/bank_data into
 them, all in one transaction. The bank's staff in users are updated in place,
 so the rows that refer to them, such as the control events, are kept. It also
-saves the policies in scripts/policies.py for the roles that have none, so a
+saves the policies in scripts/policies.yaml for the roles that have none, so a
 policy someone changed is kept. Other users and tables are left alone, so it
 is safe to run again. Apply the migrations first.
 
