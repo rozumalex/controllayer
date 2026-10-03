@@ -66,6 +66,10 @@ class TraceList(BaseModel):
     traces: list[TraceSummary] = Field(description="The newest first.")
 
 
+class TraceExport(BaseModel):
+    traces: list[TraceSummary] = Field(description="The newest first.")
+
+
 class TraceEvent(BaseModel):
     id: int
     event: str

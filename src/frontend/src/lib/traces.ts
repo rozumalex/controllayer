@@ -88,3 +88,35 @@ export type Analytics = {
 
 export const fetchAnalytics = (range: Range) =>
   get<Analytics>(`/api/traces/analytics?range=${range}`)
+
+export type ExportFormat = "csv" | "json"
+
+export type ExportFilters = {
+  format: ExportFormat
+  start?: Date
+  outcomes: Outcome[]
+  guard?: string
+}
+
+// Downloads GET /api/traces/export. A plain link can't send the user header,
+// so it fetches the file and saves it from a blob.
+export async function downloadTraces(filters: ExportFilters) {
+  const query = new URLSearchParams({ format: filters.format })
+  if (filters.start) query.set("start", filters.start.toISOString())
+  for (const outcome of filters.outcomes) query.append("outcome", outcome)
+  if (filters.guard) query.set("guard", filters.guard)
+  const response = await fetch(`/api/traces/export?${query}`, {
+    headers: userHeaders(),
+  })
+  if (!response.ok)
+    throw new Error(`The export failed with ${response.status}.`)
+  const name = /filename="([^"]+)"/.exec(
+    response.headers.get("Content-Disposition") ?? ""
+  )?.[1]
+  const url = URL.createObjectURL(await response.blob())
+  const link = document.createElement("a")
+  link.href = url
+  link.download = name ?? `audit-log.${filters.format}`
+  link.click()
+  URL.revokeObjectURL(url)
+}

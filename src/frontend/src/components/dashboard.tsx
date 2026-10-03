@@ -1,9 +1,16 @@
 import { useEffect, useState, type ReactNode } from "react"
 
 import { AnalyticsCharts } from "@/components/analytics"
+import { ExportDialog } from "@/components/export-dialog"
 import { OutcomeBadge } from "@/components/outcome"
 import { TraceSheet } from "@/components/trace-sheet"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
 import {
   Table,
   TableBody,
@@ -143,6 +150,9 @@ export function Dashboard() {
       <Card>
         <CardHeader>
           <CardTitle>Recent requests</CardTitle>
+          <CardAction>
+            <ExportDialog />
+          </CardAction>
         </CardHeader>
         <CardContent>
           {error && (
