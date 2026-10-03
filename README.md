@@ -53,6 +53,35 @@ The control layer gives agents the tools of every registered MCP server, and run
 - **Servers** are managed at `/api/mcp-servers` with `Authorization: Bearer $MCP_ADMIN_TOKEN`. Whoever manages them decides which tools every agent gets. In Compose, the token is `dev-admin`.
 - **Keep the servers behind it internal.** An agent that can reach an MCP server directly goes around the guards. Run each one without a public port in Compose and without a public route on DigitalOcean, so only the API reaches it.
 
+#### Bank MCP server
+
+`app/servers/bank.py` is an example tool set to put behind the gateway: the Golden Socks core banking system over the data that `./dev seed` loads. It has no guards of its own. It checks the business rules a bank would, such as no payments from a frozen account, and returns whole rows, restricted fields included. Everything else is left to the control layer once the server is registered.
+
+| Tool                                   | Does                                                                     |
+| -------------------------------------- | ------------------------------------------------------------------------ |
+| `search_clients`, `get_client`         | Find clients; one client's profile with their accounts                   |
+| `get_account`                          | An account and its balance available for payments                        |
+| `list_transactions`, `list_trades`     | A client's or an account's transactions or trades, newest first          |
+| `search_research`                      | Research reports by symbol, sector or title                              |
+| `initiate_payment`                     | Send money out of an account; it waits as `PENDING` for payment ops      |
+| `flag_transaction`                     | Raise an AML alert; a pending payment is held                            |
+| `restrict_account`, `lift_restriction` | Freeze an account for a risk review or legal hold, or open it again      |
+| `book_trade`, `cancel_trade`           | Book a client trade; cancel one that has not settled                     |
+| `update_client_contact`                | Change a client's named contact, email or phone                          |
+| `add_client_note`                      | Add a dated note to a client's relationship notes                        |
+
+Research, the data catalog, the identity profiles and the staff are read only. The tools carry MCP annotations: read only, write, or destructive for the ones that move money or freeze an account.
+
+The API serves it at `/api/bank/mcp` and takes `Authorization: Bearer $BANK_MCP_TOKEN`; in Compose, the token is `dev-bank`. Only the gateway holds the token, so agents reach the tools only through the guards. Register it:
+
+```sh
+curl -X POST localhost:8000/api/mcp-servers \
+  -H "Authorization: Bearer dev-admin" -H "Content-Type: application/json" \
+  -d '{"name": "bank", "url": "http://localhost:8000/api/bank/mcp", "auth_header": "Bearer dev-bank"}'
+```
+
+Its tools then reach agents as `bank__search_clients` and so on.
+
 ## Frontend
 
 React app in `src/frontend`, built with [Vite](https://vite.dev/), [Tailwind CSS](https://tailwindcss.com/) and [shadcn/ui](https://ui.shadcn.com/), managed with [pnpm](https://pnpm.io/).
@@ -164,6 +193,7 @@ Every variable has a default, so the project runs without any setup.
 | `NEW_RELIC_LICENSE_KEY`     | New Relic agent, Compose   | empty, New Relic off                                        | [New Relic](https://newrelic.com/) ingest license key that the API and the worker report with |
 | `NEW_RELIC_APP_NAME`        | New Relic agent, Compose   | `backend` in Compose                                        | App name in New Relic APM; the deploy sets it to the DigitalOcean app name                    |
 | `MCP_ADMIN_TOKEN`           | Backend, Compose           | `dev-admin` in Compose, else empty: API closed              | Bearer token for `/api/mcp-servers`. A repository secret in production                        |
+| `BANK_MCP_TOKEN`            | Backend, Compose           | `dev-bank` in Compose, else empty: server closed            | Bearer token for the bank MCP server at `/api/bank/mcp`. A repository secret in production    |
 
 Where to set them:
 
@@ -231,7 +261,7 @@ Set it up once:
 
 Without the `DIGITALOCEAN_APP_NAME` variable, `main.yml` skips the deploy.
 
-To manage the MCP servers, also add the secret `MCP_ADMIN_TOKEN` there; see [MCP gateway](#mcp-gateway). Without it, `/api/mcp-servers` refuses every request.
+To manage the MCP servers, also add the secret `MCP_ADMIN_TOKEN` there; see [MCP gateway](#mcp-gateway). Without it, `/api/mcp-servers` refuses every request. For the [bank MCP server](#bank-mcp-server), add the secret `BANK_MCP_TOKEN` too.
 
 To send errors to [Sentry](https://sentry.io/), also add the variables `SENTRY_DSN` and `VITE_SENTRY_DSN` there. The deploy passes them to the backend and to the frontend build, with the environment `production`. Without them, Sentry stays off.
 

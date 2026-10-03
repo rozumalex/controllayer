@@ -67,6 +67,8 @@ services:
       CONTROL_LOG_PAYLOADS: ${CONTROL_LOG_PAYLOADS:-true}
       # A development token. Production sets its own, from a repository secret.
       MCP_ADMIN_TOKEN: ${MCP_ADMIN_TOKEN:-dev-admin}
+      # The example bank MCP server's token, for its auth_header in the gateway.
+      BANK_MCP_TOKEN: ${BANK_MCP_TOKEN:-dev-bank}
     ports:
       - "${API_PORT:-8000}:8000"
     volumes:
