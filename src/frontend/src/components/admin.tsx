@@ -34,7 +34,7 @@ const TABS = [
   },
   {
     path: "/admin/idp",
-    label: "IdP",
+    label: "Directory",
     icon: KeyRound,
     Page: Identity,
   },

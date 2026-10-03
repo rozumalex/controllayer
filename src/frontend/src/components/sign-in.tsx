@@ -9,6 +9,7 @@ import {
 } from "react"
 
 import { COMPANY, Logo } from "@/components/brand"
+import { ConnectAgent } from "@/components/connect-agent"
 import { GoogleButton } from "@/components/google-button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
@@ -233,19 +234,6 @@ function SignIn({
           <p className="text-center text-xs text-muted-foreground">
             Signs you in as a vice president of {COMPANY}, a demo bank.
           </p>
-          <Button
-            variant="outline"
-            disabled={busy}
-            onClick={() =>
-              run(() => startSso({ organization: "demo" }).then(() => null))
-            }
-          >
-            Try the demo with single sign-on
-          </Button>
-          <p className="text-center text-xs text-muted-foreground">
-            Sign in at Duende&apos;s public demo IdP as alice/alice, a
-            compliance officer, or bob/bob, an analyst.
-          </p>
         </div>
 
         {googleEnabled && (
@@ -356,7 +344,11 @@ function SignIn({
   )
 }
 
-// The signed-in user in the header, with a way to sign out.
+const HEADER_BUTTON =
+  "size-8 text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground"
+
+// The signed-in user in the header, with a way to connect their own agent
+// and to sign out.
 export function UserMenu() {
   const session = useSession()
   if (!session) return null
@@ -369,10 +361,11 @@ export function UserMenu() {
         </AvatarFallback>
       </Avatar>
       <span className="hidden text-sm md:inline">{user.name}</span>
+      <ConnectAgent className={HEADER_BUTTON} />
       <Button
         variant="ghost"
         size="icon"
-        className="size-8 text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground"
+        className={HEADER_BUTTON}
         title="Sign out"
         onClick={signOut}
       >

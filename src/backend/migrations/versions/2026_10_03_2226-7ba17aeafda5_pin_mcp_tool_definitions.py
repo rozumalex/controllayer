@@ -1,8 +1,8 @@
 """pin MCP tool definitions
 
-Revision ID: c72b4aa7bdd2
-Revises: b83da9ec395a
-Create Date: 2026-10-03 21:59:59.383730
+Revision ID: 7ba17aeafda5
+Revises: 66da6ae3207b
+Create Date: 2026-10-03 22:26:56.306015
 
 """
 
@@ -13,8 +13,8 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = "c72b4aa7bdd2"
-down_revision: str | Sequence[str] | None = "b83da9ec395a"
+revision: str = "7ba17aeafda5"
+down_revision: str | Sequence[str] | None = "66da6ae3207b"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

@@ -6,7 +6,7 @@ import secrets
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import OrgId
@@ -14,12 +14,21 @@ from app.api.endpoints.sso import callback_url, discover
 from app.core.config import settings
 from app.core.oidc import OidcError
 from app.core.schema.identity import (
+    DirectoryEventRead,
+    DirectoryGroupRead,
     IdentityProviderRead,
     IdentityProviderWrite,
     ScimStatus,
     ScimToken,
 )
-from app.db.models import IdentityProvider, Organization
+from app.db.directory import role_for
+from app.db.models import (
+    DirectoryEvent,
+    DirectoryGroup,
+    IdentityProvider,
+    Organization,
+    group_members,
+)
 from app.db.session import get_session
 
 router = APIRouter(prefix="/identity-provider", tags=["identity"])
@@ -98,7 +107,60 @@ def scim_base_url() -> str:
 async def scim_status(session: Session, org_id: OrgId) -> ScimStatus:
     org = await session.get(Organization, org_id)
     assert org is not None
-    return ScimStatus(base_url=scim_base_url(), has_token=bool(org.scim_token_hash))
+    last = await session.scalar(
+        select(func.max(DirectoryEvent.created_at)).where(
+            DirectoryEvent.org_id == org_id
+        )
+    )
+    return ScimStatus(
+        base_url=scim_base_url(),
+        has_token=bool(org.scim_token_hash),
+        last_sync_at=last,
+    )
+
+
+@router.get("/groups", summary="The groups the IdP synced, with their roles")
+async def list_groups(session: Session, org_id: OrgId) -> list[DirectoryGroupRead]:
+    idp = await own_provider(session, org_id)
+    rows = await session.execute(
+        select(DirectoryGroup.display_name, func.count(group_members.c.user_id))
+        .outerjoin(group_members, group_members.c.group_id == DirectoryGroup.id)
+        .where(DirectoryGroup.org_id == org_id)
+        .group_by(DirectoryGroup.id)
+        .order_by(DirectoryGroup.display_name)
+    )
+    groups = []
+    for name, members in rows:
+        role = role_for({"groups": [name]}, idp) if idp else None
+        groups.append(
+            DirectoryGroupRead(
+                name=name, role=role[0] if role else None, members=members
+            )
+        )
+    return groups
+
+
+@router.get("/log", summary="The provisioning log, newest first")
+async def provisioning_log(
+    session: Session, org_id: OrgId, limit: int = 50
+) -> list[DirectoryEventRead]:
+    events = await session.scalars(
+        select(DirectoryEvent)
+        .where(DirectoryEvent.org_id == org_id)
+        .order_by(DirectoryEvent.id.desc())
+        .limit(min(limit, 200))
+    )
+    return [
+        DirectoryEventRead(
+            id=e.id,
+            kind=e.kind,
+            at=e.created_at,
+            name=e.user.name if e.user else None,
+            email=e.user.email if e.user else None,
+            data=e.data,
+        )
+        for e in events
+    ]
 
 
 @router.post(

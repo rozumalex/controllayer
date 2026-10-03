@@ -1,12 +1,13 @@
 """Gives an agent the tools of every registered MCP server, as one set.
 
 The gateway runs inside the API, and the agent reaches the servers only
-through it: nothing exposes it on its own URL. Each tool is listed as
-`<server>__<tool>`. Each tool's definition is checked before the model sees
-it, and a tool that fails is hidden and refused. A call is checked before it
-reaches the server (inbound, agent -> tool), and its result before the agent
-sees it (outbound, tool -> agent). The agent id says whom the agent works
-for, so the guards can decide what that user may see.
+through it: the chat calls it, and outside agents reach it at /api/mcp
+(app/api/mcp.py). Each tool is listed as `<server>__<tool>`. Each tool's
+definition is checked before the model sees it, and a tool that fails is
+hidden and refused. A call is checked before it reaches the server
+(inbound, agent -> tool), and its result before the agent sees it
+(outbound, tool -> agent). The agent id says whom the agent works for, so
+the guards can decide what that user may see.
 """
 
 import asyncio

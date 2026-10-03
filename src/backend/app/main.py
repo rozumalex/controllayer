@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from starlette.routing import Route
 
 from app.api.endpoints.scim import ScimError, error
+from app.api.mcp import gateway_mcp_app
 from app.api.router import router as api_router
 from app.control.http import OPENAI_HTTP
 from app.core.config import settings
@@ -24,7 +25,7 @@ init_sentry()
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    async with bank_mcp_app.run(), fx_mcp_app.run():
+    async with bank_mcp_app.run(), fx_mcp_app.run(), gateway_mcp_app.run():
         yield
     await OPENAI_HTTP.aclose()
     await engine.dispose()
@@ -53,3 +54,5 @@ async def scim_error(request: Request, exc: ScimError) -> JSONResponse:
 app.router.routes.append(Route(f"{settings.api_prefix}/bank/mcp", bank_mcp_app))
 # The demo FX rates tool, which an admin can poison to show the guards.
 app.router.routes.append(Route(f"{settings.api_prefix}/fx/mcp", fx_mcp_app))
+# The gateway itself, for agents outside Portcullis, under the user's policy.
+app.router.routes.append(Route(f"{settings.api_prefix}/mcp", gateway_mcp_app))
