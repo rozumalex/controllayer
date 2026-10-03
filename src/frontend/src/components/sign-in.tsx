@@ -23,6 +23,7 @@ import type { Employee } from "@/lib/policy"
 import { SessionContext, isPrivileged, useSession } from "@/lib/session"
 import {
   fetchMe,
+  finishSso,
   googleEnabled,
   initials,
   sendCode,
@@ -30,6 +31,7 @@ import {
   signInWithCode,
   signInWithGoogle,
   signOut,
+  startSso,
 } from "@/lib/users"
 import { cn } from "@/lib/utils"
 
@@ -48,8 +50,23 @@ export function SignedIn({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
-    // The link in the sign-in email carries the email and its code.
     const params = new URLSearchParams(window.location.search)
+    // An identity provider sends the browser back here after its sign-in.
+    if (window.location.pathname === "/auth/callback") {
+      const code = params.get("code")
+      const state = params.get("state")
+      window.history.replaceState(null, "", "/")
+      if (code && state) {
+        finishSso(code, state)
+          .then(signedIn)
+          .catch(() => {
+            setLinkFailed(true)
+            setUser(null)
+          })
+        return
+      }
+    }
+    // The link in the sign-in email carries the email and its code.
     const email = params.get("email")
     const code = params.get("code")
     if (email && code) {
@@ -74,9 +91,7 @@ export function SignedIn({ children }: { children: ReactNode }) {
       <SignIn
         onSignedIn={signedIn}
         initialError={
-          linkFailed
-            ? "That link has expired or was used. Ask for a new code."
-            : null
+          linkFailed ? "That sign-in expired or was used. Try again." : null
         }
       />
     )
@@ -215,6 +230,19 @@ function SignIn({
           </Button>
           <p className="text-center text-xs text-muted-foreground">
             Signs you in as a vice president of {COMPANY}, a demo bank.
+          </p>
+          <Button
+            variant="outline"
+            disabled={busy}
+            onClick={() =>
+              run(() => startSso({ organization: "demo" }).then(() => null))
+            }
+          >
+            Try the demo with single sign-on
+          </Button>
+          <p className="text-center text-xs text-muted-foreground">
+            Sign in at Duende&apos;s public demo IdP as alice/alice, a
+            compliance officer, or bob/bob, an analyst.
           </p>
         </div>
 

@@ -97,6 +97,19 @@ export const signInWithCode = async (email: string, code: string) =>
 
 export const signInToDemo = async () => keep(await post<SignedIn>("demo"))
 
+// Sends the browser to the organization's identity provider, which sends it
+// back to /auth/callback.
+export async function startSso(fields: {
+  organization?: string
+  email?: string
+}) {
+  const { url } = await post<{ url: string }>("sso", fields)
+  window.location.assign(url)
+}
+
+export const finishSso = async (code: string, state: string) =>
+  keep(await post<SignedIn>("sso/callback", { code, state }))
+
 // Whether Sign in with Google is on, see GoogleButton.
 export const googleEnabled = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID)
 
