@@ -6,6 +6,7 @@ import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
+from jwt.algorithms import RSAAlgorithm
 
 from app.core import google
 from app.core.config import settings
@@ -20,7 +21,7 @@ OTHER_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
 
 def jwk_set() -> dict[str, Any]:
-    public = json.loads(jwt.algorithms.RSAAlgorithm.to_jwk(GOOGLE_KEY.public_key()))
+    public = json.loads(RSAAlgorithm.to_jwk(GOOGLE_KEY.public_key()))
     return {"keys": [{**public, "kid": "key-1", "use": "sig", "alg": "RS256"}]}
 
 
