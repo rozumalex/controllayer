@@ -1,17 +1,18 @@
 import {
+  KeyRound,
   LayoutDashboard,
   MessageSquare,
   Plug,
   ShieldAlert,
   SlidersHorizontal,
-  Users,
 } from "lucide-react"
 import { useEffect, useState } from "react"
 
 import { Header, HeaderLink } from "@/components/brand"
 import { Mcps } from "@/components/config"
-import { Employees, Policy } from "@/components/controls"
+import { Policy } from "@/components/controls"
 import { Dashboard } from "@/components/dashboard"
+import { Identity } from "@/components/identity"
 import { UserMenu } from "@/components/sign-in"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { isPrivileged, useSession } from "@/lib/session"
@@ -32,10 +33,10 @@ const TABS = [
     Page: Policy,
   },
   {
-    path: "/admin/employees",
-    label: "Employees",
-    icon: Users,
-    Page: Employees,
+    path: "/admin/idp",
+    label: "IdP",
+    icon: KeyRound,
+    Page: Identity,
   },
 ]
 

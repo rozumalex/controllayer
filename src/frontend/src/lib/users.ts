@@ -98,13 +98,19 @@ export const signInWithCode = async (email: string, code: string) =>
 export const signInToDemo = async () => keep(await post<SignedIn>("demo"))
 
 // Sends the browser to the organization's identity provider, which sends it
-// back to /auth/callback.
+// back to /auth/callback. False when no provider signs in this email.
 export async function startSso(fields: {
   organization?: string
   email?: string
-}) {
-  const { url } = await post<{ url: string }>("sso", fields)
-  window.location.assign(url)
+}): Promise<boolean> {
+  try {
+    const { url } = await post<{ url: string }>("sso", fields)
+    window.location.assign(url)
+    return true
+  } catch (e) {
+    if (e instanceof RequestError && e.status === 404) return false
+    throw e
+  }
 }
 
 export const finishSso = async (code: string, state: string) =>

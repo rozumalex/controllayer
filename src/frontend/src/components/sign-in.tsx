@@ -179,6 +179,8 @@ function SignIn({
 
   function askForCode(email: string) {
     void run(async () => {
+      // A domain with its own identity provider signs in there instead.
+      if (await startSso({ email })) return null
       const answer = await sendCode(email)
       // The demo's email signs in at once; any other gets a code.
       if (typeof answer !== "string") return answer

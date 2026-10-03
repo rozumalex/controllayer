@@ -15,6 +15,8 @@ ADMIN_URLS = [
     ("GET", "/api/policy"),
     ("PUT", "/api/policy/default"),
     ("GET", "/api/employees"),
+    ("GET", "/api/identity-provider"),
+    ("PUT", "/api/identity-provider"),
 ]
 
 

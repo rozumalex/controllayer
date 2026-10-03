@@ -59,6 +59,8 @@ function toolSummary(settings: PolicySettings) {
 
 export function Employees() {
   const [roles, setRoles] = useState<string[]>([])
+  // The roles with a policy of their own; the others follow the default.
+  const [own, setOwn] = useState<Set<string>>(new Set())
   const [query, setQuery] = useState("")
   const [role, setRole] = useState("")
   const [offset, setOffset] = useState(0)
@@ -81,7 +83,12 @@ export function Employees() {
 
   useEffect(() => {
     fetchPolicy()
-      .then((overview) => setRoles(overview.roles.map((r) => r.role)))
+      .then((overview) => {
+        setRoles(overview.roles.map((r) => r.role))
+        setOwn(
+          new Set(overview.roles.filter((r) => r.customized).map((r) => r.role))
+        )
+      })
       .catch(() => setRoles([]))
   }, [])
 
@@ -90,7 +97,7 @@ export function Employees() {
   return (
     <Card>
       <CardHeader className="flex flex-wrap items-center justify-between gap-3">
-        <CardTitle>Employees</CardTitle>
+        <CardTitle>People</CardTitle>
         <div className="flex w-full flex-wrap gap-2 sm:w-auto">
           <div className="relative flex-1 sm:w-64">
             <Search className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -136,6 +143,7 @@ export function Employees() {
             <TableRow>
               <TableHead>Name</TableHead>
               <TableHead>Role</TableHead>
+              <TableHead>Policy</TableHead>
               <TableHead className="hidden md:table-cell">Division</TableHead>
               <TableHead className="hidden lg:table-cell">Office</TableHead>
               <TableHead className="hidden sm:table-cell">Clearance</TableHead>
@@ -145,10 +153,10 @@ export function Employees() {
             {list?.employees.length === 0 && (
               <TableRow>
                 <TableCell
-                  colSpan={5}
+                  colSpan={6}
                   className="py-10 text-center text-muted-foreground"
                 >
-                  No employees match.
+                  No one matches.
                 </TableCell>
               </TableRow>
             )}
@@ -161,6 +169,13 @@ export function Employees() {
                   </div>
                 </TableCell>
                 <TableCell>{employee.role}</TableCell>
+                <TableCell>
+                  {own.has(employee.role) ? (
+                    <Badge variant="secondary">{employee.role}</Badge>
+                  ) : (
+                    <span className="text-muted-foreground">Default</span>
+                  )}
+                </TableCell>
                 <TableCell className="hidden text-muted-foreground md:table-cell">
                   {employee.division}
                 </TableCell>
