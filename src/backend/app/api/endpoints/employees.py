@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps import current_user
 from app.core.schema.policy import Employee, EmployeeList
 from app.db.models import User
 from app.db.session import get_session
@@ -36,20 +37,27 @@ async def list_employees(
     users = await session.scalars(
         query.order_by(User.name, User.id).limit(limit).offset(offset)
     )
-    return EmployeeList(
-        total=total or 0,
-        employees=[
-            Employee(
-                id=user.id,
-                name=user.name,
-                email=user.email,
-                role=user.title or "",
-                division=user.division,
-                team=user.team,
-                office=user.office,
-                clearance_level=user.clearance_level,
-                employment_status=user.employment_status,
-            )
-            for user in users
-        ],
+    return EmployeeList(total=total or 0, employees=[employee(user) for user in users])
+
+
+@router.get(
+    "/me",
+    summary="The signed-in employee",
+    description="The user named by the `User-Id` header, or 401 if none is.",
+)
+async def me(user: Annotated[User, Depends(current_user)]) -> Employee:
+    return employee(user)
+
+
+def employee(user: User) -> Employee:
+    return Employee(
+        id=user.id,
+        name=user.name,
+        email=user.email,
+        role=user.title or "",
+        division=user.division,
+        team=user.team,
+        office=user.office,
+        clearance_level=user.clearance_level,
+        employment_status=user.employment_status,
     )

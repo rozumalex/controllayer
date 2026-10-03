@@ -1,4 +1,5 @@
 import asyncio
+import uuid
 from collections.abc import Iterator
 from typing import Any
 
@@ -165,3 +166,23 @@ def test_employees_filter(staff: TestClient, query: str, names: list[str]) -> No
 
     # then
     assert [e["name"] for e in listed["employees"]] == names
+
+
+def test_me_is_the_picked_employee(staff: TestClient) -> None:
+    # given
+    bob = staff.get("/api/employees?q=bob").json()["employees"][0]
+
+    # when
+    response = staff.get("/api/employees/me", headers={"User-Id": bob["id"]})
+
+    # then
+    assert response.status_code == 200
+    assert response.json() == bob
+
+
+@pytest.mark.parametrize("headers", [{}, {"User-Id": str(uuid.uuid4())}])
+def test_me_without_a_known_user_is_401(
+    staff: TestClient, headers: dict[str, str]
+) -> None:
+    # when / then
+    assert staff.get("/api/employees/me", headers=headers).status_code == 401
