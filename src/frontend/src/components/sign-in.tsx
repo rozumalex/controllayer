@@ -31,6 +31,7 @@ import {
   signInWithGoogle,
   signOut,
 } from "@/lib/users"
+import { cn } from "@/lib/utils"
 
 // Shows the app to a signed-in user, and the sign-in screen to anyone else.
 export function SignedIn({ children }: { children: ReactNode }) {
@@ -72,6 +73,28 @@ function Field({
         {...props}
       />
     </div>
+  )
+}
+
+// One line kept for an error or a notice, empty or not, so the buttons
+// below don't move when one shows.
+function Message({
+  error,
+  notice,
+}: {
+  error: string | null
+  notice?: string | null
+}) {
+  return (
+    <p
+      aria-live="polite"
+      className={cn(
+        "-my-2 min-h-5 truncate text-sm",
+        error ? "text-destructive" : "text-muted-foreground"
+      )}
+    >
+      {error ?? notice}
+    </p>
   )
 }
 
@@ -123,7 +146,7 @@ function SignIn({ onSignedIn }: { onSignedIn: (user: Employee) => void }) {
       setCodeSentTo(email)
       setNotice(
         answer === "recent"
-          ? "A code went out moments ago. Use it, or ask for a new one in half a minute."
+          ? "A code went out moments ago. Use that one."
           : null
       )
       return null
@@ -133,7 +156,15 @@ function SignIn({ onSignedIn }: { onSignedIn: (user: Employee) => void }) {
   function enterCode(value: string) {
     setCode(value)
     if (value.length === 6 && codeSentTo)
-      void run(() => signInWithCode(codeSentTo, value))
+      void run(async () => {
+        try {
+          return await signInWithCode(codeSentTo, value)
+        } catch (e) {
+          // Empty boxes, ready for the code typed again.
+          setCode("")
+          throw e
+        }
+      })
   }
 
   return (
@@ -183,7 +214,7 @@ function SignIn({ onSignedIn }: { onSignedIn: (user: Employee) => void }) {
               type="email"
               autoComplete="email"
             />
-            {error && <p className="text-sm text-destructive">{error}</p>}
+            <Message error={error} />
             <Button type="submit" variant="outline" disabled={busy}>
               Email me a code
             </Button>
@@ -213,20 +244,18 @@ function SignIn({ onSignedIn }: { onSignedIn: (user: Employee) => void }) {
                     <InputOTPSlot
                       key={index}
                       index={index}
+                      aria-invalid={Boolean(error)}
                       className="size-8 rounded-lg border bg-background text-base"
                     />
                   ))}
                 </InputOTPGroup>
               </InputOTP>
             </div>
-            {notice && (
-              <p className="text-sm text-muted-foreground">{notice}</p>
-            )}
-            {error && <p className="text-sm text-destructive">{error}</p>}
+            <Message error={error} notice={notice} />
             <Button type="submit" disabled={busy || code.length < 6}>
               Sign in
             </Button>
-            <div className="flex justify-between text-sm">
+            <div className="-mt-2 flex justify-between text-sm">
               <Button
                 type="button"
                 variant="link"
