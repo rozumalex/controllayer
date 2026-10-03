@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
     AuthToken,
+    DirectoryEvent,
     DirectoryGroup,
     IdentityProvider,
     User,
@@ -18,6 +19,11 @@ from app.db.models import (
 
 # The clearance that opens the admin pages, see app.api.deps.
 PRIVILEGED = "PRIVILEGED"
+
+
+def record(session: AsyncSession, user: User, kind: str, **data: Any) -> None:
+    """Adds a change to the provisioning log. The caller commits."""
+    session.add(DirectoryEvent(org_id=user.org_id, user=user, kind=kind, data=data))
 
 
 def role_for(claims: dict[str, Any], idp: IdentityProvider) -> tuple[str, bool] | None:
@@ -74,11 +80,20 @@ async def assign_role(session: AsyncSession, user: User) -> None:
     if idp is None:
         return
     claims = await with_groups(session, user.id, {"email": user.email})
+    before = user.title
     give_role(user, role_for(claims, idp))
+    if user.title != before:
+        record(session, user, "role", role=user.title, was=before)
 
 
 async def deactivate(session: AsyncSession, user: User) -> None:
     """The user can't sign in again, and their sessions end now. The caller
     commits."""
+    ended = await session.scalars(
+        delete(AuthToken)
+        .where(AuthToken.user_id == user.id)
+        .returning(AuthToken.token_hash)
+    )
+    if user.active:
+        record(session, user, "deactivated", sessions=len(ended.all()))
     user.active = False
-    await session.execute(delete(AuthToken).where(AuthToken.user_id == user.id))

@@ -233,19 +233,6 @@ function SignIn({
           <p className="text-center text-xs text-muted-foreground">
             Signs you in as a vice president of {COMPANY}, a demo bank.
           </p>
-          <Button
-            variant="outline"
-            disabled={busy}
-            onClick={() =>
-              run(() => startSso({ organization: "demo" }).then(() => null))
-            }
-          >
-            Try the demo with single sign-on
-          </Button>
-          <p className="text-center text-xs text-muted-foreground">
-            Sign in at Duende&apos;s public demo IdP as alice/alice, a
-            compliance officer, or bob/bob, an analyst.
-          </p>
         </div>
 
         {googleEnabled && (

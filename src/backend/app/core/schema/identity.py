@@ -1,4 +1,6 @@
 import uuid
+from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, Field, HttpUrl, field_validator
 
@@ -95,6 +97,28 @@ class IdentityProviderRead(BaseModel):
 class ScimStatus(BaseModel):
     base_url: str = Field(description="The SCIM base URL to paste into the IdP.")
     has_token: bool = Field(description="Whether a SCIM token is set.")
+    last_sync_at: datetime | None = Field(
+        description="When the IdP last changed the directory."
+    )
+
+
+class DirectoryGroupRead(BaseModel):
+    name: str
+    role: str | None = Field(description="The role its rule gives, if any.")
+    members: int
+
+
+class DirectoryEventRead(BaseModel):
+    id: int
+    kind: str = Field(
+        description="created, joined, left, role, deactivated, reactivated or synced."
+    )
+    at: datetime
+    name: str | None = Field(description="The user's name; empty for synced.")
+    email: str | None
+    data: dict[str, Any] = Field(
+        description="The group, the new role and the old one, or the counts."
+    )
 
 
 class ScimToken(BaseModel):

@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.directory import assign_role, deactivate
+from app.db.directory import assign_role, deactivate, record
 from app.db.models import DirectoryGroup, Organization, User
 from app.db.session import get_session
 
@@ -153,6 +153,8 @@ async def own_user(session: AsyncSession, org: Organization, id: str) -> User:
 
 async def set_active(session: AsyncSession, user: User, active: bool) -> None:
     if active:
+        if user.active is False:
+            record(session, user, "reactivated")
         user.active = True
     else:
         await deactivate(session, user)
@@ -185,6 +187,7 @@ async def create_user(org: Org, session: Session, request: Request) -> JSONRespo
     if taken is not None:
         raise ScimError(409, f"{user.email} exists", "uniqueness")
     session.add(user)
+    record(session, user, "created")
     await set_active(session, user, body.get("active", True) is not False)
     await session.flush()
     await assign_role(session, user)
@@ -277,7 +280,13 @@ async def set_members(
     """Changes the group's members, and the role of everyone whose groups
     changed."""
     changed = {u.id: u for u in [*group.members, *members]}
+    old = {u.id for u in group.members}
     group.members = list({u.id: u for u in members}.values())
+    new = {u.id for u in group.members}
+    for user in changed.values():
+        if (user.id in new) != (user.id in old):
+            kind = "joined" if user.id in new else "left"
+            record(session, user, kind, group=group.display_name)
     await session.flush()
     for user in changed.values():
         await assign_role(session, user)
