@@ -18,7 +18,7 @@ After you create a new repository from this template, remove every reference to 
   - [ ] Create a DigitalOcean [personal access token](https://cloud.digitalocean.com/account/api/tokens) with full access.
   - [ ] Install the [DigitalOcean GitHub app](https://github.com/apps/digitalocean) on the repository.
   - [ ] In the repository settings on GitHub, under **Secrets and variables → Actions**, add the secret `DIGITALOCEAN_ACCESS_TOKEN` with the token, and the variable `DIGITALOCEAN_APP_NAME` with a name for the app.
-  - [ ] Push to `master`, or run the Master workflow from the Actions tab, and open the URL from the deploy job's log.
+  - [ ] Push to `main`, or run the Main workflow from the Actions tab, and open the URL from the deploy job's log.
   - [ ] When the hackathon ends, run the Destroy workflow, so the app stops costing money.
 - [ ] Delete this TODO section.
 - [ ] Check that nothing is left: `git grep -niI "template\|hackaton\|hackathon"`.
@@ -189,24 +189,24 @@ pre-commit run --all-files   # run all hooks by hand
 
 `.claude/skills` holds project skills for [Claude Code](https://code.claude.com/docs/en/skills). Claude runs a skill when it fits the task, or you run it with `/<name>`.
 
-- `break`: stops Claude and makes it check in with you when the branch gets too big, drifts from what you asked for, or grows in scope. It reports what was asked, what is done and what is off track, and recommends a plan: split the work, trim it or go on. After every edit, a hook in `.claude/settings.json` runs `.claude/skills/break/diff-size.sh`, which measures the change against `master`, and tells Claude to run the skill when the change passes 400 lines or 15 files. Set other limits with `BREAK_MAX_LINES` and `BREAK_MAX_FILES`, for example in the `env` of `.claude/settings.local.json`.
+- `break`: stops Claude and makes it check in with you when the branch gets too big, drifts from what you asked for, or grows in scope. It reports what was asked, what is done and what is off track, and recommends a plan: split the work, trim it or go on. After every edit, a hook in `.claude/settings.json` runs `.claude/skills/break/diff-size.sh`, which measures the change against `main`, and tells Claude to run the skill when the change passes 400 lines or 15 files. Set other limits with `BREAK_MAX_LINES` and `BREAK_MAX_FILES`, for example in the `env` of `.claude/settings.local.json`.
 - `ship`: takes finished work to an open pull request: checks the size with `break`, runs `./dev lint`, `./dev test` and the frontend build, commits, pushes, opens the PR or updates its description, and watches CI. Run it with `/ship`; Claude never runs it on its own, because it pushes. After every `git push` to a branch with an open PR, a hook runs `.claude/hooks/pr-description.sh`, which tells Claude to update the PR description, so it keeps describing the whole branch.
 - `judge`: checks the work against the hackathon's documents in `local/rules`, such as the rules, the participant guide and the task description, as PDF, Markdown, text or screenshots. It keeps a digest of the facts with their sources in `local/.judge-cache`, and on every run reads again only the files that changed, so it follows changed tasks, times and criteria without reading every document each time. `/judge --fresh` rebuilds the digest. It reports the time left to each deadline and when to stop feature work, a one-line problem statement, how well the work fits the task with MoSCoW, a mock jury score on an anchored rubric with the real weights, a cold read and a pre-mortem of the submission, and the next steps ranked with ICE. It only reports and changes nothing. `local/` is gitignored, so the documents stay out of the repo.
-- `sync`: merges the latest `master` into your branch and fixes what breaks: it resolves conflicts, regenerates lockfiles instead of merging them by hand, generates the branch's migration again on top of master's when both added one, rebuilds the stack or applies migrations when they changed, and runs the checks. It never pushes. `ship` runs it first when the branch is behind `master`.
+- `sync`: merges the latest `main` into your branch and fixes what breaks: it resolves conflicts, regenerates lockfiles instead of merging them by hand, generates the branch's migration again on top of main's when both added one, rebuilds the stack or applies migrations when they changed, and runs the checks. It never pushes. `ship` runs it first when the branch is behind `main`.
 
 ## CI
 
 GitHub Actions runs these workflows from `.github/workflows`:
 
 - `pr.yml`: runs on every pull request. A new push to the PR cancels the run for the older commit.
-- `master.yml`: runs on every push to `master`, and by hand from the Actions tab. Runs wait in a queue and never overlap. When several pushes wait, only the newest one runs. After the checks pass, it [deploys](#deploy).
+- `main.yml`: runs on every push to `main`, and by hand from the Actions tab. Runs wait in a queue and never overlap. When several pushes wait, only the newest one runs. After the checks pass, it [deploys](#deploy).
 - `destroy.yml`: runs by hand only, and deletes the deployed app and its databases.
 
-`pr.yml` and `master.yml` call `checks.yml`, which runs all pre-commit hooks, the backend tests and the frontend build. Add steps that only one event needs to that event's workflow.
+`pr.yml` and `main.yml` call `checks.yml`, which runs all pre-commit hooks, the backend tests and the frontend build. Add steps that only one event needs to that event's workflow.
 
 ## Deploy
 
-`master` deploys to [DigitalOcean App Platform](https://docs.digitalocean.com/products/app-platform/). The whole stack lives in one DigitalOcean app, described in `.do/app.yaml`:
+`main` deploys to [DigitalOcean App Platform](https://docs.digitalocean.com/products/app-platform/). The whole stack lives in one DigitalOcean app, described in `.do/app.yaml`:
 
 | Component | What it runs                                                         | Monthly price, billed per second |
 | --------- | -------------------------------------------------------------------- | -------------------------------- |
@@ -224,9 +224,9 @@ Set it up once:
 1. In DigitalOcean, create a [personal access token](https://cloud.digitalocean.com/account/api/tokens) with full access.
 2. Give DigitalOcean access to the repository: install the [DigitalOcean GitHub app](https://github.com/apps/digitalocean) on it.
 3. In the repository settings on GitHub, under **Secrets and variables → Actions**, add the secret `DIGITALOCEAN_ACCESS_TOKEN` with the token, and the variable `DIGITALOCEAN_APP_NAME` with a name for the app: lowercase letters, digits and dashes, at most 29 characters.
-4. Push to `master`, or run the Master workflow from the Actions tab. The first run creates the database clusters, which takes about five minutes, and then the app. The URL is in the deploy job's log and in the DigitalOcean console.
+4. Push to `main`, or run the Main workflow from the Actions tab. The first run creates the database clusters, which takes about five minutes, and then the app. The URL is in the deploy job's log and in the DigitalOcean console.
 
-Without the `DIGITALOCEAN_APP_NAME` variable, `master.yml` skips the deploy.
+Without the `DIGITALOCEAN_APP_NAME` variable, `main.yml` skips the deploy.
 
 To send errors to [Sentry](https://sentry.io/), also add the variables `SENTRY_DSN` and `VITE_SENTRY_DSN` there. The deploy passes them to the backend and to the frontend build, with the environment `production`. Without them, Sentry stays off.
 

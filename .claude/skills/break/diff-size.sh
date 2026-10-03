@@ -11,12 +11,12 @@
 #                         BREAK_MAX_FILES files
 #
 # Set the limits and the main branch with BREAK_MAX_LINES (400),
-# BREAK_MAX_FILES (15) and BREAK_MAIN_BRANCH (master).
+# BREAK_MAX_FILES (15) and BREAK_MAIN_BRANCH (main).
 set -euo pipefail
 
 max_lines=${BREAK_MAX_LINES:-400}
 max_files=${BREAK_MAX_FILES:-15}
-main=${BREAK_MAIN_BRANCH:-master}
+main=${BREAK_MAIN_BRANCH:-main}
 
 cd "$(git rev-parse --show-toplevel)"
 

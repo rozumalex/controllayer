@@ -15,7 +15,7 @@ git branch --show-current
 git status --short
 ```
 
-- On `master`, create a branch first: `git switch -c <type>/<short-name>`, for example `feat/user-login` or `fix/health-timeout`. Never commit to `master`.
+- On `main`, create a branch first: `git switch -c <type>/<short-name>`, for example `feat/user-login` or `fix/health-timeout`. Never commit to `main`.
 - Read every untracked file name. Stop and ask about anything that looks like a secret, a local config or a build artifact, such as `.env`, `*.pem`, `dist/` or a database dump.
 
 ## 2. Check the size
@@ -26,9 +26,9 @@ git status --short
 
 If the change is over the limit and the user hasn't chosen to go on, stop and run the break skill instead of shipping.
 
-## 3. Bring in master
+## 3. Bring in main
 
-If `git fetch origin && git log --oneline HEAD..origin/master` shows new commits, run the sync skill first, so CI tests the branch as it will merge.
+If `git fetch origin && git log --oneline HEAD..origin/main` shows new commits, run the sync skill first, so CI tests the branch as it will merge.
 
 ## 4. Run the checks
 
@@ -68,7 +68,7 @@ Check for an open PR on this branch:
 gh pr view --json number,url,title,body,baseRefName
 ```
 
-**No PR yet:** open one with `gh pr create`. The base is `master`, unless this branch is stacked on another open PR's branch: then the base is that branch.
+**No PR yet:** open one with `gh pr create`. The base is `main`, unless this branch is stacked on another open PR's branch: then the base is that branch.
 
 **A PR is open:** update its description, every time you push. The description must describe the whole branch as it is now, not the first commit and not this push. Read it from `git log <base>..HEAD` and `git diff <base>...HEAD`, not from memory. Keep what still holds from the current description, such as screenshots, linked issues, notes a teammate wrote and test plan items already checked, and rewrite the rest. Don't add an "Updates" log at the bottom. Change the title too if it no longer fits.
 
