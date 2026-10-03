@@ -71,15 +71,31 @@ OPENAI_URL = "https://api.openai.com/v1/chat/completions"
 
 
 class OpenAIUpstream:
-    """OpenAI's chat completions API, always with one model."""
+    """OpenAI's chat completions API, always with one model and at most
+    max_tokens tokens an answer."""
 
-    def __init__(self, api_key: str, model: str, url: str = OPENAI_URL) -> None:
+    def __init__(
+        self,
+        api_key: str,
+        model: str,
+        url: str = OPENAI_URL,
+        max_tokens: int | None = None,
+    ) -> None:
         self.api_key = api_key
         self.model = model
         self.url = url
+        self.max_tokens = max_tokens
+
+    def limit(self, request: dict[str, Any]) -> dict[str, Any]:
+        """The request for this model, capped at max_tokens."""
+        request = {**request, "model": self.model}
+        if self.max_tokens:
+            # Reasoning models take max_completion_tokens, not max_tokens.
+            request["max_completion_tokens"] = self.max_tokens
+        return request
 
     async def complete(self, request: dict[str, Any]) -> dict[str, Any]:
-        request = {**request, "model": self.model}
+        request = self.limit(request)
         headers = {"Authorization": f"Bearer {self.api_key}"}
         try:
             async with httpx.AsyncClient(timeout=120) as client:
@@ -96,8 +112,7 @@ class OpenAIUpstream:
 
     async def stream(self, request: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
         request = {
-            **request,
-            "model": self.model,
+            **self.limit(request),
             "stream": True,
             # Without it, a stream doesn't say how many tokens it used.
             "stream_options": {"include_usage": True},

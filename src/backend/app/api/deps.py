@@ -22,6 +22,8 @@ from app.control.guards.policy import (
     ModelGuard,
     ToolAccessGuard,
 )
+from app.control.guards.prompt_leak import PromptLeakGuard
+from app.control.guards.rate_limit import RateLimitGuard
 from app.control.guards.semantic_injection import (
     OpenAIInjectionClassifier,
     SemanticInjectionGuard,
@@ -29,11 +31,17 @@ from app.control.guards.semantic_injection import (
 from app.control.guards.sensitive_data import SensitiveDataGuard
 from app.control.layer import ControlLayer, build_layer
 from app.control.upstream import ChatUpstream, MockUpstream, OpenAIUpstream
+from app.core.assistant import SYSTEM_PROMPT
 from app.core.config import settings
 from app.core.schema.policy import PolicySettings
 from app.db.event_sink import DatabaseEventSink
 from app.db.models import McpServer, User
-from app.db.policy import data_catalog, monthly_usage, role_policy
+from app.db.policy import (
+    data_catalog,
+    monthly_usage,
+    recent_questions,
+    role_policy,
+)
 from app.db.session import SessionLocal
 
 
@@ -127,6 +135,7 @@ def control_layer(
     policy: PolicySettings | None = None,
     inbound: Sequence[Guard] = (),
     outbound: Sequence[Guard] = (),
+    response: Sequence[Guard] = (),
 ) -> ControlLayer:
     # Built on every request, so a setting changed at runtime applies to the
     # next one. The user's policy sets the injection threshold.
@@ -140,6 +149,7 @@ def control_layer(
         semantic_guard(threshold),
         inbound,
         outbound,
+        response,
     )
 
 
@@ -148,20 +158,27 @@ async def chat_control(user: CurrentUser, policy: UserPolicy) -> ChatControl:
     model = chat_model(policy)
     async with SessionLocal() as session:
         tokens, usd = await monthly_usage(session, user.id)
+        recent = await recent_questions(session, user.id)
     guards = [
+        RateLimitGuard(settings.control_rate_limit_per_minute, recent),
         ModelGuard(model, policy.allowed_models),
         BudgetGuard(policy.budget, tokens, usd),
         sensitive_data(policy),
     ]
+    # The answer is checked too: the model may write PII the policy hides,
+    # a secret, or its own instructions.
+    answer = [sensitive_data(policy), PromptLeakGuard(SYSTEM_PROMPT)]
     upstream: ChatUpstream = (
-        OpenAIUpstream(settings.openai_api_key, model)
+        OpenAIUpstream(
+            settings.openai_api_key, model, max_tokens=settings.chat_max_tokens
+        )
         if settings.openai_api_key
         else MockUpstream()
     )
     # The tools run through the MCP gateway, which checks every call and
     # result, so the chat leaves them to it.
     return ChatControl(
-        control_layer(sink, policy, inbound=guards),
+        control_layer(sink, policy, inbound=guards, response=answer),
         upstream,
         settings.control_log_payloads,
         sink,

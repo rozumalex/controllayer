@@ -7,6 +7,7 @@ from uuid import uuid4
 class Direction(StrEnum):
     INBOUND = "inbound"  # agent -> tool: the tool call and its arguments
     OUTBOUND = "outbound"  # tool -> agent: the tool result
+    RESPONSE = "response"  # model -> user: the model's answer
 
 
 class Action(StrEnum):

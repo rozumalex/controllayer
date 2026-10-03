@@ -25,13 +25,16 @@ def build_layer(
     semantic: Guard | None = None,
     inbound: Sequence[Guard] = (),
     outbound: Sequence[Guard] = (),
+    response: Sequence[Guard] = (),
 ) -> ControlLayer:
     """semantic is the AI-based injection guard. It runs after the heuristic
     one, so an obvious attack is blocked without a model call.
 
     inbound and outbound are the policy's guards. They run first: they are
     cheap, a blocked prompt costs no model call, and the injection guards see
-    a tool result only after the data above the clearance is taken out."""
+    a tool result only after the data above the clearance is taken out.
+
+    response is the guards of the model's answer, before the user sees it."""
     audit = audit or EventAuditSink()
     injection: list[Guard] = [PromptInjectionGuard(threshold=injection_threshold)]
     if semantic:
@@ -44,5 +47,6 @@ def build_layer(
             Direction.OUTBOUND: Pipeline(
                 "outbound", [*outbound, *injection, SpotlightGuard()], audit, mode
             ),
+            Direction.RESPONSE: Pipeline("response", response, audit, mode),
         }
     )

@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     # it receives, so the demo runs offline.
     openai_api_key: str = ""
     openai_model: str = "gpt-4.1-mini"
+    # The most tokens the model may write in one answer, reasoning included,
+    # so one prompt can't run up the bill.
+    chat_max_tokens: int = 4096
+    # Chat questions per user per minute; 0 turns the limit off.
+    control_rate_limit_per_minute: int = 20
     # The semantic injection guard asks this model whether a message is an
     # attack. It runs only with an OpenAI key, and needs a model that takes
     # temperature and structured outputs, so not a reasoning model.

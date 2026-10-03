@@ -55,6 +55,13 @@ def offline(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "openai_api_key", "")
 
 
+@pytest.fixture(autouse=True)
+def no_rate_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Turns the rate limit off, so the tests can ask as often as they need.
+    The rate limit tests turn it back on."""
+    monkeypatch.setattr(settings, "control_rate_limit_per_minute", 0)
+
+
 @pytest.fixture
 def db() -> None:
     """Starts the test with empty tables."""

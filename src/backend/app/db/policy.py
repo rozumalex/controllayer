@@ -1,5 +1,5 @@
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import BigInteger, func, select
@@ -81,3 +81,17 @@ async def monthly_usage(
         tokens += prompt + completion
         usd += (prompt * prompt_price + completion * completion_price) / 1_000_000
     return tokens, usd
+
+
+async def recent_questions(session: AsyncSession, user_id: uuid.UUID) -> int:
+    """The questions the user asked in the last minute, blocked ones too. A
+    question is one trace: the agent may call the model a few times for it."""
+    start = datetime.now(UTC) - timedelta(minutes=1)
+    count = await session.scalar(
+        select(func.count(func.distinct(ControlEvent.trace_id))).where(
+            ControlEvent.user_id == user_id,
+            ControlEvent.event == "request",
+            ControlEvent.created_at >= start,
+        )
+    )
+    return count or 0
