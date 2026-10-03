@@ -140,6 +140,9 @@ function SignIn({ onSignedIn }: { onSignedIn: (user: Employee) => void }) {
 
   function enterCode(value: string) {
     setCode(value)
+    // Typing again puts the button back in the message's place.
+    setError(null)
+    setNotice(null)
     if (value.length === 6 && codeSentTo)
       void run(async () => {
         try {
@@ -236,19 +239,23 @@ function SignIn({ onSignedIn }: { onSignedIn: (user: Employee) => void }) {
                 </InputOTPGroup>
               </InputOTP>
             </div>
-            {/* The code signs in as soon as it is whole, so no button: its
-                place shows how it went. */}
-            <p
-              aria-live="polite"
-              className={cn(
-                "flex h-8 items-center justify-center text-sm",
-                error ? "text-destructive" : "text-muted-foreground"
-              )}
-            >
-              {busy
-                ? "Signing in…"
-                : (error ?? notice ?? "Enter the 6-digit code")}
-            </p>
+            {/* The code signs in as soon as it is whole. The button's place
+                shows a message instead while there is one, so nothing moves. */}
+            {busy || error || notice ? (
+              <p
+                aria-live="polite"
+                className={cn(
+                  "flex h-8 items-center justify-center text-sm",
+                  error ? "text-destructive" : "text-muted-foreground"
+                )}
+              >
+                {busy ? "Signing in…" : (error ?? notice)}
+              </p>
+            ) : (
+              <Button type="submit" disabled={code.length < 6}>
+                Sign in
+              </Button>
+            )}
             <div className="-mt-2 flex justify-between text-sm">
               <Button
                 type="button"
