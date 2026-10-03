@@ -1,0 +1,142 @@
+# Development stack: the backend and the frontend run from the source code on
+# the host and reload on every change.
+x-database-url: &database-url postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-app}
+
+x-redis-url: &redis-url redis://redis:6379/0
+
+x-api-build: &api-build
+  context: src/backend
+  target: dev
+
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-app}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      # A named volume, so the data stays after `docker compose down`.
+      # Only `docker compose down -v` deletes it.
+      - db-data:/var/lib/postgresql
+    healthcheck:
+      # -h localhost checks TCP. On first start, the entrypoint runs a temporary
+      # server on the Unix socket only, and the socket check would pass too early.
+      test: ["CMD-SHELL", "pg_isready -h localhost -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:8-alpine
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Runs once: applies the database migrations, then exits.
+  migrate:
+    build: *api-build
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      DATABASE_URL: *database-url
+    volumes:
+      - ./src/backend:/app
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    build: *api-build
+    environment:
+      DATABASE_URL: *database-url
+      REDIS_URL: *redis-url
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      NEW_RELIC_LICENSE_KEY: ${NEW_RELIC_LICENSE_KEY:-}
+      NEW_RELIC_APP_NAME: ${NEW_RELIC_APP_NAME:-backend}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - ./src/backend:/app
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # Celery worker with the beat scheduler in the same process. watchfiles
+  # restarts it on every code change. Keep one replica, or beat sends every
+  # scheduled task once per replica.
+  worker:
+    build: *api-build
+    command:
+      - watchfiles
+      - --filter
+      - python
+      # Keep the beat schedule file out of the source code mount.
+      - newrelic-admin run-program celery -A app.worker worker --beat --schedule /tmp/celerybeat-schedule --loglevel INFO
+      - app
+    environment:
+      DATABASE_URL: *database-url
+      REDIS_URL: *redis-url
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      NEW_RELIC_LICENSE_KEY: ${NEW_RELIC_LICENSE_KEY:-}
+      NEW_RELIC_APP_NAME: ${NEW_RELIC_APP_NAME:-backend}
+    volumes:
+      - ./src/backend:/app
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.worker inspect ping -d celery@$$HOSTNAME"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  app:
+    build:
+      context: src/frontend
+      target: dev
+    environment:
+      API_URL: http://api:8000
+      VITE_SENTRY_DSN: ${VITE_SENTRY_DSN:-}
+    ports:
+      - "${APP_PORT:-3000}:5173"
+    volumes:
+      - ./src/frontend:/app
+      # Keep the node_modules installed in the image, not the host's.
+      - /app/node_modules
+    depends_on:
+      api:
+        condition: service_healthy
+
+  # Public HTTPS tunnel to the frontend, started only by `./dev ngrok`. The
+  # Vite dev server sends /api/ requests on to the backend, so one tunnel
+  # serves both. Get a free authtoken at https://dashboard.ngrok.com.
+  ngrok:
+    image: ngrok/ngrok:3-alpine
+    profiles: [ngrok]
+    command: ["http", "app:5173"]
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:-}
+    depends_on:
+      - app
+
+volumes:
+  db-data:

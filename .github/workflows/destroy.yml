@@ -1,0 +1,37 @@
+# Deletes the DigitalOcean app and its database clusters, with all the data,
+# so they stop costing money. Run it by hand from the Actions tab. The next
+# deploy on master creates them again, with an empty database.
+name: Destroy
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type the app name to delete the app and its databases
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  destroy:
+    if: inputs.confirm == vars.DIGITALOCEAN_APP_NAME
+    runs-on: ubuntu-latest
+    env:
+      APP_NAME: ${{ vars.DIGITALOCEAN_APP_NAME }}
+    steps:
+      - uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Delete the app
+        run: |
+          doctl apps list --format ID,Spec.Name --no-header \
+            | awk -v name="$APP_NAME" '$2 == name { print $1 }' \
+            | xargs -r -n 1 doctl apps delete --force
+
+      - name: Delete the database clusters
+        run: |
+          doctl databases list --format ID,Name --no-header \
+            | awk -v app="$APP_NAME" '$2 == app "-db" || $2 == app "-valkey" { print $1 }' \
+            | xargs -r -n 1 doctl databases delete --force

@@ -1,0 +1,69 @@
+name: Master
+
+on:
+  push:
+    branches: [master]
+  # Lets you run the checks and deploy again from the Actions tab.
+  workflow_dispatch:
+
+# Queue runs instead of overlapping them, so a later deploy step never races
+# an older one. GitHub keeps only the newest waiting run, so when pushes pile
+# up, the commits in between are skipped.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    uses: ./.github/workflows/checks.yml
+
+  # Deploys to DigitalOcean App Platform from .do/app.yaml once the checks
+  # pass. It runs only when the DIGITALOCEAN_APP_NAME repository variable is
+  # set, so a copy of the template without a DigitalOcean account skips it.
+  deploy:
+    needs: checks
+    if: vars.DIGITALOCEAN_APP_NAME != ''
+    runs-on: ubuntu-latest
+    env:
+      APP_NAME: ${{ vars.DIGITALOCEAN_APP_NAME }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      # The app spec only links to the database clusters, so create them on
+      # the first deploy. It takes about five minutes.
+      - name: Create the database clusters
+        run: |
+          create() {
+            if ! doctl databases list --format Name --no-header | grep -qx "$1"; then
+              doctl databases create "$1" --engine "$2" --region fra1 \
+                --size db-s-1vcpu-1gb --num-nodes 1 --wait
+            fi
+          }
+          create "$APP_NAME-db" pg
+          create "$APP_NAME-valkey" valkey
+
+      # Keep the Celery queue across restarts, and never drop queued tasks
+      # when memory runs out.
+      - name: Configure Valkey
+        run: |
+          id=$(doctl databases list --format ID,Name --no-header \
+            | awk -v name="$APP_NAME-valkey" '$2 == name { print $1 }')
+          doctl databases configuration update "$id" --engine valkey \
+            --config-json '{"valkey_persistence": "rdb", "valkey_maxmemory_policy": "noeviction"}'
+
+      - uses: digitalocean/app_action/deploy@v2
+        env:
+          SENTRY_DSN: ${{ vars.SENTRY_DSN }}
+          VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
+          NEW_RELIC_LICENSE_KEY: ${{ secrets.NEW_RELIC_LICENSE_KEY }}
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+          print_build_logs: true
+          print_deploy_logs: true

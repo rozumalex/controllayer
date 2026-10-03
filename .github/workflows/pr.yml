@@ -1,0 +1,16 @@
+name: PR
+
+on:
+  pull_request:
+
+# A new push to the PR cancels the run for the older commit.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    uses: ./.github/workflows/checks.yml

@@ -1,0 +1,70 @@
+# Shared checks. The PR and master workflows call this workflow.
+name: Checks
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    # The alembic-check hook applies the migrations to this Postgres. The
+    # credentials match the backend's default DATABASE_URL.
+    services:
+      db:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: app
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d app"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: src/backend/uv.lock
+
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: src/frontend/package.json
+          cache: true
+          cache_dependency_path: src/frontend/pnpm-lock.yaml
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+          package-manager-cache: false
+
+      - name: Install backend dependencies
+        working-directory: src/backend
+        run: uv sync --locked
+
+      - name: Install frontend dependencies
+        working-directory: src/frontend
+        run: pnpm install --frozen-lockfile
+
+      - uses: actions/cache@v6
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - name: Run pre-commit hooks
+        run: uvx pre-commit run --all-files --show-diff-on-failure
+
+      - name: Run backend tests
+        working-directory: src/backend
+        run: uv run pytest
+
+      - name: Build frontend
+        working-directory: src/frontend
+        run: pnpm build

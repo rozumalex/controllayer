@@ -1,0 +1,78 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+        # tsconfig files allow comments, which plain JSON does not.
+        exclude: tsconfig.*\.json$
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+      - id: detect-private-key
+  - repo: https://github.com/python-jsonschema/check-jsonschema
+    rev: 0.38.2
+    hooks:
+      - id: check-github-workflows
+  # The local hooks run the tools installed in each project, so tool
+  # versions come from uv.lock and pnpm-lock.yaml. Install the dependencies
+  # first: `uv sync` in src/backend and `pnpm install` in src/frontend.
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check (backend)
+        entry: uv run --directory src/backend ruff check --fix
+        language: system
+        files: ^src/backend/.*\.pyi?$
+        pass_filenames: false
+      - id: ruff-format
+        name: ruff format (backend)
+        entry: uv run --directory src/backend ruff format
+        language: system
+        files: ^src/backend/.*\.pyi?$
+        pass_filenames: false
+      - id: ty
+        name: ty (backend)
+        entry: uv run --directory src/backend ty check
+        language: system
+        files: ^src/backend/.*\.pyi?$
+        pass_filenames: false
+      # Two branches that each add a migration leave two heads, and
+      # `alembic upgrade head` then fails. Join them with `alembic merge heads`.
+      - id: alembic-heads
+        name: alembic single head (backend)
+        entry: >-
+          bash -c 'heads=$(uv run --directory src/backend alembic heads | grep -c .);
+          [ "$heads" -le 1 ] || { echo "Migrations have $heads heads. Join them with alembic merge heads."; exit 1; }'
+        language: system
+        files: ^src/backend/migrations/
+        pass_filenames: false
+      # Applies every migration to a throwaway database, then fails if a model
+      # change has no migration yet. Needs the Postgres in DATABASE_URL: the
+      # Compose db (`./dev up db`) by default, a service container in CI.
+      - id: alembic-check
+        name: alembic models match migrations (backend)
+        entry: uv run --directory src/backend python -m scripts.check_migrations
+        language: system
+        files: ^src/backend/(app/db/|migrations/|scripts/check_migrations\.py$|alembic\.ini$)
+        pass_filenames: false
+      - id: tsc
+        name: tsc (frontend)
+        entry: pnpm --dir src/frontend typecheck
+        language: system
+        files: ^src/frontend/.*\.(ts|tsx)$
+        pass_filenames: false
+      - id: oxlint
+        name: oxlint (frontend)
+        entry: pnpm --dir src/frontend lint
+        language: system
+        files: ^src/frontend/.*\.(js|jsx|ts|tsx)$
+        pass_filenames: false
+      - id: prettier
+        name: prettier (frontend)
+        entry: pnpm --dir src/frontend format
+        language: system
+        files: ^src/frontend/
+        pass_filenames: false

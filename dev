@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# Manage the project: ./dev <command> [args]. Run ./dev help for the list.
+# Every command except lint runs in the Docker containers.
+set -euo pipefail
+cd "$(dirname "$0")"
+
+usage() {
+  cat <<'USAGE'
+Usage: ./dev <command> [args]
+
+Stack:
+  up [service...]            Build and start the stack, or only the given services
+  down                       Stop the stack; the database data stays
+  restart [service...]       Rebuild and restart the stack, or only the given services
+  logs [service...]          Follow the logs
+  ps                         Show the status of every service
+  destroy [-y]               Stop the stack and delete the database data and built images
+  shell [service]            Open a bash shell in a service, api by default
+  python                     Open a Python shell in the backend; await works at the prompt
+  ngrok                      Share the app on a public HTTPS URL; needs NGROK_AUTHTOKEN
+
+Database:
+  migrate [revision]         Apply the migrations, up to head by default
+  makemigrations <message>   Create a migration from the model changes
+  checkmigrations            Check that the migrations apply and cover every model change
+  psql                       Open psql in the database
+
+Checks:
+  lint [hook]                Run every pre-commit hook, or only the given one
+  test [pytest args...]      Run the backend tests; paths are relative to src/backend
+
+Examples:
+  ./dev logs api
+  ./dev test tests/test_health.py::test_health
+  ./dev test -k health -x
+  ./dev makemigrations "add posts table"
+USAGE
+}
+
+# Run a command in a service: in the running container if the stack is up,
+# otherwise in a new container that is removed afterwards.
+in_service() {
+  local service=$1
+  shift
+  if [[ -n $(docker compose ps --status running --quiet "$service") ]]; then
+    docker compose exec "$service" "$@"
+  else
+    docker compose run --rm --no-deps "$service" "$@"
+  fi
+}
+
+command=${1:-help}
+shift || true
+
+case $command in
+  # -V replaces the anonymous node_modules volume with the one from the new
+  # image, so a rebuild after a dependency change takes effect.
+  up) docker compose up --build -d -V "$@" ;;
+  down) docker compose down "$@" ;;
+  restart) docker compose up --build -d -V --force-recreate "$@" ;;
+  logs) docker compose logs -f "$@" ;;
+  ps) docker compose ps -a "$@" ;;
+  shell) in_service "${1:-api}" bash ;;
+  python) in_service api python -m asyncio ;;
+  ngrok) docker compose run --rm ngrok ;;
+  destroy)
+    if [[ ${1:-} != -y ]]; then
+      read -rp "Delete the database data and built images? [y/N] " answer
+      [[ $answer == [yY] ]] || exit 1
+    fi
+    docker compose down -v --rmi local --remove-orphans
+    ;;
+  migrate) docker compose run --rm migrate alembic upgrade "${1:-head}" ;;
+  makemigrations)
+    if [[ $# -eq 0 ]]; then
+      echo 'Usage: ./dev makemigrations "describe the change"' >&2
+      exit 1
+    fi
+    # alembic check fails when the models differ from the database, so an
+    # empty migration is never created.
+    if docker compose run --rm migrate alembic check >/dev/null 2>&1; then
+      echo "No changes detected"
+      exit 0
+    fi
+    # Run as the host user, so on Linux the new file is not owned by root.
+    docker compose run --rm --user "$(id -u):$(id -g)" migrate \
+      alembic revision --autogenerate -m "$*"
+    ;;
+  checkmigrations)
+    docker compose up -d --wait db
+    docker compose run --rm --no-deps -T migrate python -m scripts.check_migrations
+    ;;
+  psql) docker compose exec db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' ;;
+  # pre-commit runs on the host, like the git commit hook, so it needs uv,
+  # pnpm and pre-commit installed there.
+  lint) pre-commit run --all-files "$@" ;;
+  test) in_service api pytest "$@" ;;
+  help | -h | --help) usage ;;
+  *)
+    echo "Unknown command: $command" >&2
+    usage >&2
+    exit 1
+    ;;
+esac

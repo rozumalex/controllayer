@@ -1,0 +1,120 @@
+# DigitalOcean App Platform spec for the production stack. The deploy job in
+# .github/workflows/master.yml creates the app from this file on the first run
+# and updates it on every later one. The deploy action fills in ${APP_NAME},
+# ${GITHUB_REPOSITORY}, the Sentry DSNs and the New Relic license key from the
+# workflow environment.
+# Quote them, so an unset one becomes an empty string.
+# ${db.DATABASE_URL} and ${redis.DATABASE_URL} are App Platform variables and
+# stay as they are.
+name: ${APP_NAME}
+region: fra
+
+ingress:
+  rules:
+    # The backend gets /api/* unchanged, the way the Vite dev server sends it.
+    - match:
+        path:
+          prefix: /api
+      component:
+        name: api
+        preserve_path_prefix: true
+    - match:
+        path:
+          prefix: /
+      component:
+        name: web
+
+services:
+  - name: api
+    github: &github
+      repo: ${GITHUB_REPOSITORY}
+      branch: master
+      # The deploy job deploys after the checks pass, so a push alone does not.
+      deploy_on_push: false
+    source_dir: src/backend
+    dockerfile_path: src/backend/Dockerfile
+    http_port: 8000
+    instance_size_slug: apps-s-1vcpu-0.5gb
+    instance_count: 1
+    health_check:
+      http_path: /api/health
+    envs: &backend-envs
+      - key: DATABASE_URL
+        value: ${db.DATABASE_URL}
+      - key: REDIS_URL
+        value: ${redis.DATABASE_URL}
+      - key: SENTRY_DSN
+        value: "${SENTRY_DSN}"
+      - key: SENTRY_ENVIRONMENT
+        value: production
+      - key: NEW_RELIC_LICENSE_KEY
+        value: "${NEW_RELIC_LICENSE_KEY}"
+        type: SECRET
+      - key: NEW_RELIC_APP_NAME
+        value: "${APP_NAME}"
+
+workers:
+  # Worker and beat in one process. Keep one instance, or beat sends every
+  # scheduled task once per instance. The app user cannot write to /app, so
+  # the beat schedule file goes to /tmp.
+  - name: worker
+    github: *github
+    source_dir: src/backend
+    dockerfile_path: src/backend/Dockerfile
+    run_command: newrelic-admin run-program celery -A app.worker worker --beat --schedule /tmp/celerybeat-schedule --loglevel INFO
+    instance_size_slug: apps-s-1vcpu-0.5gb
+    instance_count: 1
+    # On a deploy or restart, App Platform sends TERM. Celery then takes no new
+    # tasks and waits for the running ones to finish. This is how long App
+    # Platform waits before it kills the worker.
+    termination:
+      grace_period_seconds: 60
+    envs: *backend-envs
+
+jobs:
+  - name: migrate
+    kind: PRE_DEPLOY
+    github: *github
+    source_dir: src/backend
+    dockerfile_path: src/backend/Dockerfile
+    run_command: alembic upgrade head
+    instance_size_slug: apps-s-1vcpu-0.5gb
+    envs:
+      - key: DATABASE_URL
+        value: ${db.DATABASE_URL}
+
+static_sites:
+  - name: web
+    github: *github
+    source_dir: src/frontend
+    build_command: pnpm build
+    output_dir: dist
+    # Send unknown paths to the app, so client-side routes load on refresh.
+    catchall_document: index.html
+    # Vite puts these into the built files.
+    envs:
+      - key: VITE_SENTRY_DSN
+        value: "${VITE_SENTRY_DSN}"
+        scope: BUILD_TIME
+      - key: VITE_SENTRY_ENVIRONMENT
+        value: production
+        scope: BUILD_TIME
+
+databases:
+  # Managed clusters that the deploy job creates once, so the data stays when
+  # the app redeploys or restarts.
+  #
+  # Postgres. Without db_user and db_name the app connects as the cluster's
+  # admin user, which can create tables in the public schema. App Platform dev
+  # databases cannot.
+  - name: db
+    engine: PG
+    production: true
+    cluster_name: ${APP_NAME}-db
+  # Valkey, a Redis fork, as the Celery broker. The deploy job turns on RDB
+  # persistence, so the queue survives a restart of the cluster, minus at most
+  # the last 10 minutes.
+  - name: redis
+    engine: VALKEY
+    production: true
+    cluster_name: ${APP_NAME}-valkey
