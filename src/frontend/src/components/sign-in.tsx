@@ -151,7 +151,7 @@ function SignIn({ onSignedIn }: { onSignedIn: (user: Employee) => void }) {
         </div>
 
         <div className="flex flex-col gap-2">
-          <Button size="lg" disabled={busy} onClick={() => run(signInToDemo)}>
+          <Button disabled={busy} onClick={() => run(signInToDemo)}>
             Try the demo
           </Button>
           <p className="text-center text-xs text-muted-foreground">
@@ -208,7 +208,7 @@ function SignIn({ onSignedIn }: { onSignedIn: (user: Employee) => void }) {
                 autoFocus
                 containerClassName="justify-center"
               >
-                <InputOTPGroup className="gap-2">
+                <InputOTPGroup className="gap-1.5">
                   {[0, 1, 2, 3, 4, 5].map((index) => (
                     <InputOTPSlot
                       key={index}
