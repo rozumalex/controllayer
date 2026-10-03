@@ -3,7 +3,8 @@
 What the agent sends is checked before the model sees it: the new user prompt
 (inbound) and every tool result (outbound, where indirect injection comes
 from). What the model returns is checked before the agent acts on it: every
-tool call it asks for (inbound, agent -> tool).
+tool call it asks for (inbound, agent -> tool), and its answer before the user
+sees it (response).
 """
 
 import json
@@ -28,6 +29,12 @@ logger = logging.getLogger("app.control.chat")
 WITHHELD = "[control layer] This tool result was withheld."
 BLOCKED_PROMPT = "The request was blocked."
 BLOCKED_CALL = "A call to {tool} was blocked."
+WITHHELD_ANSWER = "[control layer] The answer was withheld."
+# A streamed answer is checked in pieces of at least PIECE characters, cut at
+# a line break, or at a space TAIL characters before the end, so a card
+# number or an email being written is not cut in two.
+PIECE = 200
+TAIL = 64
 
 
 def text_of(content: Any) -> str:
@@ -103,6 +110,7 @@ class ChatControl:
                 usage=response.get("usage"),
                 body=response,
             )
+            response = await self.check_answer(response, trace)
             response = await self.check_response(response, trace)
 
         finish_reason = response["choices"][0]["finish_reason"]
@@ -140,6 +148,10 @@ class ChatControl:
         start = time.perf_counter()
         content: list[str] = []
         calls: dict[int, dict[str, Any]] = {}
+        # The answer's text not yet checked, and whether part of it was sent,
+        # or withheld: the rest is then held back too.
+        pending = ""
+        sent = withheld = False
         finish_reason = "stop"
         usage = None
         served = model
@@ -154,10 +166,23 @@ class ChatControl:
                     finish_reason = choice.get("finish_reason") or finish_reason
                     if delta.get("content"):
                         content.append(delta["content"])
-                        yield chunk(id, model, {"content": delta["content"]})
+                        pending += delta["content"]
+                    piece, pending = cut(pending)
+                    if piece and not withheld:
+                        text = await self.checked_text(piece, trace)
+                        withheld = text is None
+                        if text:
+                            sent = True
+                            yield chunk(id, model, {"content": text})
         except UpstreamError as error:
             await self.upstream_failed(trace, error)
             raise
+        if pending and not withheld:
+            text = await self.checked_text(pending, trace)
+            withheld = text is None
+            if text:
+                sent = True
+                yield chunk(id, model, {"content": text})
         latency_ms = round((time.perf_counter() - start) * 1000, 3)
 
         message: dict[str, Any] = {"role": "assistant", "content": "".join(content)}
@@ -174,6 +199,14 @@ class ChatControl:
             usage=usage,
             body=response,
         )
+        if withheld:
+            # The user may have seen the start of the answer already.
+            notice = f"\n\n{WITHHELD_ANSWER}" if sent else WITHHELD_ANSWER
+            response["choices"][0]["message"] = {
+                "role": "assistant",
+                "content": notice,
+            }
+            response["choices"][0]["finish_reason"] = "content_filter"
         response = await self.check_response(response, trace)
         choice = response["choices"][0]
         await self.log(
@@ -240,6 +273,36 @@ class ChatControl:
             checked.append(message)
         return checked, False
 
+    async def check_answer(
+        self, response: dict[str, Any], trace: Trace
+    ) -> dict[str, Any]:
+        """The response with the model's answer as the user may see it: PII
+        the policy hides redacted, and withheld if it holds a secret or the
+        assistant's instructions."""
+        for choice in response.get("choices", []):
+            message = choice.get("message") or {}
+            content = message.get("content")
+            if not isinstance(content, str) or not content:
+                continue
+            text = await self.checked_text(content, trace)
+            if text is None:
+                # Its tool calls go too: the model may be acting on a leak.
+                choice["message"] = {"role": "assistant", "content": WITHHELD_ANSWER}
+                choice["finish_reason"] = "content_filter"
+            else:
+                message["content"] = text
+        return response
+
+    async def checked_text(self, text: str, trace: Trace) -> str | None:
+        """The text of an answer as the user may see it, or None to withhold
+        it."""
+        decision = await self.inspect(
+            Direction.RESPONSE, "llm", "model_answer", {"content": text}, trace
+        )
+        if decision.action is Action.BLOCK:
+            return None
+        return decision.envelope.payload["content"]
+
     async def check_response(
         self, response: dict[str, Any], trace: Trace
     ) -> dict[str, Any]:
@@ -301,6 +364,15 @@ class ChatControl:
         # PII and secrets never reach the logs, even with the payloads.
         data = {k: scrub(v) if k in payloads else v for k, v in data.items()}
         await self.sink.write({"event": stage, "trace_id": trace.trace_id, **data})
+
+
+def cut(pending: str) -> tuple[str, str]:
+    """Splits the unchecked text of a streamed answer into a piece to check
+    and send now, and the rest, held back until more of it comes."""
+    if len(pending) < PIECE:
+        return "", pending
+    end = pending.rfind("\n") + 1 or pending.rfind(" ", 0, len(pending) - TAIL) + 1
+    return pending[:end], pending[end:]
 
 
 def add_call_delta(calls: dict[int, dict[str, Any]], delta: dict[str, Any]) -> None:

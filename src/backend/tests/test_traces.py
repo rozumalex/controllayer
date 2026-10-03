@@ -39,8 +39,9 @@ def test_streamed_chat_traced_with_every_stage(client: TestClient) -> None:
     events = [e["event"] for e in trace["events"]]
     assert events == [
         "request",
-        # The model, the budget, the sensitive data, the attack signatures
-        # and the injection guard.
+        # The rate limit, the model, the budget, the sensitive data, the
+        # attack signatures and the injection guard.
+        "verdict",
         "verdict",
         "verdict",
         "verdict",
@@ -48,6 +49,10 @@ def test_streamed_chat_traced_with_every_stage(client: TestClient) -> None:
         "verdict",
         "decision",
         "upstream_request",
+        # The answer: the sensitive data and the system prompt leak guard.
+        "verdict",
+        "verdict",
+        "decision",
         "upstream_response",
         "response",
     ]

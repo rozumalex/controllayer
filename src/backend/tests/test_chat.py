@@ -251,7 +251,8 @@ def collect(stream: Any) -> list[dict[str, Any]]:
 
 def test_clean_message_streamed(client: TestClient) -> None:
     # given
-    request = {"message": "What is 2 + 2?"}
+    question = "What is 2 + 2? " * 40
+    request = {"message": question}
 
     # when
     response = client.post(STREAM_URL, json=request)
@@ -263,7 +264,7 @@ def test_clean_message_streamed(client: TestClient) -> None:
     received = events(response.text)
     deltas = [e["text"] for e in received if e["type"] == "delta"]
     assert len(deltas) > 1
-    assert "What is 2 + 2?" in "".join(deltas)
+    assert question.strip() in "".join(deltas)
     assert received[-1] == {"type": "done", "blocked": False}
 
 
@@ -391,6 +392,24 @@ def test_openai_stream_parsed(monkeypatch: pytest.MonkeyPatch) -> None:
 
     # then
     assert [c["choices"][0]["delta"]["content"] for c in chunks] == ["Hel", "lo"]
+
+
+def test_openai_answer_capped_at_max_tokens(monkeypatch: pytest.MonkeyPatch) -> None:
+    # given
+    sent: list[dict[str, Any]] = []
+
+    async def send(self: Any, request: httpx.Request, **kwargs: Any) -> Any:
+        sent.append(json.loads(request.content))
+        return httpx.Response(200, json=completion("m", "Hi", "stop"))
+
+    monkeypatch.setattr(httpx.AsyncClient, "send", send)
+    upstream = OpenAIUpstream("key", "gpt-4.1-mini", max_tokens=100)
+
+    # when
+    asyncio.run(upstream.complete(chat({"role": "user", "content": "Hi"})))
+
+    # then
+    assert sent[0]["max_completion_tokens"] == 100
 
 
 def test_unreachable_upstream_stream_raises_502() -> None:
