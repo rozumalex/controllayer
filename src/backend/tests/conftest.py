@@ -33,6 +33,10 @@ async def create_database() -> None:
         if not exists:
             await connection.execute(text(f'CREATE DATABASE "{TEST_URL.database}"'))
     await dev.dispose()
+    await empty_tables()
+
+
+async def empty_tables() -> None:
     async with test_engine.begin() as connection:
         await connection.run_sync(Base.metadata.drop_all)
         await connection.run_sync(Base.metadata.create_all)
@@ -48,6 +52,12 @@ def offline(monkeypatch: pytest.MonkeyPatch) -> None:
     """Runs every test on the mock model, without the semantic guard, even
     when the environment has an OpenAI key, so tests never call OpenAI."""
     monkeypatch.setattr(settings, "openai_api_key", "")
+
+
+@pytest.fixture
+def db() -> None:
+    """Starts the test with empty tables."""
+    asyncio.run(empty_tables())
 
 
 async def delete_events() -> None:

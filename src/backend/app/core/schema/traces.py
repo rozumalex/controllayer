@@ -65,3 +65,33 @@ class TraceEvent(BaseModel):
 class TraceDetail(BaseModel):
     summary: TraceSummary
     events: list[TraceEvent] = Field(description="In the order they happened.")
+
+
+Range = Literal["1h", "24h", "7d"]
+
+
+class Bucket(BaseModel):
+    """The traces that started in one time bucket."""
+
+    start: datetime
+    allowed: int = 0
+    flagged: int = 0
+    blocked: int = 0
+    error: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    p50_ms: float | None = Field(None, description="Median request duration.")
+    p95_ms: float | None = Field(None, description="95th percentile duration.")
+
+
+class FindingCount(BaseModel):
+    guard: str
+    reason: str
+    count: int
+
+
+class Analytics(BaseModel):
+    range: Range
+    bucket_seconds: int
+    timeline: list[Bucket] = Field(description="Every bucket, oldest first.")
+    findings: list[FindingCount] = Field(description="The most common first.")
