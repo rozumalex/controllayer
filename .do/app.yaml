@@ -9,6 +9,14 @@
 name: ${APP_NAME}
 region: fra
 
+# The DNS for controllayer.net lives in Cloudflare: a CNAME on @ and on www to
+# the app's ondigitalocean.app hostname, DNS only (not proxied).
+domains:
+  - domain: controllayer.net
+    type: PRIMARY
+  - domain: www.controllayer.net
+    type: ALIAS
+
 ingress:
   rules:
     # The backend gets /api/* unchanged, the way the Vite dev server sends it.
