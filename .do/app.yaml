@@ -64,12 +64,14 @@ services:
 workers:
   # Worker and beat in one process. Keep one instance, or beat sends every
   # scheduled task once per instance. The app user cannot write to /app, so
-  # the beat schedule file goes to /tmp.
+  # the beat schedule file goes to /tmp. Celery starts one process per CPU of
+  # the host, not of the instance, and 8 of them run out of its 512 MB, so
+  # run one.
   - name: worker
     github: *github
     source_dir: src/backend
     dockerfile_path: src/backend/Dockerfile
-    run_command: newrelic-admin run-program celery -A app.worker worker --beat --schedule /tmp/celerybeat-schedule --loglevel INFO
+    run_command: newrelic-admin run-program celery -A app.worker worker --beat --schedule /tmp/celerybeat-schedule --concurrency 1 --loglevel INFO
     instance_size_slug: apps-s-1vcpu-0.5gb
     instance_count: 1
     # On a deploy or restart, App Platform sends TERM. Celery then takes no new
