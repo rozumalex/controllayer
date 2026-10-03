@@ -1,5 +1,5 @@
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import date, datetime
 from decimal import Decimal
 from functools import cache
@@ -111,6 +111,17 @@ def test_traders_sit_on_the_trade_desk() -> None:
 
     # then
     assert all(desk == team for desk, team in pairs)
+
+
+def test_no_two_users_share_a_full_name() -> None:
+    # given
+    names = [u["name"] for u in rows("users")]
+
+    # when
+    repeated = [name for name, n in Counter(names).items() if n > 1]
+
+    # then
+    assert repeated == []
 
 
 def test_alerts_carry_investigation_notes() -> None:

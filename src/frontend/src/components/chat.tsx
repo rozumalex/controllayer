@@ -9,7 +9,10 @@ import { ShieldCheck } from "lucide-react"
 
 import { Thread } from "@/components/assistant-ui/elements/thread.aui"
 import { Header, Logo } from "@/components/brand"
+import { UserMenu } from "@/components/sign-in"
 import { TooltipProvider } from "@/components/ui/tooltip"
+import { useSession } from "@/lib/session"
+import { userHeaders } from "@/lib/users"
 
 // The events of POST /api/chat/stream, see chat_stream in the backend.
 type ChatEvent =
@@ -66,7 +69,7 @@ const controlLayer: ChatModelAdapter = {
       .join("\n")
     const response = await fetch("/api/chat/stream", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...userHeaders() },
       body: JSON.stringify({ message }),
       signal: abortSignal,
     })
@@ -94,11 +97,13 @@ function greeting() {
 }
 
 function Welcome() {
+  const firstName = useSession()?.user.name.split(" ")[0]
   return (
     <div className="mb-6 flex animate-in flex-col gap-3 px-2 duration-200 fill-mode-both fade-in slide-in-from-bottom-1">
       <Logo className="size-12" />
       <h1 className="font-serif text-3xl font-semibold tracking-tight text-primary">
-        {greeting()}.
+        {greeting()}
+        {firstName && `, ${firstName}`}.
       </h1>
       <p className="text-muted-foreground">
         Ask about markets, clients or internal policy.
@@ -121,6 +126,7 @@ export function Chat() {
               </span>
               <span className="sm:hidden">Protected</span>
             </span>
+            <UserMenu />
           </Header>
           <div className="min-h-0 flex-1">
             <Thread components={{ Welcome }} />

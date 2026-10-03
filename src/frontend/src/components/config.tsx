@@ -9,6 +9,7 @@ import {
 import { useCallback, useEffect, useState, type FormEvent } from "react"
 
 import { Header } from "@/components/brand"
+import { UserMenu } from "@/components/sign-in"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -384,6 +385,7 @@ export function Config() {
       <Header product="Configuration">
         <NavLink href="/dashboard" label="Dashboard" icon={LayoutDashboard} />
         <NavLink href="/" label="Assistant" icon={MessageSquare} />
+        <UserMenu />
       </Header>
 
       <main className="mx-auto flex w-full max-w-4xl flex-col gap-6 p-4 md:p-6">

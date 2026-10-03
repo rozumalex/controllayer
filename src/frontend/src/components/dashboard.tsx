@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react"
 import { AnalyticsCharts } from "@/components/analytics"
 import { Header } from "@/components/brand"
 import { OutcomeBadge } from "@/components/outcome"
+import { UserMenu } from "@/components/sign-in"
 import { TraceSheet } from "@/components/trace-sheet"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -127,6 +128,7 @@ export function Dashboard() {
           <MessageSquare className="size-4" />
           <span className="hidden sm:inline">Assistant</span>
         </a>
+        <UserMenu />
       </Header>
 
       <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-4 md:p-6">
