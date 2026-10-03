@@ -1,3 +1,8 @@
+"""Sign-in: with Google, or with a one-time code sent by email. There are no
+passwords and no separate sign-up: a new user's first sign-in creates their
+account, and an organization of their own that they administer. Others join
+an organization only by invitation."""
+
 import re
 import secrets
 from typing import Annotated
@@ -11,9 +16,15 @@ from app.api.endpoints.employees import employee
 from app.core.config import settings
 from app.core.google import GoogleTokenError
 from app.core.google import verify as verify_google
-from app.core.passwords import hash_password, verify_password
-from app.core.schema.auth import GoogleSignIn, SignedIn, SignIn, SignUp
-from app.db.auth import issue_token, revoke_token
+from app.core.mail import MailError, send_mail
+from app.core.schema.auth import (
+    CodeSent,
+    EmailCode,
+    EmailSignIn,
+    GoogleSignIn,
+    SignedIn,
+)
+from app.db.auth import issue_token, new_code, revoke_token, use_code
 from app.db.models import Organization, User
 from app.db.session import get_session
 
@@ -21,9 +32,26 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 Session = Annotated[AsyncSession, Depends(get_session)]
 
-# One message for an unknown email and a wrong password, so the answer
-# doesn't tell an attacker which emails have accounts.
-WRONG = "Wrong email or password"
+# Mail services where everyone gets an address, so the domain names no
+# company: a user from one gets an organization named after them instead.
+PUBLIC_DOMAINS = {
+    "gmail.com",
+    "googlemail.com",
+    "outlook.com",
+    "hotmail.com",
+    "live.com",
+    "yahoo.com",
+    "icloud.com",
+    "me.com",
+    "proton.me",
+    "protonmail.com",
+    "gmx.com",
+    "aol.com",
+    "wp.pl",
+    "o2.pl",
+    "onet.pl",
+    "interia.pl",
+}
 
 
 async def signed_in(session: AsyncSession, user: User) -> SignedIn:
@@ -37,47 +65,80 @@ def slug(name: str) -> str:
     return f"{base}-{secrets.token_hex(3)}"
 
 
-@router.post(
-    "/sign-up",
-    status_code=201,
-    summary="Start an organization",
-    description=(
-        "Creates the organization and its first user, who administers it, and "
-        "signs them in. Others join it only by invitation."
-    ),
-    responses={409: {"description": "The email has an account already."}},
-)
-async def sign_up(request: SignUp, session: Session) -> SignedIn:
-    if await session.scalar(select(User.id).where(User.email == request.email)):
-        raise HTTPException(409, "This email has an account. Sign in instead.")
-    password_hash = await hash_password(request.password)
-    user = await start_organization(
-        session, request.organization, request.name, request.email, password_hash
-    )
-    return await signed_in(session, user)
+def name_from_email(email: str) -> str:
+    """eve.adams@acme.com is Eve Adams."""
+    local = email.partition("@")[0]
+    return " ".join(part.capitalize() for part in re.split(r"[._+-]+", local) if part)
 
 
-async def start_organization(
-    session: AsyncSession,
-    organization: str,
-    name: str,
-    email: str,
-    password_hash: str | None = None,
-) -> User:
-    """A new organization and its first user, who administers it."""
-    org = Organization(slug=slug(organization), name=organization)
+def organization_name(email: str, name: str) -> str:
+    """The company's domain, or the user's first name for a public one."""
+    domain = email.partition("@")[2]
+    if domain not in PUBLIC_DOMAINS:
+        return domain
+    return f"{name.split()[0]}'s organization"
+
+
+async def user_for(session: AsyncSession, email: str, name: str | None) -> User:
+    """The user with this email. One who has none yet gets an account, and a
+    new organization that they administer."""
+    user = await session.scalar(select(User).where(User.email == email))
+    if user is not None:
+        return user
+    name = name or name_from_email(email) or email
+    org_name = organization_name(email, name)
+    org = Organization(slug=slug(org_name), name=org_name)
     session.add(org)
     await session.flush()
-    user = User(
-        email=email,
-        name=name,
-        org_id=org.id,
-        clearance_level=PRIVILEGED,
-        password_hash=password_hash,
-    )
+    user = User(email=email, name=name, org_id=org.id, clearance_level=PRIVILEGED)
     session.add(user)
     await session.commit()
     return user
+
+
+@router.post(
+    "/email",
+    summary="Email a sign-in code",
+    description=(
+        "Emails a six-digit code to sign in with at `/api/auth/email/verify`. "
+        "The answer is the same whether or not the email has an account. The "
+        "demo account's email signs in at once instead."
+    ),
+    responses={
+        429: {"description": "A code was sent to this email moments ago."},
+        503: {"description": "Email sign-in is off or the mail failed."},
+    },
+)
+async def email(request: EmailSignIn, session: Session) -> CodeSent | SignedIn:
+    if request.email == settings.demo_email:
+        return await demo(session)
+    if not settings.smtp_host:
+        raise HTTPException(503, "Email sign-in is off")
+    code = await new_code(session, request.email)
+    if code is None:
+        raise HTTPException(429, "A code was just sent. Check your email.")
+    minutes = settings.email_code_minutes
+    text = (
+        f"Your Portcullis sign-in code is {code}.\n\n"
+        f"It works for {minutes} minutes. If you didn't ask for it, ignore "
+        "this email."
+    )
+    try:
+        await send_mail(request.email, f"{code} is your Portcullis code", text)
+    except MailError as error:
+        raise HTTPException(503, "The email didn't go out. Try again.") from error
+    return CodeSent()
+
+
+@router.post(
+    "/email/verify",
+    summary="Sign in with the code from the email",
+    responses={401: {"description": "The code is wrong, used or expired."}},
+)
+async def verify_email(request: EmailCode, session: Session) -> SignedIn:
+    if not await use_code(session, request.email, request.code):
+        raise HTTPException(401, "Wrong or expired code")
+    return await signed_in(session, await user_for(session, request.email, None))
 
 
 @router.post(
@@ -85,12 +146,11 @@ async def start_organization(
     summary="Sign in with Google",
     description=(
         "Takes the ID token of Sign in with Google and signs in the user with "
-        "its verified email. For an email with no account, it starts the "
-        "`organization` given, as sign-up does; without one, it answers 404."
+        "its verified email."
     ),
     responses={
         401: {"description": "Google didn't confirm who the user is."},
-        404: {"description": "No account, or Google sign-in is off."},
+        404: {"description": "Google sign-in is off."},
     },
 )
 async def google(request: GoogleSignIn, session: Session) -> SignedIn:
@@ -100,30 +160,7 @@ async def google(request: GoogleSignIn, session: Session) -> SignedIn:
         identity = await verify_google(request.credential, settings.google_client_id)
     except GoogleTokenError as error:
         raise HTTPException(401, "Google didn't confirm who you are") from error
-    user = await session.scalar(select(User).where(User.email == identity.email))
-    if user is None:
-        if not request.organization:
-            raise HTTPException(
-                404,
-                f"{identity.email} has no account. Start an organization, or "
-                "ask your admin for an invitation.",
-            )
-        user = await start_organization(
-            session, request.organization, identity.name, identity.email
-        )
-    return await signed_in(session, user)
-
-
-@router.post(
-    "/sign-in",
-    summary="Sign in with email and password",
-    responses={401: {"description": WRONG}},
-)
-async def sign_in(request: SignIn, session: Session) -> SignedIn:
-    user = await session.scalar(select(User).where(User.email == request.email))
-    stored = user.password_hash if user else None
-    if not await verify_password(request.password, stored) or user is None:
-        raise HTTPException(401, WRONG)
+    user = await user_for(session, identity.email, identity.name)
     return await signed_in(session, user)
 
 

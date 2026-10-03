@@ -40,10 +40,10 @@ export async function fetchMe(): Promise<Employee | null> {
 // What a sign-in returns, see SignedIn in the backend.
 type SignedIn = { token: string; user: Employee }
 
-async function authenticate(
+async function post<T>(
   path: string,
   body?: Record<string, string>
-): Promise<Employee> {
+): Promise<T> {
   const response = await fetch(`/api/auth/${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -56,32 +56,31 @@ async function authenticate(
       : error.detail
     throw new Error(detail ?? `The request failed with ${response.status}.`)
   }
-  const signed: SignedIn = await response.json()
+  return response.json()
+}
+
+function keep(signed: SignedIn): Employee {
   storeToken(signed.token)
   return signed.user
 }
 
-export const signIn = (email: string, password: string) =>
-  authenticate("sign-in", { email, password })
+// Emails a sign-in code. The demo account's email signs in at once instead,
+// and the user comes back.
+export async function sendCode(email: string): Promise<Employee | null> {
+  const answer = await post<SignedIn | { sent: true }>("email", { email })
+  return "token" in answer ? keep(answer) : null
+}
 
-export const signUp = (fields: {
-  organization: string
-  name: string
-  email: string
-  password: string
-}) => authenticate("sign-up", fields)
+export const signInWithCode = async (email: string, code: string) =>
+  keep(await post<SignedIn>("email/verify", { email, code }))
 
-export const signInToDemo = () => authenticate("demo")
+export const signInToDemo = async () => keep(await post<SignedIn>("demo"))
 
 // Whether Sign in with Google is on, see GoogleButton.
 export const googleEnabled = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID)
 
-// With an organization, a Google user who has no account yet starts it.
-export const signInWithGoogle = (credential: string, organization?: string) =>
-  authenticate(
-    "google",
-    organization ? { credential, organization } : { credential }
-  )
+export const signInWithGoogle = async (credential: string) =>
+  keep(await post<SignedIn>("google", { credential }))
 
 export async function signOut() {
   await fetch("/api/auth/sign-out", {

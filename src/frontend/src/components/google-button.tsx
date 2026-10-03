@@ -47,7 +47,7 @@ export function GoogleButton({
   text,
   onCredential,
 }: {
-  text: "signin_with" | "signup_with"
+  text: "signin_with" | "signup_with" | "continue_with"
   onCredential: (credential: string) => void
 }) {
   const parent = useRef<HTMLDivElement>(null)

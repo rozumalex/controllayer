@@ -10,6 +10,7 @@ from app.db.models.bank import (
     BankTransaction,
 )
 from app.db.models.control_event import ControlEvent
+from app.db.models.email_code import EmailCode
 from app.db.models.mcp_server import McpServer
 from app.db.models.organization import Organization
 from app.db.models.policy import Policy
@@ -25,6 +26,7 @@ __all__ = [
     "BankTrade",
     "BankTransaction",
     "ControlEvent",
+    "EmailCode",
     "McpServer",
     "Organization",
     "Policy",

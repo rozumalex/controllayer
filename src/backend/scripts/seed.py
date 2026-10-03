@@ -34,7 +34,6 @@ from sqlalchemy.pool import NullPool
 
 from app.api.deps import PRIVILEGED
 from app.core.config import Settings, settings
-from app.core.passwords import hash_password
 from app.db import models  # noqa: F401  registers the models in Base.metadata
 from app.db.base import Base
 from app.db.models import Organization, Policy, User
@@ -47,7 +46,7 @@ LOCAL_HOSTS = {"db", "localhost", "127.0.0.1"}
 # The bank's staff are the users with an email at this domain.
 STAFF_DOMAIN = "goldensocks.com"
 # Columns the seed sets itself, which the data files don't have.
-OWN_COLUMNS = {"org_id", "password_hash"}
+OWN_COLUMNS = {"org_id"}
 # The demo account's job title, so its policy is the Vice President's: most
 # tools, but no payments, and data above CONFIDENTIAL masked.
 DEMO_ROLE = "Vice President"
@@ -181,7 +180,6 @@ async def seed(url: str) -> None:
                 "clearance_level": PRIVILEGED,
                 "employment_status": "ACTIVE",
                 "org_id": demo,
-                "password_hash": await hash_password(settings.demo_password),
             }
             await connection.execute(
                 insert(User)

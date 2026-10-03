@@ -55,12 +55,8 @@ def id_token(key: Any = GOOGLE_KEY, **changes: Any) -> str:
 
 
 def test_new_google_user_starts_an_organization() -> None:
-    # given
-    client = TestClient(app)
-    request = {"credential": id_token(), "organization": "Acme"}
-
     # when
-    response = client.post(URL, json=request)
+    response = TestClient(app).post(URL, json={"credential": id_token()})
 
     # then
     assert response.status_code == 200
@@ -69,27 +65,16 @@ def test_new_google_user_starts_an_organization() -> None:
     assert user["clearance_level"] == "PRIVILEGED"
 
 
-def test_returning_google_user_signs_in_without_an_organization() -> None:
+def test_returning_google_user_signs_in_to_the_same_account() -> None:
     # given
     client = TestClient(app)
-    client.post(URL, json={"credential": id_token(), "organization": "Acme"})
+    first = client.post(URL, json={"credential": id_token()}).json()
 
     # when
-    signed = client.post(URL, json={"credential": id_token()}).json()
+    again = client.post(URL, json={"credential": id_token()}).json()
 
     # then
-    headers = {"Authorization": f"Bearer {signed['token']}"}
-    me = client.get("/api/employees/me", headers=headers).json()
-    assert me["email"] == "eve@acme.com"
-
-
-def test_google_user_without_an_account_is_404() -> None:
-    # when
-    response = TestClient(app).post(URL, json={"credential": id_token()})
-
-    # then
-    assert response.status_code == 404
-    assert "has no account" in response.json()["detail"]
+    assert again["user"]["id"] == first["user"]["id"]
 
 
 @pytest.mark.parametrize(
@@ -105,7 +90,7 @@ def test_google_user_without_an_account_is_404() -> None:
 )
 def test_token_google_did_not_vouch_for_is_401(token: Any) -> None:
     # given
-    request = {"credential": token(), "organization": "Acme"}
+    request = {"credential": token()}
 
     # when
     response = TestClient(app).post(URL, json=request)

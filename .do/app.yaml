@@ -72,6 +72,19 @@ services:
       # Sign in with Google; unset, it is off. Not a secret.
       - key: GOOGLE_CLIENT_ID
         value: "${GOOGLE_CLIENT_ID}"
+      # Sign-in codes go out through Resend, from noreply@controllayer.net,
+      # whose domain Resend has verified. Without the key, email sign-in fails.
+      - key: SMTP_HOST
+        value: smtp.resend.com
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_TLS
+        value: starttls
+      - key: SMTP_USERNAME
+        value: resend
+      - key: SMTP_PASSWORD
+        value: "${RESEND_API_KEY}"
+        type: SECRET
 
 workers:
   # Worker and beat in one process. Keep one instance, or beat sends every
