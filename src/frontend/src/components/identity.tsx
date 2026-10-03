@@ -1,68 +1,63 @@
-import { Copy, Plus, Trash2 } from "lucide-react"
+import {
+  ArrowRight,
+  CheckCircle2,
+  Copy,
+  RefreshCw,
+  UserMinus,
+  UserPlus,
+  UserX,
+  Users,
+} from "lucide-react"
 import { useEffect, useState, type ReactNode } from "react"
 
 import { Employees } from "@/components/controls"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Switch } from "@/components/ui/switch"
-import { fetchPolicy, type RolePolicy } from "@/lib/policy"
 import {
-  deleteProvider,
-  fetchProvider,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import {
+  fetchGroups,
+  fetchLog,
   fetchScim,
   newScimToken,
-  saveProvider,
-  type IdentityProvider,
-  type RoleRule,
+  type DirectoryEvent,
+  type DirectoryGroup,
   type ScimStatus,
 } from "@/lib/identity"
+import { fetchPolicy } from "@/lib/policy"
 
-// The organization's identity provider, its SCIM provisioning, then the
-// people who sign in.
+// The organization's directory as its IdP keeps it through SCIM: the
+// connection, the groups and the roles they give, the provisioning log, then
+// the people.
 export function Identity() {
   return (
     <div className="flex flex-col gap-6">
-      <ProviderCard />
       <ScimCard />
+      <div className="grid gap-6 lg:grid-cols-2">
+        <GroupsCard />
+        <LogCard />
+      </div>
       <Employees />
     </div>
   )
 }
 
-type Form = {
-  name: string
-  issuer: string
-  client_id: string
-  client_secret: string
-  scopes: string
-  domains: string
-  role_rules: RoleRule[]
-  default_role: string
-  enabled: boolean
-}
-
-const EMPTY: Form = {
-  name: "",
-  issuer: "",
-  client_id: "",
-  client_secret: "",
-  scopes: "openid profile email",
-  domains: "",
-  role_rules: [],
-  default_role: "",
-  enabled: true,
-}
-
-function formOf(provider: IdentityProvider): Form {
-  return {
-    ...provider,
-    client_secret: "",
-    domains: provider.domains.join(", "),
-    default_role: provider.default_role ?? "",
-  }
+function ago(iso: string) {
+  const minutes = Math.round((Date.now() - new Date(iso).getTime()) / 60000)
+  if (minutes < 1) return "just now"
+  if (minutes < 60) return `${minutes} min ago`
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) return `${hours} h ago`
+  return `${Math.round(hours / 24)} d ago`
 }
 
 function CopyField({ value }: { value: string }) {
@@ -99,291 +94,7 @@ function Field({
   )
 }
 
-function ProviderCard() {
-  const [saved, setSaved] = useState<IdentityProvider | null | undefined>()
-  const [form, setForm] = useState<Form>(EMPTY)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [done, setDone] = useState<string | null>(null)
-  // The organization's roles, to pick from and to show which policy a rule
-  // lands on.
-  const [roles, setRoles] = useState<RolePolicy[]>([])
-
-  useEffect(() => {
-    fetchPolicy()
-      .then((overview) => setRoles(overview.roles))
-      .catch(() => setRoles([]))
-  }, [])
-
-  const hasPolicy = (role: string) =>
-    roles.some((r) => r.role === role && r.customized)
-  const policyOf = (role: string) =>
-    hasPolicy(role) ? `${role} policy` : "default policy"
-
-  useEffect(() => {
-    fetchProvider()
-      .then((provider) => {
-        setSaved(provider)
-        if (provider) setForm(formOf(provider))
-      })
-      .catch((e: Error) => setError(e.message))
-  }, [])
-
-  const set = (changes: Partial<Form>) => {
-    setDone(null)
-    setForm((form) => ({ ...form, ...changes }))
-  }
-  const setRule = (index: number, changes: Partial<RoleRule>) =>
-    set({
-      role_rules: form.role_rules.map((rule, i) =>
-        i === index ? { ...rule, ...changes } : rule
-      ),
-    })
-
-  async function act(
-    action: () => Promise<IdentityProvider | null>,
-    note: string
-  ) {
-    setBusy(true)
-    setError(null)
-    try {
-      const provider = await action()
-      setSaved(provider)
-      setForm(provider ? formOf(provider) : EMPTY)
-      setDone(note)
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const save = () =>
-    act(
-      () =>
-        saveProvider({
-          ...form,
-          domains: form.domains.split(/[\s,]+/).filter(Boolean),
-          default_role: form.default_role || null,
-          // Blank keeps the saved secret.
-          client_secret: form.client_secret || undefined,
-        }),
-      "Saved. Sign-ins use it from now on."
-    )
-
-  if (saved === undefined && !error) return null
-
-  return (
-    <Card>
-      <CardHeader className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <CardTitle>Identity provider</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Your IAM over OpenID Connect. Claims set roles and policies.
-          </p>
-        </div>
-        {saved && (
-          <div className="flex items-center gap-2 text-sm">
-            <Switch
-              checked={form.enabled}
-              onCheckedChange={(enabled) => set({ enabled })}
-            />
-            {form.enabled ? "On" : "Off"}
-          </div>
-        )}
-      </CardHeader>
-      <CardContent className="flex flex-col gap-6">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Name">
-            <Input
-              placeholder="Acme Okta"
-              value={form.name}
-              onChange={(e) => set({ name: e.target.value })}
-            />
-          </Field>
-          <Field label="Issuer URL" hint="Okta, Entra ID, Google, Keycloak…">
-            <Input
-              placeholder="https://acme.okta.com"
-              value={form.issuer}
-              onChange={(e) => set({ issuer: e.target.value })}
-            />
-          </Field>
-          <Field label="Client ID">
-            <Input
-              value={form.client_id}
-              onChange={(e) => set({ client_id: e.target.value })}
-            />
-          </Field>
-          <Field
-            label="Client secret"
-            hint={
-              saved?.has_secret
-                ? "Saved. Blank keeps it."
-                : "Optional with PKCE."
-            }
-          >
-            <Input
-              type="password"
-              autoComplete="off"
-              value={form.client_secret}
-              onChange={(e) => set({ client_secret: e.target.value })}
-            />
-          </Field>
-          <Field label="Email domains" hint="These emails sign in here.">
-            <Input
-              placeholder="acme.com, acme.io"
-              value={form.domains}
-              onChange={(e) => set({ domains: e.target.value })}
-            />
-          </Field>
-          <Field label="Scopes">
-            <Input
-              value={form.scopes}
-              onChange={(e) => set({ scopes: e.target.value })}
-            />
-          </Field>
-        </div>
-
-        {saved && (
-          <Field
-            label="Redirect URI"
-            hint="Register it with your provider as the sign-in redirect."
-          >
-            <CopyField value={saved.redirect_uri} />
-          </Field>
-        )}
-
-        <div className="flex flex-col gap-3">
-          <div>
-            <Label>Roles from claims</Label>
-            <p className="text-xs text-muted-foreground">First match wins.</p>
-          </div>
-          {form.role_rules.map((rule, index) => (
-            <div
-              key={index}
-              className="grid gap-2 sm:grid-cols-[1fr_1fr_1fr_auto_auto]"
-            >
-              <Input
-                placeholder="Claim, such as groups"
-                value={rule.claim}
-                onChange={(e) => setRule(index, { claim: e.target.value })}
-              />
-              <Input
-                placeholder="Value"
-                value={rule.value}
-                onChange={(e) => setRule(index, { value: e.target.value })}
-              />
-              <Input
-                placeholder="Role"
-                list="roles"
-                value={rule.role}
-                onChange={(e) => setRule(index, { role: e.target.value })}
-              />
-              <label className="flex items-center gap-2 text-sm">
-                <Checkbox
-                  checked={rule.admin}
-                  onCheckedChange={(admin) =>
-                    setRule(index, { admin: admin === true })
-                  }
-                />
-                Admin
-              </label>
-              {rule.role && (
-                <p className="text-xs text-muted-foreground sm:order-last sm:col-span-5">
-                  {rule.value || "…"} in {rule.claim || "…"} → {rule.role} ·{" "}
-                  {policyOf(rule.role)}
-                  {rule.admin && " · admin"}
-                  {saved && !hasPolicy(rule.role) && (
-                    <>
-                      {" · "}
-                      <a
-                        className="text-primary underline-offset-4 hover:underline"
-                        href={`/admin/policy?role=${encodeURIComponent(rule.role)}`}
-                      >
-                        Set a policy →
-                      </a>
-                    </>
-                  )}
-                </p>
-              )}
-              <Button
-                variant="ghost"
-                size="icon"
-                title="Remove the rule"
-                onClick={() =>
-                  set({
-                    role_rules: form.role_rules.filter((_, i) => i !== index),
-                  })
-                }
-              >
-                <Trash2 className="size-4" />
-              </Button>
-            </div>
-          ))}
-          <datalist id="roles">
-            {roles.map((r) => (
-              <option key={r.role} value={r.role} />
-            ))}
-          </datalist>
-          <div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                set({
-                  role_rules: [
-                    ...form.role_rules,
-                    { claim: "groups", value: "", role: "", admin: false },
-                  ],
-                })
-              }
-            >
-              <Plus className="size-4" /> Add a rule
-            </Button>
-          </div>
-          <Field
-            label="Default role"
-            hint={
-              form.default_role
-                ? `No match: ${policyOf(form.default_role)}.`
-                : "No match: blank refuses sign-in."
-            }
-          >
-            <Input
-              className="sm:max-w-xs"
-              list="roles"
-              value={form.default_role}
-              onChange={(e) => set({ default_role: e.target.value })}
-            />
-          </Field>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3">
-          <Button disabled={busy} onClick={save}>
-            {saved ? "Save" : "Connect"}
-          </Button>
-          {saved && (
-            <Button
-              variant="ghost"
-              disabled={busy}
-              onClick={() =>
-                act(async () => (await deleteProvider(), null), "Disconnected.")
-              }
-            >
-              Disconnect
-            </Button>
-          )}
-          {error && <p className="text-sm text-destructive">{error}</p>}
-          {done && !error && (
-            <p className="text-sm text-muted-foreground">{done}</p>
-          )}
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
-// The IdP pushes users and groups here, and deactivates them, with this token.
+// The IdP pushes users and groups here, and deactivates them, with the token.
 function ScimCard() {
   const [status, setStatus] = useState<ScimStatus | null>(null)
   // The new token, shown until the page is left: only its hash is stored.
@@ -408,7 +119,7 @@ function ScimCard() {
     try {
       const made = await newScimToken()
       setToken(made.token)
-      setStatus({ base_url: made.base_url, has_token: true })
+      setStatus((s) => s && { ...s, has_token: true })
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -416,16 +127,40 @@ function ScimCard() {
     }
   }
 
+  const connected = status?.has_token
+
   return (
     <Card>
-      <CardHeader className="flex flex-col gap-1">
-        <CardTitle>Provisioning (SCIM)</CardTitle>
-        <p className="text-sm text-muted-foreground">
-          Your IdP syncs people and groups. Groups set roles through the rules
-          above, and people it deactivates lose access at once.
-        </p>
+      <CardHeader className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <CardTitle>Directory sync (SCIM)</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Your IdP, such as Okta or Entra ID, keeps people and groups in sync.
+            Groups set roles, and roles set policies. People it deactivates lose
+            access at once.
+          </p>
+        </div>
+        {connected && (
+          <Badge variant="secondary" className="gap-1.5">
+            <CheckCircle2 className="size-3.5 text-emerald-600" />
+            Connected
+            {status.last_sync_at && ` · synced ${ago(status.last_sync_at)}`}
+          </Badge>
+        )}
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
+        {!connected && (
+          <ol className="list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
+            <li>Make a token below, and copy it with the base URL.</li>
+            <li>
+              In Okta, add the app &quot;SCIM 2.0 Test App (OAuth Bearer
+              Token)&quot; and paste both on its Provisioning tab. In Entra ID,
+              set an enterprise app&apos;s provisioning to Automatic.
+            </li>
+            <li>Turn on creating, updating and deactivating users.</li>
+            <li>Push your groups, and assign them roles below.</li>
+          </ol>
+        )}
         {status && (
           <Field label="Base URL">
             <CopyField value={status.base_url} />
@@ -441,17 +176,201 @@ function ScimCard() {
         )}
         <div className="flex flex-wrap items-center gap-3">
           <Button
-            variant={status?.has_token ? "outline" : "default"}
+            variant={connected ? "outline" : "default"}
             disabled={busy || !status}
             onClick={makeToken}
           >
-            {status?.has_token ? "Replace token" : "Make a token"}
+            {connected ? "Replace token" : "Make a token"}
           </Button>
-          {status?.has_token && !token && (
-            <p className="text-sm text-muted-foreground">A token is set.</p>
-          )}
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function GroupsCard() {
+  const [groups, setGroups] = useState<DirectoryGroup[] | null>(null)
+  // The roles with a policy of their own; the others follow the default.
+  const [own, setOwn] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    fetchGroups()
+      .then(setGroups)
+      .catch(() => setGroups([]))
+    fetchPolicy()
+      .then((overview) =>
+        setOwn(
+          new Set(overview.roles.filter((r) => r.customized).map((r) => r.role))
+        )
+      )
+      .catch(() => setOwn(new Set()))
+  }, [])
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Roles from groups</CardTitle>
+        <p className="text-sm text-muted-foreground">
+          Each IdP group gives a role, and the role&apos;s policy applies.
+        </p>
+      </CardHeader>
+      <CardContent>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Group</TableHead>
+              <TableHead>Role · policy</TableHead>
+              <TableHead className="text-right">People</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {groups?.length === 0 && (
+              <TableRow>
+                <TableCell
+                  colSpan={3}
+                  className="py-8 text-center text-muted-foreground"
+                >
+                  No groups synced yet.
+                </TableCell>
+              </TableRow>
+            )}
+            {groups?.map((group) => (
+              <TableRow key={group.name}>
+                <TableCell className="font-mono text-xs">
+                  {group.name}
+                </TableCell>
+                <TableCell>
+                  {group.role ? (
+                    <a
+                      className="inline-flex items-center gap-1.5 hover:underline"
+                      href={`/admin/policy?role=${encodeURIComponent(group.role)}`}
+                    >
+                      {group.role}
+                      {own.has(group.role) ? (
+                        <Badge variant="secondary">own policy</Badge>
+                      ) : (
+                        <Badge variant="outline">default</Badge>
+                      )}
+                    </a>
+                  ) : (
+                    <span className="text-muted-foreground">No role</span>
+                  )}
+                </TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {group.members.toLocaleString()}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  )
+}
+
+const ICONS: Record<DirectoryEvent["kind"], ReactNode> = {
+  synced: <RefreshCw className="size-4 text-primary" />,
+  created: <UserPlus className="size-4 text-emerald-600" />,
+  joined: <Users className="size-4 text-emerald-600" />,
+  left: <UserMinus className="size-4 text-muted-foreground" />,
+  role: <ArrowRight className="size-4 text-primary" />,
+  deactivated: <UserX className="size-4 text-destructive" />,
+  reactivated: <UserPlus className="size-4 text-emerald-600" />,
+}
+
+function describe(event: DirectoryEvent): ReactNode {
+  const name = <span className="font-medium">{event.name}</span>
+  const group = <span className="font-mono text-xs">{event.data.group}</span>
+  switch (event.kind) {
+    case "synced":
+      return (
+        <>
+          <span className="font-medium">Initial sync</span>:{" "}
+          {event.data.users?.toLocaleString()} people, {event.data.groups}{" "}
+          groups
+        </>
+      )
+    case "created":
+      return <>{name} was added</>
+    case "joined":
+      return (
+        <>
+          {name} joined {group}
+        </>
+      )
+    case "left":
+      return (
+        <>
+          {name} left {group}
+        </>
+      )
+    case "role":
+      return (
+        <>
+          {name}: {event.data.was ?? "no role"} →{" "}
+          <span className="font-medium">
+            {event.data.role ?? "default policy"}
+          </span>
+        </>
+      )
+    case "deactivated":
+      return (
+        <>
+          {name} was deactivated
+          {event.data.sessions
+            ? ` · ${event.data.sessions} sessions ended`
+            : ""}
+        </>
+      )
+    case "reactivated":
+      return <>{name} was reactivated</>
+  }
+}
+
+function LogCard() {
+  const [log, setLog] = useState<DirectoryEvent[] | null>(null)
+
+  useEffect(() => {
+    const load = () =>
+      fetchLog()
+        .then(setLog)
+        .catch(() => setLog([]))
+    void load()
+    // The IdP pushes at any time.
+    const timer = setInterval(load, 10_000)
+    return () => clearInterval(timer)
+  }, [])
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Provisioning log</CardTitle>
+        <p className="text-sm text-muted-foreground">
+          What the IdP changed, newest first.
+        </p>
+      </CardHeader>
+      <CardContent>
+        {log?.length === 0 && (
+          <p className="py-8 text-center text-sm text-muted-foreground">
+            Nothing synced yet.
+          </p>
+        )}
+        <ol className="flex max-h-96 flex-col gap-3 overflow-y-auto">
+          {log?.map((event) => (
+            <li key={event.id} className="flex items-start gap-3 text-sm">
+              <span className="mt-0.5">{ICONS[event.kind]}</span>
+              <span className="flex-1">{describe(event)}</span>
+              <time
+                className="shrink-0 text-xs text-muted-foreground tabular-nums"
+                dateTime={event.at}
+                title={new Date(event.at).toLocaleString()}
+              >
+                {ago(event.at)}
+              </time>
+            </li>
+          ))}
+        </ol>
       </CardContent>
     </Card>
   )

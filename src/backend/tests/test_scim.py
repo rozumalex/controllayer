@@ -104,10 +104,8 @@ def test_status_says_whether_a_token_is_set(db: None, client: TestClient) -> Non
     client.post("/api/identity-provider/scim-token")
 
     # then
-    assert before == {
-        "base_url": "http://localhost:3000/api/scim/v2",
-        "has_token": False,
-    }
+    assert before["base_url"] == "http://localhost:3000/api/scim/v2"
+    assert before["has_token"] is False
     assert client.get(url).json()["has_token"] is True
 
 
@@ -270,3 +268,64 @@ def test_service_provider_config(okta: TestClient) -> None:
     # then
     assert config["patch"]["supported"] is True
     assert config["authenticationSchemes"][0]["type"] == "oauthbearertoken"
+
+
+def test_log_follows_a_user_from_joiner_to_leaver(
+    okta: TestClient, client: TestClient
+) -> None:
+    # given
+    user = new_user(okta)
+    asyncio.run(session_token("eve@acme.com"))
+    analysts = new_group(okta, "sg-ai-analysts", user["id"])
+    compliance = new_group(okta, "sg-ai-compliance")
+
+    # when
+    okta.patch(
+        f"{SCIM}/Groups/{analysts['id']}",
+        json={
+            "Operations": [
+                {"op": "remove", "path": f'members[value eq "{user["id"]}"]'}
+            ]
+        },
+    )
+    okta.patch(
+        f"{SCIM}/Groups/{compliance['id']}",
+        json={
+            "Operations": [
+                {"op": "add", "path": "members", "value": [{"value": user["id"]}]}
+            ]
+        },
+    )
+    okta.delete(f"{SCIM}/Users/{user['id']}")
+
+    # then
+    log = client.get("/api/identity-provider/log").json()
+    assert [(e["kind"], e["data"]) for e in reversed(log)] == [
+        ("created", {}),
+        ("joined", {"group": "sg-ai-analysts"}),
+        ("role", {"role": "Analyst", "was": None}),
+        ("left", {"group": "sg-ai-analysts"}),
+        ("role", {"role": None, "was": "Analyst"}),
+        ("joined", {"group": "sg-ai-compliance"}),
+        ("role", {"role": "Compliance Officer", "was": None}),
+        ("deactivated", {"sessions": 1}),
+    ]
+    assert {e["email"] for e in log} == {"eve@acme.com"}
+
+
+def test_groups_show_their_role_and_members(
+    okta: TestClient, client: TestClient
+) -> None:
+    # given
+    user = new_user(okta)
+    new_group(okta, "sg-ai-analysts", user["id"])
+    new_group(okta, "sg-unmapped")
+
+    # when
+    groups = client.get("/api/identity-provider/groups").json()
+
+    # then
+    assert groups == [
+        {"name": "sg-ai-analysts", "role": "Analyst", "members": 1},
+        {"name": "sg-unmapped", "role": None, "members": 0},
+    ]
