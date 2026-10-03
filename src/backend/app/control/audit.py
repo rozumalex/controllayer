@@ -4,7 +4,7 @@ import logging
 from typing import Any, Protocol
 from uuid import UUID
 
-from app.control.envelope import Envelope, Verdict
+from app.control.envelope import Action, Envelope, Verdict
 
 logger = logging.getLogger("app.control.audit")
 
@@ -65,6 +65,20 @@ class AuditSink(Protocol):
 def payload_hash(envelope: Envelope) -> str:
     data = json.dumps(envelope.payload, sort_keys=True, default=str)
     return hashlib.sha256(data.encode()).hexdigest()
+
+
+class FindingAuditSink:
+    """Records only the verdicts that don't allow. The tool definitions are
+    checked on every request, so their allow verdicts would bury the rest."""
+
+    def __init__(self, audit: AuditSink) -> None:
+        self.audit = audit
+
+    async def record(
+        self, envelope: Envelope, verdict: Verdict, latency_ms: float
+    ) -> None:
+        if verdict.action is not Action.ALLOW:
+            await self.audit.record(envelope, verdict, latency_ms)
 
 
 class EventAuditSink:

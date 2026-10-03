@@ -23,6 +23,8 @@ export type McpTool = {
   input_schema: Record<string, unknown>
   read_only: boolean | null
   destructive: boolean | null
+  // Differs from the approved definition, so agents don't get it.
+  changed: boolean
 }
 
 const URL = "/api/mcp-servers"
@@ -65,5 +67,8 @@ export const setEnabled = (id: string, enabled: boolean) =>
 
 export const deleteServer = (id: string) =>
   request<void>(`/${id}`, { method: "DELETE" })
+
+export const approveTools = (id: string) =>
+  request<McpServer>(`/${id}/approve`, { method: "POST" })
 
 export const listTools = (id: string) => request<McpTool[]>(`/${id}/tools`)

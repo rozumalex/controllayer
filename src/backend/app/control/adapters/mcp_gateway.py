@@ -2,13 +2,15 @@
 
 The gateway runs inside the API, and the agent reaches the servers only
 through it: the chat calls it, and outside agents reach it at /api/mcp
-(app/api/mcp.py). Each tool is listed as
-`<server>__<tool>`. A call is checked before it reaches the server (inbound,
-agent -> tool), and its result before the agent sees it (outbound, tool ->
-agent). The agent id says whom the agent works for, so the guards can decide
-what that user may see.
+(app/api/mcp.py). Each tool is listed as `<server>__<tool>`. Each tool's
+definition is checked before the model sees it, and a tool that fails is
+hidden and refused. A call is checked before it reaches the server
+(inbound, agent -> tool), and its result before the agent sees it
+(outbound, tool -> agent). The agent id says whom the agent works for, so
+the guards can decide what that user may see.
 """
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
@@ -26,6 +28,7 @@ from app.control.audit import EventSink, LogEventSink
 from app.control.envelope import Action, Direction, Envelope
 from app.control.guards.loop import LoopGuard
 from app.control.guards.sensitive_data import scrub
+from app.control.guards.tool_poisoning import PINNED, definition_hash
 from app.control.layer import ControlLayer
 from app.control.pipeline import Decision
 
@@ -46,9 +49,13 @@ class UpstreamServer(Protocol):
     name: str
     url: str
     auth_header: str | None
+    # The pinned hash of each tool's definition, by tool name.
+    tool_pins: dict[str, str]
 
 
 Connect = Callable[[UpstreamServer], AbstractAsyncContextManager[Client]]
+# Saves a server's pins.
+Pin = Callable[[UpstreamServer, dict[str, str]], Awaitable[None]]
 
 
 @asynccontextmanager
@@ -73,6 +80,19 @@ async def list_upstream_tools(
             return (await client.list_tools()).tools
 
 
+def definition(tool: types.Tool) -> dict[str, Any]:
+    """What the model reads of a tool."""
+    return {
+        "name": tool.name,
+        "description": tool.description,
+        "input_schema": tool.input_schema,
+    }
+
+
+def tool_pin(tool: types.Tool) -> str:
+    return definition_hash(definition(tool))
+
+
 def error(text: str) -> types.CallToolResult:
     return types.CallToolResult(
         content=[types.TextContent(type="text", text=text)], is_error=True
@@ -87,6 +107,7 @@ class McpGateway:
         servers: Callable[[], Awaitable[Sequence[UpstreamServer]]],
         log_payloads: bool = False,
         sink: EventSink | None = None,
+        pin: Pin | None = None,
     ) -> None:
         self.layer = layer
         self.connect = connect
@@ -98,8 +119,18 @@ class McpGateway:
         # Whether the loop guard blocked a call. A loop doesn't end by
         # itself, so the agent stops asking for tools.
         self.looping = False
+        # Trusts a tool on first use: pins the definition of a tool that has
+        # no pin yet, if it passed the guards.
+        self.pin = pin
+        # The tools the guards hid from the model, refused if it calls them.
+        self.hidden: set[str] = set()
 
-    async def list_tools(self) -> list[types.Tool]:
+    async def list_tools(
+        self, agent_id: str = "anonymous", trace_id: str | None = None
+    ) -> list[types.Tool]:
+        """The tools whose definitions pass the guards. Pass the trace id of
+        the chat, so a hidden tool shows up in its trace."""
+        trace_id = trace_id or uuid4().hex
         tools = []
         for server in await self.servers():
             try:
@@ -109,10 +140,33 @@ class McpGateway:
                     "can't list the tools of %s: %s", server.name, scrub(repr(exc))
                 )
                 continue
-            for tool in upstream:
+            decisions = await asyncio.gather(
+                *(self.check(server, tool, agent_id, trace_id) for tool in upstream)
+            )
+            pins = dict(server.tool_pins)
+            for tool, decision in zip(upstream, decisions, strict=True):
                 name = f"{server.name}{SEPARATOR}{tool.name}"
+                if decision.action is Action.BLOCK:
+                    self.hidden.add(name)
+                    continue
                 tools.append(tool.model_copy(update={"name": name}))
+                if all(v.action is Action.ALLOW for v in decision.verdicts):
+                    pins.setdefault(tool.name, tool_pin(tool))
+            if self.pin and pins != server.tool_pins:
+                await self.pin(server, pins)
         return tools
+
+    async def check(
+        self, server: UpstreamServer, tool: types.Tool, agent_id: str, trace_id: str
+    ) -> Decision:
+        """Runs a tool's definition, with its pin, through the guards."""
+        payload = definition(tool)
+        if pinned := server.tool_pins.get(tool.name):
+            payload[PINNED] = pinned
+        envelope = Envelope(
+            Direction.DEFINITION, agent_id, server.name, tool.name, payload, trace_id
+        )
+        return await self.layer.inspect(envelope)
 
     async def call_tool(
         self,
@@ -128,6 +182,8 @@ class McpGateway:
         server = servers.get(server_name)
         if server is None or not tool:
             return error(UNKNOWN_TOOL.format(tool=name))
+        if name in self.hidden:
+            return error(BLOCKED_CALL.format(tool=name))
 
         trace_id = trace_id or uuid4().hex
         await self.log(

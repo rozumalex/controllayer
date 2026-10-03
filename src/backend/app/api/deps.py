@@ -3,9 +3,15 @@ from collections.abc import Sequence
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, update
 
-from app.control.adapters.mcp_gateway import Connect, McpGateway, connect_http
+from app.control.adapters.mcp_gateway import (
+    Connect,
+    McpGateway,
+    Pin,
+    UpstreamServer,
+    connect_http,
+)
 from app.control.adapters.openai_chat import ChatControl
 from app.control.agent import Agent
 from app.control.audit import (
@@ -269,6 +275,21 @@ def mcp_connect() -> Connect:
     return connect_http
 
 
+def pin_tools(org_id: uuid.UUID | None) -> Pin:
+    """Saves the pins of the organization's server."""
+
+    async def pin(server: UpstreamServer, pins: dict[str, str]) -> None:
+        async with SessionLocal() as session:
+            await session.execute(
+                update(McpServer)
+                .where(McpServer.org_id == org_id, McpServer.name == server.name)
+                .values(tool_pins=pins)
+            )
+            await session.commit()
+
+    return pin
+
+
 async def mcp_gateway(user: CurrentUser, policy: UserPolicy) -> McpGateway:
     sink = UserEventSink(event_sink(), user.id, user.org_id)
     async with SessionLocal() as session:
@@ -303,6 +324,7 @@ async def mcp_gateway(user: CurrentUser, policy: UserPolicy) -> McpGateway:
         lambda: enabled_mcp_servers(user.org_id),
         settings.control_log_payloads,
         sink,
+        pin_tools(user.org_id),
     )
 
 

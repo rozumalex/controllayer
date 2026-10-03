@@ -4,6 +4,7 @@ from app.api.deps import current_user, privileged_user
 from app.api.endpoints import (
     auth,
     chat,
+    demo,
     employees,
     health,
     identity,
@@ -32,3 +33,4 @@ router.include_router(traces.router, dependencies=privileged)
 router.include_router(mcp_servers.router, dependencies=privileged)
 router.include_router(policy.router, dependencies=privileged)
 router.include_router(identity.router, dependencies=privileged)
+router.include_router(demo.router, dependencies=privileged)
