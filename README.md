@@ -50,7 +50,7 @@ To run it on the host: `uv run celery -A app.worker worker --beat --loglevel INF
 
 The control layer gives agents the tools of every registered MCP server, and runs each call and result through its guards. The gateway runs inside the API and has no URL of its own: the chat calls it for the signed-in user, whose clearance decides what the guards let through.
 
-- **Servers** are managed at `/api/mcp-servers` with `Authorization: Bearer $MCP_ADMIN_TOKEN`. Whoever manages them decides which tools every agent gets. In Compose, the token is `dev-admin`.
+- **Servers** are managed on the Configuration page at `/config`, or at `/api/mcp-servers`. Whoever manages them decides which tools every agent gets, and for now that is anyone: access control comes with the users.
 - **Keep the servers behind it internal.** An agent that can reach an MCP server directly goes around the guards. Run each one without a public port in Compose and without a public route on DigitalOcean, so only the API reaches it.
 
 #### Bank MCP server
@@ -72,11 +72,10 @@ The control layer gives agents the tools of every registered MCP server, and run
 
 Research, the data catalog, the identity profiles and the staff are read only. The tools carry MCP annotations: read only, write, or destructive for the ones that move money or freeze an account.
 
-The API serves it at `/api/bank/mcp` and takes `Authorization: Bearer $BANK_MCP_TOKEN`; in Compose, the token is `dev-bank`. Only the gateway holds the token, so agents reach the tools only through the guards. Register it:
+The API serves it at `/api/bank/mcp` and takes `Authorization: Bearer $BANK_MCP_TOKEN`; in Compose, the token is `dev-bank`. Only the gateway holds the token, so agents reach the tools only through the guards. Register it on the Configuration page, with the URL `http://localhost:8000/api/bank/mcp` and the authorization header `Bearer dev-bank`, or:
 
 ```sh
-curl -X POST localhost:8000/api/mcp-servers \
-  -H "Authorization: Bearer dev-admin" -H "Content-Type: application/json" \
+curl -X POST localhost:8000/api/mcp-servers -H "Content-Type: application/json" \
   -d '{"name": "bank", "url": "http://localhost:8000/api/bank/mcp", "auth_header": "Bearer dev-bank"}'
 ```
 
@@ -192,7 +191,6 @@ Every variable has a default, so the project runs without any setup.
 | `VITE_SENTRY_ENVIRONMENT`   | Frontend (build)           | the Vite mode, `production` in the Docker build             | Environment name on the browser's Sentry events                                               |
 | `NEW_RELIC_LICENSE_KEY`     | New Relic agent, Compose   | empty, New Relic off                                        | [New Relic](https://newrelic.com/) ingest license key that the API and the worker report with |
 | `NEW_RELIC_APP_NAME`        | New Relic agent, Compose   | `backend` in Compose                                        | App name in New Relic APM; the deploy sets it to the DigitalOcean app name                    |
-| `MCP_ADMIN_TOKEN`           | Backend, Compose           | `dev-admin` in Compose, else empty: API closed              | Bearer token for `/api/mcp-servers`. A repository secret in production                        |
 | `BANK_MCP_TOKEN`            | Backend, Compose           | `dev-bank` in Compose, else empty: server closed            | Bearer token for the bank MCP server at `/api/bank/mcp`. A repository secret in production    |
 
 Where to set them:
@@ -261,7 +259,7 @@ Set it up once:
 
 Without the `DIGITALOCEAN_APP_NAME` variable, `main.yml` skips the deploy.
 
-To manage the MCP servers, also add the secret `MCP_ADMIN_TOKEN` there; see [MCP gateway](#mcp-gateway). Without it, `/api/mcp-servers` refuses every request. For the [bank MCP server](#bank-mcp-server), add the secret `BANK_MCP_TOKEN` too.
+For the [bank MCP server](#bank-mcp-server), also add the secret `BANK_MCP_TOKEN` there. Without it, the server refuses every request.
 
 To send errors to [Sentry](https://sentry.io/), also add the variables `SENTRY_DSN` and `VITE_SENTRY_DSN` there. The deploy passes them to the backend and to the frontend build, with the environment `production`. Without them, Sentry stays off.
 

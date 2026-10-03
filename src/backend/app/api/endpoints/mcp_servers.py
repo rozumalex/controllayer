@@ -2,11 +2,12 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response
+from mcp_types import ToolAnnotations
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import mcp_connect, require_admin
+from app.api.deps import mcp_connect
 from app.control.adapters.mcp_gateway import Connect, list_upstream_tools
 from app.core.schema.mcp_servers import (
     McpServerCreate,
@@ -17,11 +18,9 @@ from app.core.schema.mcp_servers import (
 from app.db.models import McpServer
 from app.db.session import get_session
 
-# Whoever manages the servers decides which tools every agent gets, so only
-# the admin may.
-router = APIRouter(
-    prefix="/mcp-servers", tags=["mcp servers"], dependencies=[Depends(require_admin)]
-)
+# Whoever manages the servers decides which tools every agent gets. Open to
+# anyone for now: access control comes with the users.
+router = APIRouter(prefix="/mcp-servers", tags=["mcp servers"])
 
 Session = Annotated[AsyncSession, Depends(get_session)]
 ConnectDep = Annotated[Connect, Depends(mcp_connect)]
@@ -34,7 +33,13 @@ async def tools_of(server: McpServer, connect: Connect) -> list[McpTool]:
         detail = f"Can't list the tools of {server.url}: {exc!r}"
         raise HTTPException(422, detail) from exc
     return [
-        McpTool(name=t.name, description=t.description, input_schema=t.input_schema)
+        McpTool(
+            name=t.name,
+            description=t.description,
+            input_schema=t.input_schema,
+            read_only=(t.annotations or ToolAnnotations()).read_only_hint,
+            destructive=(t.annotations or ToolAnnotations()).destructive_hint,
+        )
         for t in tools
     ]
 
