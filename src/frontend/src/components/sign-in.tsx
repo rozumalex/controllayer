@@ -251,10 +251,19 @@ function SignIn({ onSignedIn }: { onSignedIn: (user: Employee) => void }) {
                 </InputOTPGroup>
               </InputOTP>
             </div>
-            <Message error={error} notice={notice} />
-            <Button type="submit" disabled={busy || code.length < 6}>
-              Sign in
-            </Button>
+            {/* The code signs in as soon as it is whole, so no button: its
+                place shows how it went. */}
+            <p
+              aria-live="polite"
+              className={cn(
+                "flex h-8 items-center justify-center text-sm",
+                error ? "text-destructive" : "text-muted-foreground"
+              )}
+            >
+              {busy
+                ? "Signing in…"
+                : (error ?? notice ?? "Enter the 6-digit code")}
+            </p>
             <div className="-mt-2 flex justify-between text-sm">
               <Button
                 type="button"
