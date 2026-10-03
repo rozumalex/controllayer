@@ -43,6 +43,13 @@ def database() -> None:
     asyncio.run(create_database())
 
 
+@pytest.fixture(autouse=True)
+def offline(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Runs every test on the mock model, without the semantic guard, even
+    when the environment has an OpenAI key, so tests never call OpenAI."""
+    monkeypatch.setattr(settings, "openai_api_key", "")
+
+
 async def delete_events() -> None:
     async with SessionLocal() as session:
         await session.execute(delete(ControlEvent))
