@@ -33,6 +33,10 @@ async def create_database() -> None:
         if not exists:
             await connection.execute(text(f'CREATE DATABASE "{TEST_URL.database}"'))
     await dev.dispose()
+    await empty_tables()
+
+
+async def empty_tables() -> None:
     async with test_engine.begin() as connection:
         await connection.run_sync(Base.metadata.drop_all)
         await connection.run_sync(Base.metadata.create_all)
@@ -41,6 +45,12 @@ async def create_database() -> None:
 @pytest.fixture(scope="session", autouse=True)
 def database() -> None:
     asyncio.run(create_database())
+
+
+@pytest.fixture
+def db() -> None:
+    """Starts the test with empty tables."""
+    asyncio.run(empty_tables())
 
 
 async def delete_events() -> None:
