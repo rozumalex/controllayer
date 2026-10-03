@@ -58,6 +58,8 @@ The chat sends the user's prompt through the chat pipeline before the model sees
 
 [OWASP Top 10 for LLM applications](#owasp-top-10-for-llm-applications) maps the guards to each risk.
 
+Admins edit the role policies on the Policy page, by hand or in plain language, such as "Analysts can't make payments and must see IBANs masked". For the latter, `POST /api/policy/assistant` sends the rule as data, with the organization's roles, policies, tools, PII kinds and models, to the first model of `CHAT_MODELS` that a provider serves, see [Model pool](#model-pool). The model answers through a fixed JSON schema with a list of edits, and each one is checked against the policy schema: an unknown role, tool, PII kind or model, or an invalid value, is left out and listed. The page shows the change for each role, before and after, and saves nothing until the admin applies it with `POST /api/policy/assistant/apply`, which saves like a manual edit, and refuses a proposal whose policies changed since. The model only proposes; the guards enforce. The rule is never stored, logged or written to the audit trail. With no model served, the assistant answers 503.
+
 ## Backend
 
 FastAPI app in `src/backend`, managed with [uv](https://docs.astral.sh/uv/).

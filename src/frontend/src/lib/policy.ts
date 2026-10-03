@@ -145,3 +145,30 @@ export function fetchEmployees(params: {
   if (params.role) query.set("role", params.role)
   return request<EmployeeList>(`/api/employees?${query}`)
 }
+
+// The policy assistant, see app/core/schema/policy_assistant.py. Role "*" is
+// the default policy.
+export type PolicyChange = { setting: string; before: string; after: string }
+
+export type RoleProposal = {
+  role: string
+  before: PolicySettings
+  after: PolicySettings
+  changes: PolicyChange[]
+}
+
+export type Proposal = { roles: RoleProposal[]; dropped: string[] }
+
+export const proposePolicy = (instruction: string) =>
+  request<Proposal>("/api/policy/assistant", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ instruction }),
+  })
+
+export const applyProposal = (proposal: Proposal) =>
+  request<void>("/api/policy/assistant/apply", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ roles: proposal.roles }),
+  })
