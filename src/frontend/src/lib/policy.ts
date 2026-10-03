@@ -10,8 +10,37 @@ export const CLEARANCES = [
 ] as const
 export type Clearance = (typeof CLEARANCES)[number]
 
+// The PII the sensitive data guard finds in free text, with the catalog level
+// of the field that holds it, see app/control/guards/sensitive_data.py.
+export const PII = [
+  { kind: "email", label: "Email", level: "CONFIDENTIAL" },
+  { kind: "phone", label: "Phone", level: "CONFIDENTIAL" },
+  { kind: "iban", label: "IBAN", level: "RESTRICTED" },
+  { kind: "payment_card", label: "Payment card", level: "RESTRICTED" },
+  { kind: "pesel", label: "PESEL", level: "RESTRICTED" },
+] as const satisfies readonly {
+  kind: string
+  label: string
+  level: Clearance
+}[]
+export type PiiKind = (typeof PII)[number]["kind"]
+
 export const TOOL_ACTIONS = ["allow", "redact", "block"] as const
 export type ToolAction = (typeof TOOL_ACTIONS)[number]
+
+// What happens to a kind of PII: the policy's action for it, or, if it names
+// none, the action for data above the clearance when the kind is above it.
+export function piiAction(
+  settings: PolicySettings,
+  kind: PiiKind,
+  level: Clearance
+): ToolAction {
+  const fallback =
+    CLEARANCES.indexOf(level) > CLEARANCES.indexOf(settings.clearance)
+      ? settings.above_clearance
+      : "allow"
+  return settings.pii[kind] ?? fallback
+}
 
 export type Budget = {
   monthly_tokens: number | null
@@ -23,6 +52,7 @@ export type PolicySettings = {
   injection_threshold: number
   clearance: Clearance
   above_clearance: ToolAction
+  pii: Partial<Record<PiiKind, ToolAction>>
   allowed_models: string[]
   budget: Budget
   default_tool_action: ToolAction

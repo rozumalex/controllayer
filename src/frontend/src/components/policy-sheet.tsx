@@ -24,7 +24,9 @@ import { Slider } from "@/components/ui/slider"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import {
   CLEARANCES,
+  PII,
   TOOL_ACTIONS,
+  piiAction,
   resetPolicy,
   savePolicy,
   type GatewayTool,
@@ -196,6 +198,30 @@ export function PolicySheet({
                     value={draft.above_clearance}
                     onChange={(above_clearance) => update({ above_clearance })}
                   />
+                </div>
+              </Field>
+              <Field
+                label="PII in free text"
+                hint="Found by pattern in prompts, notes and tool results, before the model sees them. Until you pick an action, a kind follows the clearance. Secrets are always blocked."
+              >
+                <div className="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2">
+                  {PII.map(({ kind, label, level }) => (
+                    <div key={kind} className="contents">
+                      <span className="text-sm">
+                        {label}
+                        <span className="text-muted-foreground">
+                          {draft.pii[kind] ? "" : ` · ${level.toLowerCase()}`}
+                        </span>
+                      </span>
+                      <ActionPicker
+                        label={label}
+                        value={piiAction(draft, kind, level)}
+                        onChange={(action) =>
+                          update({ pii: { ...draft.pii, [kind]: action } })
+                        }
+                      />
+                    </div>
+                  ))}
                 </div>
               </Field>
               <Field

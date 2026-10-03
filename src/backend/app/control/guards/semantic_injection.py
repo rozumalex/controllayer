@@ -20,6 +20,7 @@ from typing import Any, Protocol
 import httpx
 
 from app.control.envelope import Action, Direction, Envelope, Verdict
+from app.control.guards.sensitive_data import scrub
 from app.control.http import OPENAI_HTTP, SharedClient
 from app.control.upstream import OPENAI_URL
 
@@ -283,7 +284,7 @@ class SemanticInjectionGuard:
                 raise ClassifierError(f"too long to check: {len(text)} characters")
             results = await asyncio.gather(*(classify(p) for p in parts))
         except ClassifierError as error:
-            logger.warning("semantic check failed: %s", error)
+            logger.warning("semantic check failed: %s", scrub(str(error)))
             action = Action.BLOCK if self.fail_closed else Action.ALLOW
             reason = f"semantic check unavailable ({error})"
             return Verdict(action, self.name, score=None, reason=reason)

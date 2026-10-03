@@ -71,6 +71,20 @@ class BudgetGuard:
         return Verdict(Action.BLOCK, self.name, score=used, reason=reason)
 
 
+def result_clearance(
+    tools: Mapping[str, ToolAction],
+    default: ToolAction,
+    name: str,
+    clearance: Clearance,
+    above_clearance: ToolAction,
+) -> tuple[Clearance, ToolAction]:
+    """The clearance a tool's result is shown at, and what happens to data
+    above it. A tool the policy marks redact shows public data only."""
+    if tool_action(tools, default, name) is ToolAction.REDACT:
+        return Clearance.PUBLIC, ToolAction.REDACT
+    return clearance, above_clearance
+
+
 def above(level: Clearance, clearance: Clearance) -> bool:
     return LEVELS.index(level) > LEVELS.index(clearance)
 
@@ -129,9 +143,9 @@ class ClearanceGuard:
         if envelope.direction is Direction.INBOUND:
             return Verdict(Action.ALLOW, self.name)
         name = f"{envelope.server}{SEPARATOR}{envelope.tool}"
-        clearance, action = self.clearance, self.above_clearance
-        if tool_action(self.tools, self.default, name) is ToolAction.REDACT:
-            clearance, action = Clearance.PUBLIC, ToolAction.REDACT
+        clearance, action = result_clearance(
+            self.tools, self.default, name, self.clearance, self.above_clearance
+        )
         # The fields hidden, by table and name: the text blocks repeat the
         # structured content, so a field may be hidden twice.
         hidden: dict[tuple[str, str], Clearance] = {}

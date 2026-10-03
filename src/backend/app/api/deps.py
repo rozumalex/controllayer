@@ -26,6 +26,7 @@ from app.control.guards.semantic_injection import (
     OpenAIInjectionClassifier,
     SemanticInjectionGuard,
 )
+from app.control.guards.sensitive_data import SensitiveDataGuard
 from app.control.layer import ControlLayer, build_layer
 from app.control.upstream import ChatUpstream, MockUpstream, OpenAIUpstream
 from app.core.config import settings
@@ -94,6 +95,16 @@ def tool_access(policy: PolicySettings) -> ToolAccessGuard:
     return ToolAccessGuard(policy.tools, policy.default_tool_action)
 
 
+def sensitive_data(policy: PolicySettings) -> SensitiveDataGuard:
+    return SensitiveDataGuard(
+        policy.pii,
+        policy.clearance,
+        policy.above_clearance,
+        policy.tools,
+        policy.default_tool_action,
+    )
+
+
 def semantic_guard(threshold: float) -> SemanticInjectionGuard | None:
     # Without a key the demo runs offline, on the heuristic guard alone.
     if not settings.openai_api_key:
@@ -140,6 +151,7 @@ async def chat_control(user: CurrentUser, policy: UserPolicy) -> ChatControl:
     guards = [
         ModelGuard(model, policy.allowed_models),
         BudgetGuard(policy.budget, tokens, usd),
+        sensitive_data(policy),
     ]
     upstream: ChatUpstream = (
         OpenAIUpstream(settings.openai_api_key, model)
@@ -178,8 +190,11 @@ async def mcp_gateway(user: CurrentUser, policy: UserPolicy) -> McpGateway:
         policy.tools,
         policy.default_tool_action,
     )
+    patterns = sensitive_data(policy)
     return McpGateway(
-        control_layer(sink, policy, [tool_access(policy)], [clearance]),
+        control_layer(
+            sink, policy, [tool_access(policy), patterns], [clearance, patterns]
+        ),
         mcp_connect(),
         enabled_mcp_servers,
         settings.control_log_payloads,
