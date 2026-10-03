@@ -2,6 +2,7 @@ import { LayoutDashboard, MessageSquare, Search } from "lucide-react"
 import { useCallback, useEffect, useState, type ReactNode } from "react"
 
 import { Header } from "@/components/brand"
+import { UserMenu } from "@/components/sign-in"
 import { PolicySheet, type Editing } from "@/components/policy-sheet"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -249,6 +250,7 @@ export function Controls() {
       <Header product="Controls">
         <NavLink href="/dashboard" label="Dashboard" icon={LayoutDashboard} />
         <NavLink href="/" label="Assistant" icon={MessageSquare} />
+        <UserMenu />
       </Header>
 
       <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-4 md:p-6">

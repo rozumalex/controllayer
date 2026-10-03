@@ -172,6 +172,38 @@ NAMES: dict[str, tuple[tuple[str, ...], ...]] = {
     ),
 }
 
+# More names, in the same layout, for staff renamed to keep full names unique:
+# the pools above have fewer names than the offices that use them have staff.
+MORE_NAMES: dict[str, tuple[tuple[str, ...], ...]] = {
+    "en": (
+        ("Alexander", "Charles", "Harry", "Jack", "Luke", "Peter", "Simon", "Adam",
+         "Owen", "Joseph"),
+        ("Isabel", "Rebecca", "Jessica", "Laura", "Fiona", "Harriet", "Imogen", "Zoe",
+         "Anna", "Rose"),
+        ("Ainsworth", "Blackwell", "Cartwright", "Davenport", "Everett", "Forsyth",
+         "Grantham", "Hastings", "Iverson", "Jameson", "Kirkland", "Lancaster",
+         "Montgomery", "Nash", "Oakley", "Pemberton", "Rutherford", "Shelby",
+         "Tennyson", "Vaughan", "Wakefield", "Yardley", "Ashby", "Bradshaw", "Crawford",
+         "Drummond", "Emerson", "Foster", "Granger", "Hale"),
+    ),
+    "zh": (
+        ("Kevin", "Alan", "Chi Keung", "Ka Ho"),
+        ("Grace", "Wing Yan", "Hui Min", "Stephanie"),
+        ("Chow", "Tsang", "Kwok", "Fung", "Yip", "Lam", "Tang", "Chua", "Koh", "Sim"),
+    ),
+    "pl": (
+        ("Marcin", "Łukasz", "Bartosz", "Adam"),
+        ("Anna", "Ewa", "Karolina", "Natalia"),
+        ("Kowal", "Michalak", "Lis", "Duda", "Baran", "Szymczak", "Kubiak", "Bąk"),
+    ),
+    "cz": (
+        ("Pavel", "David", "Jiří"),
+        ("Jana", "Markéta", "Klára"),
+        ("Marek", "Pokorný", "Růžička", "Beneš", "Fiala", "Sedláček"),
+        ("Marková", "Pokorná", "Růžičková", "Benešová", "Fialová", "Sedláčková"),
+    ),
+}
+
 # fmt: on
 
 
@@ -442,12 +474,19 @@ def bank_account(country: str, golden: bool = False) -> str:
     return pattern("%#########")
 
 
-def person(country: str) -> tuple[str, str, bool]:
-    """First name, last name, and whether she is a woman."""
-    male, female, last, *female_last = NAMES[COUNTRIES[country].names]
-    if rng.random() < 0.5:
-        return rng.choice(male), rng.choice(last), False
-    return rng.choice(female), rng.choice(female_last[0] if female_last else last), True
+def person(
+    country: str, r: random.Random = rng, more: bool = False
+) -> tuple[str, str, bool]:
+    """First name, last name, and whether she is a woman. With more, it draws
+    from MORE_NAMES too."""
+    pool = COUNTRIES[country].names
+    names = NAMES[pool]
+    if more and pool in MORE_NAMES:
+        names = tuple(a + b for a, b in zip(names, MORE_NAMES[pool], strict=True))
+    male, female, last, *female_last = names
+    if r.random() < 0.5:
+        return r.choice(male), r.choice(last), False
+    return r.choice(female), r.choice(female_last[0] if female_last else last), True
 
 
 def city_of(country: str) -> tuple[str, str]:
@@ -722,6 +761,19 @@ def generate_employees() -> list[Employee]:
                 member.manager = rng.choice(local or [team_head])
             employees.extend(members)
     rng.shuffle(employees)
+    # No two staff share a full name, so a user can tell them apart. The new
+    # names come from a generator of their own, so the rest of the data stays
+    # as it was.
+    renames = random.Random(2027)
+    taken = {employee.name for employee in employees}
+    seen: set[str] = set()
+    for employee in employees:
+        if employee.name in seen:
+            country = OFFICES[employee.office][0]
+            while employee.name in taken:
+                employee.first, employee.last, _ = person(country, renames, more=True)
+            taken.add(employee.name)
+        seen.add(employee.name)
     emails: set[str] = set()
     for employee in employees:
         # Drawn from the seed, so a user keeps the same ID on every run.

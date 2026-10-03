@@ -1,3 +1,7 @@
+import uuid
+from typing import Annotated
+
+from fastapi import Header, HTTPException
 from sqlalchemy import select
 
 from app.control.adapters.mcp_gateway import Connect, McpGateway, connect_http
@@ -11,7 +15,7 @@ from app.control.layer import ControlLayer, build_layer
 from app.control.upstream import ChatUpstream, MockUpstream, OpenAIUpstream
 from app.core.config import settings
 from app.db.event_sink import DatabaseEventSink
-from app.db.models import McpServer
+from app.db.models import McpServer, User
 from app.db.session import SessionLocal
 
 
@@ -78,3 +82,18 @@ def mcp_gateway() -> McpGateway:
         settings.control_log_payloads,
         event_sink(),
     )
+
+
+async def current_user(
+    user_id: Annotated[
+        uuid.UUID | None,
+        Header(description="The ID of the user picked on the sign-in screen."),
+    ] = None,
+) -> User:
+    """The user the caller picked on the sign-in screen. It is a demo sign-in:
+    the header names the user, and nothing proves the caller is them."""
+    async with SessionLocal() as session:
+        user = await session.get(User, user_id) if user_id else None
+    if user is None:
+        raise HTTPException(401, "Pick a user to sign in")
+    return user
