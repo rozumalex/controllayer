@@ -1,5 +1,7 @@
-from collections import defaultdict
+import math
+from collections import Counter, defaultdict
 from collections.abc import Sequence
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -8,8 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.control.adapters.openai_chat import text_of
 from app.core.schema.traces import (
+    Analytics,
+    Bucket,
     Finding,
+    FindingCount,
     Outcome,
+    Range,
     Stats,
     TraceDetail,
     TraceEvent,
@@ -23,6 +29,14 @@ from app.db.session import get_session
 router = APIRouter(prefix="/traces", tags=["traces"])
 
 Session = Annotated[AsyncSession, Depends(get_session)]
+
+# The window of each range, and the size of its buckets.
+RANGES: dict[str, tuple[timedelta, timedelta]] = {
+    "1h": (timedelta(hours=1), timedelta(minutes=1)),
+    "24h": (timedelta(hours=24), timedelta(hours=1)),
+    "7d": (timedelta(days=7), timedelta(hours=6)),
+}
+TOP_FINDINGS = 8
 
 
 def outcome(events: Sequence[ControlEvent]) -> Outcome:
@@ -141,6 +155,81 @@ async def list_traces(
     return TraceList(
         stats=await stats(session),
         traces=[summary(events[trace_id]) for trace_id in trace_ids],
+    )
+
+
+def percentile(values: list[float], fraction: float) -> float | None:
+    """The nearest-rank percentile, or None for no values."""
+    if not values:
+        return None
+    ordered = sorted(values)
+    return ordered[max(0, math.ceil(fraction * len(ordered)) - 1)]
+
+
+async def events_since(
+    session: AsyncSession, start: datetime
+) -> dict[str, list[ControlEvent]]:
+    """The events of every trace that started at or after start."""
+    started = select(ControlEvent.trace_id).where(
+        ControlEvent.event == "request", ControlEvent.created_at >= start
+    )
+    rows = await session.scalars(
+        select(ControlEvent)
+        .where(ControlEvent.trace_id.in_(started))
+        .order_by(ControlEvent.id)
+    )
+    events: dict[str, list[ControlEvent]] = defaultdict(list)
+    for row in rows:
+        events[row.trace_id].append(row)
+    return events
+
+
+@router.get(
+    "/analytics",
+    response_model=Analytics,
+    summary="Count the traces of a time range, bucket by bucket",
+    description=(
+        "Outcomes, tokens and request durations per bucket, and the most "
+        "common findings. 1h has one-minute buckets, 24h one-hour buckets and "
+        "7d six-hour buckets."
+    ),
+)
+async def analytics(
+    session: Session, period: Annotated[Range, Query(alias="range")] = "1h"
+) -> Analytics:
+    window, step = RANGES[period]
+    # Buckets end on whole steps, so a refresh doesn't shift them.
+    seconds = step.total_seconds()
+    now = datetime.now(UTC).timestamp()
+    end = datetime.fromtimestamp((now // seconds + 1) * seconds, UTC)
+    start = end - window
+
+    buckets = [Bucket(start=start + i * step) for i in range(window // step)]
+    durations: list[list[float]] = [[] for _ in buckets]
+    findings: Counter[tuple[str, str]] = Counter()
+    for events in (await events_since(session, start)).values():
+        trace = summary(events)
+        index = int((trace.started_at - start) / step)
+        if not 0 <= index < len(buckets):
+            continue
+        bucket = buckets[index]
+        setattr(bucket, trace.outcome, getattr(bucket, trace.outcome) + 1)
+        bucket.prompt_tokens += trace.usage.prompt_tokens
+        bucket.completion_tokens += trace.usage.completion_tokens
+        durations[index].append(trace.duration_ms)
+        findings.update((f.guard, f.reason) for f in trace.findings)
+    for bucket, values in zip(buckets, durations, strict=True):
+        bucket.p50_ms = percentile(values, 0.5)
+        bucket.p95_ms = percentile(values, 0.95)
+
+    return Analytics(
+        range=period,
+        bucket_seconds=int(seconds),
+        timeline=buckets,
+        findings=[
+            FindingCount(guard=guard, reason=reason, count=count)
+            for (guard, reason), count in findings.most_common(TOP_FINDINGS)
+        ],
     )
 
 
