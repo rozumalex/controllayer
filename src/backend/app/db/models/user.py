@@ -22,6 +22,9 @@ class User(Base):
     org_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("organizations.id", name="users_org_id_fkey"), index=True
     )
+    # The scrypt hash of the password, see app.core.passwords. Empty for a user
+    # who can't sign in with one, such as the bank's staff.
+    password_hash: Mapped[str | None] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

@@ -193,31 +193,18 @@ def test_employees_filter(staff: TestClient, query: str, names: list[str]) -> No
     assert [e["name"] for e in listed["employees"]] == names
 
 
-def test_me_is_the_picked_employee(staff: TestClient) -> None:
-    # given
-    bob = staff.get("/api/employees?q=bob").json()["employees"][0]
-
+def test_me_is_the_signed_in_user(staff: TestClient, user: User) -> None:
     # when
-    response = staff.get("/api/employees/me", headers={"User-Id": bob["id"]})
+    response = staff.get("/api/employees/me")
 
     # then
     assert response.status_code == 200
-    assert response.json() == bob
+    assert response.json()["id"] == str(user.id)
 
 
-def test_sign_in_lists_staff_without_their_details(staff: TestClient) -> None:
-    # given
-    client = TestClient(app)
-
-    # when
-    listed = client.get("/api/employees/sign-in").json()
-
-    # then
-    assert [e["name"] for e in listed] == ["Ann Lee", "Bob Ray", "Cy Fox"]
-    assert set(listed[0]) == {"id", "name", "role", "team", "clearance_level"}
-
-
-@pytest.mark.parametrize("headers", [{}, {"User-Id": str(uuid.uuid4())}])
+@pytest.mark.parametrize(
+    "headers", [{}, {"Authorization": f"Bearer {uuid.uuid4().hex}"}]
+)
 def test_me_without_a_known_user_is_401(headers: dict[str, str]) -> None:
     # given
     client = TestClient(app, headers=headers)

@@ -91,16 +91,23 @@ To run it on the host: `uv run celery -A app.worker worker --beat --loglevel INF
 
 ### Organizations
 
-Every user belongs to an organization, and so do its role policies, its MCP servers and the control layer's events. A user sees and manages only their own organization's: the admin pages, the dashboard, the traces and the audit export filter by it, and another organization's MCP server or trace is not found. The Golden Socks bank is the `demo` organization, which `./dev seed` creates. The seed also moves every row that has no organization yet into `demo`, so a database from before organizations keeps working. The sign-in screen lists only the demo's staff.
+Every user belongs to an organization, and so do its role policies, its MCP servers and the control layer's events. A user sees and manages only their own organization's: the admin pages, the dashboard, the traces and the audit export filter by it, and another organization's MCP server or trace is not found. The Golden Socks bank is the `demo` organization, which `./dev seed` creates. The seed also moves every row that has no organization yet into `demo`, so a database from before organizations keeps working.
+
+### Sign-in
+
+A user signs in with their email and password, and gets a session token that every API call sends as `Authorization: Bearer <token>`. The database keeps only the token's SHA-256 and the password's scrypt hash. Sign-in lasts `AUTH_SESSION_DAYS`, 30 by default, or until the user signs out.
+
+- **Start an organization** on the sign-in screen, or with `POST /api/auth/sign-up`: it creates the organization and its first user, who administers it. Others join only by invitation.
+- **Try the demo** signs in as the demo account, `demo@controllayer.net` with the password `demo`, which `./dev seed` creates: a Vice President of Golden Socks in the `demo` organization. `POST /api/auth/demo` does the same, and `DEMO_EMAIL` and `DEMO_PASSWORD` change the account.
 
 ### OpenAI-compatible API
 
-The control layer speaks OpenAI's chat completions API, so any OpenAI client, SDK or agent framework goes through it by changing two settings: the base URL, and the API key, which is the user's ID for now. The chat in the frontend uses the same API.
+The control layer speaks OpenAI's chat completions API, so any OpenAI client, SDK or agent framework goes through it by changing two settings: the base URL, and the API key, which is a session token from a [sign-in](#sign-in) for now. The chat in the frontend uses the same API.
 
 ```python
 from openai import OpenAI
 
-client = OpenAI(base_url="http://localhost:8000/api/v1", api_key="<user id>")
+client = OpenAI(base_url="http://localhost:8000/api/v1", api_key="<session token>")
 client.models.list()  # the bank assistant and the models the user's policy allows
 client.chat.completions.create(
     model="golden-socks-assistant",
@@ -113,7 +120,7 @@ client.chat.completions.create(
   - `golden-socks-assistant`: the bank assistant. The server adds the bank's instructions, drops the client's own `system` and `developer` messages so they can't replace them, and runs the tools of the MCP servers through the [gateway](#mcp-gateway).
   - A model from the pool: the layer passes the client's messages and tools on, and checks the tool calls the model asks for and the tool results the client sends back. A request that carries only tool results still counts as a question, so the model, budget and rate limit guards apply to it.
 - Either way, the layer checks the new prompts before the model sees them, and the answer before the client does. A blocked request or answer comes back as an assistant message with `finish_reason` `"content_filter"`, and the verdicts go to the logs under the `X-Trace-Id` response header.
-- The caller signs in with `Authorization: Bearer <user id>`, or with the `User-Id` header the frontend sends. Like the sign-in screen, it is a demo sign-in: nothing proves the caller is that user.
+- The caller signs in with `Authorization: Bearer <token>`, the session token of a [sign-in](#sign-in), which an OpenAI client sends as its API key.
 
 ### Model pool
 
@@ -335,6 +342,9 @@ Every variable has a default, so the project runs without any setup.
 | `MODELS` | Backend | four OpenAI models and `qwen2.5:7b` | The model pool, as JSON: `{"<name>": {"provider": "openai" or "ollama", "price": [prompt, completion]}}`, in dollars per million tokens |
 | `CHAT_MODELS` | Backend | `["gpt-4.1-mini", "qwen2.5:7b"]` | Models the chat tries first, as JSON; the default policy allows these |
 | `CONTROL_SEMANTIC_MODELS` | Backend | `["gpt-4.1-mini", "qwen2.5:7b"]` | Models the semantic guard may use, as JSON; it uses the first one a provider serves |
+| `AUTH_SESSION_DAYS` | Backend | `30` | Days a sign-in lasts |
+| `DEMO_EMAIL` | Backend | `demo@controllayer.net` | Email of the demo account that `./dev seed` creates and "Try the demo" signs in as |
+| `DEMO_PASSWORD` | Backend | `demo` | Password of the demo account; the seed sets it again on every run |
 | `BANK_MCP_TOKEN`              | Backend, Compose           | `dev-bank` in Compose, else empty: server closed            | Bearer token for the bank MCP server at `/api/bank/mcp`. A repository secret in production         |
 | `CONTROL_SIGNATURE_FEED`      | Backend                    | empty, the bundled `app/control/signatures.json`            | File path or http(s) URL of the attack signature feed, see [Attack signatures](#attack-signatures) |
 | `CONTROL_SIGNATURE_REFRESH`   | Backend                    | `30`                                                        | Seconds between two fetches of a feed URL. A file is read again when it changes                    |

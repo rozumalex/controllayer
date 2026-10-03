@@ -40,7 +40,9 @@ async def staff(clearance: str | None) -> User:
         *ADMIN_URLS,
     ],
 )
-@pytest.mark.parametrize("headers", [{}, {"User-Id": str(uuid.uuid4())}])
+@pytest.mark.parametrize(
+    "headers", [{}, {"Authorization": f"Bearer {uuid.uuid4().hex}"}]
+)
 def test_without_a_known_user_is_401(
     method: str, url: str, headers: dict[str, str]
 ) -> None:
@@ -51,13 +53,12 @@ def test_without_a_known_user_is_401(
     assert client.request(method, url, json={}).status_code == 401
 
 
-@pytest.mark.parametrize("url", ["/api/health", "/api/employees/sign-in"])
-def test_sign_in_needs_no_user(url: str) -> None:
+def test_health_needs_no_user() -> None:
     # given
     client = TestClient(app)
 
     # when / then
-    assert client.get(url).status_code == 200
+    assert client.get("/api/health").status_code == 200
 
 
 @pytest.mark.parametrize(("method", "url"), ADMIN_URLS)
