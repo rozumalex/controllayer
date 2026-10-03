@@ -66,6 +66,8 @@ services:
       # http://ollama:11434/v1 for the service below, or, on a Mac, Ollama on
       # the host at http://host.docker.internal:11434/v1, which uses the GPU.
       OLLAMA_URL: ${OLLAMA_URL:-}
+      # Sign in with Google; empty turns it off.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       # Save the messages with the events, so the dashboard shows what was
       # asked. Off in production, where prompts may hold secrets.
       CONTROL_LOG_PAYLOADS: ${CONTROL_LOG_PAYLOADS:-true}
@@ -128,6 +130,7 @@ services:
     environment:
       API_URL: http://api:8000
       VITE_SENTRY_DSN: ${VITE_SENTRY_DSN:-}
+      VITE_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
     ports:
       - "${APP_PORT:-3000}:5173"
     volumes:

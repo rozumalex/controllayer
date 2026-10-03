@@ -95,9 +95,10 @@ Every user belongs to an organization, and so do its role policies, its MCP serv
 
 ### Sign-in
 
-A user signs in with their email and password, and gets a session token that every API call sends as `Authorization: Bearer <token>`. The database keeps only the token's SHA-256 and the password's scrypt hash. Sign-in lasts `AUTH_SESSION_DAYS`, 30 by default, or until the user signs out.
+A user signs in with Google, or with their email and password, and gets a session token that every API call sends as `Authorization: Bearer <token>`. The database keeps only the token's SHA-256 and the password's scrypt hash. Sign-in lasts `AUTH_SESSION_DAYS`, 30 by default, or until the user signs out.
 
 - **Start an organization** on the sign-in screen, or with `POST /api/auth/sign-up`: it creates the organization and its first user, who administers it. Others join only by invitation.
+- **Sign in with Google** shows when `GOOGLE_CLIENT_ID` is set. The browser gets an ID token from Google, and the backend checks its signature against Google's public keys, that it was issued for this client ID, and that Google verified the email. No client secret is involved. A Google user with an account signs in to it; one without starts the organization named on the sign-up screen.
 - **Try the demo** signs in as the demo account, `demo@controllayer.net` with the password `demo`, which `./dev seed` creates: a Vice President of Golden Socks in the `demo` organization. `POST /api/auth/demo` does the same, and `DEMO_EMAIL` and `DEMO_PASSWORD` change the account.
 
 ### OpenAI-compatible API
@@ -342,6 +343,7 @@ Every variable has a default, so the project runs without any setup.
 | `MODELS` | Backend | four OpenAI models and `qwen2.5:7b` | The model pool, as JSON: `{"<name>": {"provider": "openai" or "ollama", "price": [prompt, completion]}}`, in dollars per million tokens |
 | `CHAT_MODELS` | Backend | `["gpt-4.1-mini", "qwen2.5:7b"]` | Models the chat tries first, as JSON; the default policy allows these |
 | `CONTROL_SEMANTIC_MODELS` | Backend | `["gpt-4.1-mini", "qwen2.5:7b"]` | Models the semantic guard may use, as JSON; it uses the first one a provider serves |
+| `GOOGLE_CLIENT_ID` | Backend, Compose, the frontend build as `VITE_GOOGLE_CLIENT_ID` | empty, Google sign-in off | OAuth client ID of Sign in with Google. In the Google Cloud console: an External consent screen, and a Web application client whose JavaScript origins are the app's URLs, such as `http://localhost:3000`. Not a secret: the deploy reads it from a repository variable |
 | `AUTH_SESSION_DAYS` | Backend | `30` | Days a sign-in lasts |
 | `DEMO_EMAIL` | Backend | `demo@controllayer.net` | Email of the demo account that `./dev seed` creates and "Try the demo" signs in as |
 | `DEMO_PASSWORD` | Backend | `demo` | Password of the demo account; the seed sets it again on every run |

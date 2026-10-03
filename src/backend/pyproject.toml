@@ -12,6 +12,7 @@ dependencies = [
     "mcp>=2.3.0",
     "newrelic>=13.6.1",
     "pydantic-settings>=2.15.0",
+    "pyjwt[crypto]>=2.10",
     "pyyaml>=6.0.3",
     "sentry-sdk[celery,fastapi]>=2.71.0",
     "sqlalchemy[asyncio]>=2.1.2",

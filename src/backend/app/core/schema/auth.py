@@ -29,6 +29,18 @@ class SignUp(SignIn):
         return value
 
 
+class GoogleSignIn(BaseModel):
+    credential: str = Field(
+        max_length=8192, description="The ID token from Sign in with Google."
+    )
+    organization: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=255,
+        description="The organization to start, for an email with no account.",
+    )
+
+
 class SignedIn(BaseModel):
     token: str = Field(
         description=(
