@@ -101,8 +101,13 @@ class PolicyRead(BaseModel):
 
 
 class RolePolicy(PolicyRead):
-    role: str = Field(description="A job title in users.")
+    role: str = Field(description="A job title in users, or a role the IdP gives.")
     employees: int
+    from_idp: bool = Field(
+        default=False,
+        description="Whether the organization's IdP gives the role, by a rule "
+        "or as its default role, so it may have no people yet.",
+    )
 
 
 class PolicyOverview(BaseModel):

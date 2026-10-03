@@ -6,6 +6,7 @@ from app.api.endpoints import (
     chat,
     employees,
     health,
+    identity,
     mcp_servers,
     policy,
     sso,
@@ -27,3 +28,4 @@ router.include_router(chat.router, dependencies=signed_in)
 router.include_router(traces.router, dependencies=privileged)
 router.include_router(mcp_servers.router, dependencies=privileged)
 router.include_router(policy.router, dependencies=privileged)
+router.include_router(identity.router, dependencies=privileged)

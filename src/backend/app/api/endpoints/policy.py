@@ -16,7 +16,7 @@ from app.core.schema.policy import (
     RolePolicy,
     available_models,
 )
-from app.db.models import Policy, User
+from app.db.models import IdentityProvider, Policy, User
 from app.db.policy import DEFAULT_ROLE, default_policy
 from app.db.session import get_session
 
@@ -57,11 +57,24 @@ async def reset(session: AsyncSession, org_id: uuid.UUID, role: str) -> None:
         await session.commit()
 
 
+async def idp_roles(session: AsyncSession, org_id: uuid.UUID) -> set[str]:
+    """The roles the organization's IdP gives: its rules' and its default."""
+    idp = await session.scalar(
+        select(IdentityProvider).where(IdentityProvider.org_id == org_id)
+    )
+    if idp is None:
+        return set()
+    roles = {rule["role"] for rule in idp.role_rules}
+    return roles | {idp.default_role} if idp.default_role else roles
+
+
 async def known_role(role: str, session: Session, org_id: OrgId) -> str:
-    """A job title that at least one employee of the organization holds."""
+    """A job title that someone in the organization holds, or a role its IdP
+    gives, so a role can get its policy before anyone with it signs in."""
     query = select(User.id).where(User.org_id == org_id, User.title == role)
     if not await session.scalar(query.limit(1)):
-        raise HTTPException(404, f"No employee is a {role}")
+        if role not in await idp_roles(session, org_id):
+            raise HTTPException(404, f"No one is a {role}")
     return role
 
 
@@ -84,16 +97,18 @@ async def get_policy(session: Session, org_id: OrgId) -> PolicyOverview:
         .group_by(User.title)
         .order_by(User.title)
     )
+    from_idp = await idp_roles(session, org_id)
+    people: dict[str, int] = {role: n for role, n in headcount if role is not None}
     roles = []
-    for role, employees in headcount:
-        assert role is not None
+    for role in sorted(people.keys() | from_idp):
         policy = saved.get(role)
         roles.append(
             RolePolicy(
                 role=role,
-                employees=employees,
+                employees=people.get(role, 0),
                 customized=policy is not None,
                 settings=PolicySettings(**policy.settings) if policy else fallback,
+                from_idp=role in from_idp,
             )
         )
     return PolicyOverview(

@@ -61,7 +61,12 @@ export type PolicySettings = {
 
 export type PolicyRead = { customized: boolean; settings: PolicySettings }
 
-export type RolePolicy = PolicyRead & { role: string; employees: number }
+export type RolePolicy = PolicyRead & {
+  role: string
+  employees: number
+  // The organization's IdP gives the role, so it may have no people yet.
+  from_idp: boolean
+}
 
 export type PolicyOverview = {
   models: string[]
