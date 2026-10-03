@@ -95,6 +95,22 @@ def test_token_is_shown_once_with_the_base_url(client: TestClient) -> None:
     assert body["base_url"] == "http://localhost:3000/api/scim/v2"
 
 
+def test_status_says_whether_a_token_is_set(db: None, client: TestClient) -> None:
+    # given
+    url = "/api/identity-provider/scim"
+    before = client.get(url).json()
+
+    # when
+    client.post("/api/identity-provider/scim-token")
+
+    # then
+    assert before == {
+        "base_url": "http://localhost:3000/api/scim/v2",
+        "has_token": False,
+    }
+    assert client.get(url).json()["has_token"] is True
+
+
 def test_pushed_user_joins_the_organization(okta: TestClient) -> None:
     # when
     user = new_user(okta)
@@ -210,6 +226,21 @@ def test_deleted_user_is_kept_deactivated(okta: TestClient) -> None:
     # then
     assert response.status_code == 204
     assert asyncio.run(stored("eve@acme.com")).active is False
+
+
+def test_people_list_shows_deactivated_users(
+    okta: TestClient, client: TestClient
+) -> None:
+    # given
+    user = new_user(okta)
+    new_group(okta, "sg-ai-analysts", user["id"])
+    okta.delete(f"{SCIM}/Users/{user['id']}")
+
+    # when
+    people = client.get("/api/employees", params={"q": "eve@acme.com"}).json()
+
+    # then
+    assert [e["active"] for e in people["employees"]] == [False]
 
 
 def test_taken_user_name_is_409(okta: TestClient) -> None:

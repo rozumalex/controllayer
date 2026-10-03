@@ -12,16 +12,21 @@ import { fetchPolicy, type RolePolicy } from "@/lib/policy"
 import {
   deleteProvider,
   fetchProvider,
+  fetchScim,
+  newScimToken,
   saveProvider,
   type IdentityProvider,
   type RoleRule,
+  type ScimStatus,
 } from "@/lib/identity"
 
-// The organization's identity provider, then the people who sign in.
+// The organization's identity provider, its SCIM provisioning, then the
+// people who sign in.
 export function Identity() {
   return (
     <div className="flex flex-col gap-6">
       <ProviderCard />
+      <ScimCard />
       <Employees />
     </div>
   )
@@ -58,6 +63,22 @@ function formOf(provider: IdentityProvider): Form {
     domains: provider.domains.join(", "),
     default_role: provider.default_role ?? "",
   }
+}
+
+function CopyField({ value }: { value: string }) {
+  return (
+    <div className="flex gap-2">
+      <Input readOnly className="font-mono" value={value} />
+      <Button
+        variant="outline"
+        size="icon"
+        title="Copy"
+        onClick={() => navigator.clipboard.writeText(value)}
+      >
+        <Copy className="size-4" />
+      </Button>
+    </div>
+  )
 }
 
 function Field({
@@ -228,19 +249,7 @@ function ProviderCard() {
             label="Redirect URI"
             hint="Register it with your provider as the sign-in redirect."
           >
-            <div className="flex gap-2">
-              <Input readOnly value={saved.redirect_uri} />
-              <Button
-                variant="outline"
-                size="icon"
-                title="Copy"
-                onClick={() =>
-                  navigator.clipboard.writeText(saved.redirect_uri)
-                }
-              >
-                <Copy className="size-4" />
-              </Button>
-            </div>
+            <CopyField value={saved.redirect_uri} />
           </Field>
         )}
 
@@ -368,6 +377,80 @@ function ProviderCard() {
           {done && !error && (
             <p className="text-sm text-muted-foreground">{done}</p>
           )}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+// The IdP pushes users and groups here, and deactivates them, with this token.
+function ScimCard() {
+  const [status, setStatus] = useState<ScimStatus | null>(null)
+  // The new token, shown until the page is left: only its hash is stored.
+  const [token, setToken] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetchScim()
+      .then(setStatus)
+      .catch((e: Error) => setError(e.message))
+  }, [])
+
+  async function makeToken() {
+    if (
+      status?.has_token &&
+      !confirm("The IdP's current token stops working. Replace it?")
+    )
+      return
+    setBusy(true)
+    setError(null)
+    try {
+      const made = await newScimToken()
+      setToken(made.token)
+      setStatus({ base_url: made.base_url, has_token: true })
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-col gap-1">
+        <CardTitle>Provisioning (SCIM)</CardTitle>
+        <p className="text-sm text-muted-foreground">
+          Your IdP syncs people and groups. Groups set roles through the rules
+          above, and people it deactivates lose access at once.
+        </p>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        {status && (
+          <Field label="Base URL">
+            <CopyField value={status.base_url} />
+          </Field>
+        )}
+        {token && (
+          <Field
+            label="Token"
+            hint="Copy it now: it isn't shown again. Send it as a bearer token."
+          >
+            <CopyField value={token} />
+          </Field>
+        )}
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            variant={status?.has_token ? "outline" : "default"}
+            disabled={busy || !status}
+            onClick={makeToken}
+          >
+            {status?.has_token ? "Replace token" : "Make a token"}
+          </Button>
+          {status?.has_token && !token && (
+            <p className="text-sm text-muted-foreground">A token is set.</p>
+          )}
+          {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
       </CardContent>
     </Card>

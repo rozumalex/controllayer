@@ -16,6 +16,7 @@ from app.core.oidc import OidcError
 from app.core.schema.identity import (
     IdentityProviderRead,
     IdentityProviderWrite,
+    ScimStatus,
     ScimToken,
 )
 from app.db.models import IdentityProvider, Organization
@@ -89,6 +90,17 @@ async def save_provider(
     return IdentityProviderRead.of(idp, callback_url())
 
 
+def scim_base_url() -> str:
+    return f"{settings.app_url.rstrip('/')}{settings.api_prefix}/scim/v2"
+
+
+@router.get("/scim", summary="Show the SCIM base URL and whether a token is set")
+async def scim_status(session: Session, org_id: OrgId) -> ScimStatus:
+    org = await session.get(Organization, org_id)
+    assert org is not None
+    return ScimStatus(base_url=scim_base_url(), has_token=bool(org.scim_token_hash))
+
+
 @router.post(
     "/scim-token",
     summary="Make a new SCIM token for the IdP's provisioning",
@@ -103,8 +115,7 @@ async def new_scim_token(session: Session, org_id: OrgId) -> ScimToken:
     assert org is not None
     org.scim_token_hash = hashlib.sha256(token.encode()).hexdigest()
     await session.commit()
-    base = f"{settings.app_url.rstrip('/')}{settings.api_prefix}/scim/v2"
-    return ScimToken(token=token, base_url=base)
+    return ScimToken(token=token, base_url=scim_base_url())
 
 
 @router.delete(

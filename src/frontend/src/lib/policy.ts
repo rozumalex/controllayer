@@ -91,6 +91,8 @@ export type Employee = {
   office: string | null
   clearance_level: string | null
   employment_status: string | null
+  // False once the IdP deactivates or deletes them.
+  active: boolean
 }
 
 export type EmployeeList = { total: number; employees: Employee[] }
