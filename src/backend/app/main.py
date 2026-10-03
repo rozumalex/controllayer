@@ -3,9 +3,11 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from starlette.routing import Route
 
+from app.api.endpoints.scim import ScimError, error
 from app.api.router import router as api_router
 from app.control.http import OPENAI_HTTP
 from app.core.config import settings
@@ -37,6 +39,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.include_router(api_router)
+
+
+@app.exception_handler(ScimError)
+async def scim_error(request: Request, exc: ScimError) -> JSONResponse:
+    """SCIM clients read errors in SCIM's own format."""
+    return error(exc)
+
+
 # The example bank tools, for the gateway to connect to like any MCP server.
 # A Route, not a Mount, so the path has no trailing slash to redirect to.
 app.router.routes.append(Route(f"{settings.api_prefix}/bank/mcp", bank_mcp_app))

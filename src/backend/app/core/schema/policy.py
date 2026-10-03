@@ -133,6 +133,9 @@ class Employee(BaseModel):
     office: str | None
     clearance_level: str | None
     employment_status: str | None
+    active: bool = Field(
+        default=True, description="False when the IdP deactivated or deleted them."
+    )
 
 
 class EmployeeList(BaseModel):

@@ -85,6 +85,8 @@ async def user_for(session: AsyncSession, email: str, name: str | None) -> User:
     """The user with this email. One who has none yet gets an account, and a
     new organization that they administer."""
     user = await session.scalar(select(User).where(User.email == email))
+    if user is not None and not user.active:
+        raise HTTPException(403, "Your organization has deactivated you")
     if user is not None:
         return user
     name = name or name_from_email(email) or email
