@@ -87,7 +87,9 @@ jobs:
     github: *github
     source_dir: src/backend
     dockerfile_path: src/backend/Dockerfile
-    run_command: alembic upgrade head
+    # Then reload the bank data, so every deploy starts from the same rows.
+    # -y: the database isn't local, and there is no one to answer the prompt.
+    run_command: sh -c "alembic upgrade head && python -m scripts.seed -y"
     instance_size_slug: apps-s-1vcpu-0.5gb
     envs:
       - key: DATABASE_URL

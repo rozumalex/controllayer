@@ -92,6 +92,7 @@ Manage the stack with the `./dev` script in the repo root. Every command except 
 | `./dev migrate [revision]`       | Apply the migrations, up to `head` by default                                                                 |
 | `./dev makemigrations <message>` | Create a migration from the model changes                                                                     |
 | `./dev checkmigrations`          | Check that the migrations apply to a fresh database and cover every model change                              |
+| `./dev seed [--url URL] [-y]`    | Load the Golden Socks bank data; asks first unless `-y` when the URL is not local                             |
 | `./dev lint [hook]`              | Run every pre-commit hook on the host, or only the given one. Needs the [pre-commit setup](#pre-commit-hooks) |
 | `./dev test [pytest args...]`    | Run the backend tests; paths are relative to `src/backend`                                                    |
 
@@ -103,6 +104,8 @@ Extra arguments go straight to the tool:
 ./dev logs api                                 # only the backend logs
 ./dev makemigrations "add posts table"
 ```
+
+`./dev seed` replaces the rows of the `bank_` tables, and the bank's staff in `users` (emails at `goldensocks.com`), with the Golden Socks bank data in `src/backend/scripts/bank_data`: clients, accounts, trades, payments, research and staff, made up but consistent with each other, and the sensitivity of every field. `scripts/generate_bank_data.py` writes the files; change it and run `uv run python -m scripts.generate_bank_data` in `src/backend` to regenerate them. It leaves other users and tables alone, so you can run it again. Apply the migrations first. Every deploy to DigitalOcean seeds production too, right after the migrations, so it starts from the same rows. To seed it by hand, pass its URL: `./dev seed --url "postgresql://..."`.
 
 The database data lives in the `db-data` volume, so it stays between `down` and `up`. Only `./dev destroy` deletes it.
 
@@ -116,7 +119,7 @@ To change the ports or the database credentials, see [Environment variables](#en
 
 Both Dockerfiles use multi-stage builds. A `dev` stage is for Compose, and the last stage, the default one, is for production:
 
-- Backend: a small image with Python, the virtual environment without dev dependencies, and the app code. It runs `fastapi run` under `newrelic-admin run-program`, which starts the New Relic agent, as a non-root user. Run `alembic upgrade head` in the same image to apply the migrations, and `newrelic-admin run-program celery -A app.worker worker --beat` to run the worker.
+- Backend: a small image with Python, the virtual environment without dev dependencies, and the app code. It runs `fastapi run` under `newrelic-admin run-program`, which starts the New Relic agent, as a non-root user. Run `alembic upgrade head` in the same image to apply the migrations, `python -m scripts.seed -y` to load the bank data, and `newrelic-admin run-program celery -A app.worker worker --beat` to run the worker.
 - Frontend: no image. The frontend deploys as static HTML, JS and CSS files. The last stage holds only the built files, so Docker can copy them out to `src/frontend/dist`. Running `pnpm build` locally gives the same files.
 
 ```sh
