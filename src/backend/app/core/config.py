@@ -28,6 +28,14 @@ class Settings(BaseSettings):
     # it receives, so the demo runs offline.
     openai_api_key: str = ""
     openai_model: str = "gpt-4.1-mini"
+    # The semantic injection guard asks this model whether a message is an
+    # attack. It runs only with an OpenAI key, and needs a model that takes
+    # temperature and structured outputs, so not a reasoning model.
+    control_semantic_model: str = "gpt-4.1-mini"
+    control_semantic_timeout: float = 10.0
+    # Block when the semantic check fails, for example when OpenAI is down.
+    # Turn it off to fall back to the heuristic guard alone.
+    control_semantic_fail_closed: bool = True
 
     @field_validator("database_url")
     @classmethod
