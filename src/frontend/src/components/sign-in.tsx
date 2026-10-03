@@ -60,41 +60,26 @@ export function SignedIn({ children }: { children: ReactNode }) {
 function Field({
   name,
   label,
+  invalid = false,
   ...props
-}: { name: string; label: string } & ComponentProps<typeof Input>) {
+}: { name: string; label: string; invalid?: boolean } & ComponentProps<
+  typeof Input
+>) {
   return (
     <div className="flex flex-col gap-2">
-      <Label htmlFor={name}>{label}</Label>
+      {/* An error takes the label's place, so nothing below moves. */}
+      <Label htmlFor={name} className={cn(invalid && "text-destructive")}>
+        {label}
+      </Label>
       <Input
         id={name}
         name={name}
         required
+        aria-invalid={invalid}
         className="bg-background"
         {...props}
       />
     </div>
-  )
-}
-
-// One line kept for an error or a notice, empty or not, so the buttons
-// below don't move when one shows.
-function Message({
-  error,
-  notice,
-}: {
-  error: string | null
-  notice?: string | null
-}) {
-  return (
-    <p
-      aria-live="polite"
-      className={cn(
-        "-my-2 min-h-5 truncate text-sm",
-        error ? "text-destructive" : "text-muted-foreground"
-      )}
-    >
-      {error ?? notice}
-    </p>
   )
 }
 
@@ -210,12 +195,12 @@ function SignIn({ onSignedIn }: { onSignedIn: (user: Employee) => void }) {
           >
             <Field
               name="email"
-              label="Email"
+              label={error ?? "Email"}
+              invalid={Boolean(error)}
               type="email"
               autoComplete="email"
             />
-            <Message error={error} />
-            <Button type="submit" variant="outline" disabled={busy}>
+            <Button type="submit" disabled={busy}>
               Email me a code
             </Button>
           </form>
