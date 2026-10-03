@@ -106,6 +106,12 @@ class Settings(BaseSettings):
     # set the key so every API process makes the same ones.
     control_flow_window_minutes: int = 30
     control_flow_hash_key: str = ""
+    # How long a sign-in lasts.
+    auth_session_days: int = 30
+    # The demo account the seed creates in the demo organization, and that
+    # "Try the demo" signs in as.
+    demo_email: str = "demo@controllayer.net"
+    demo_password: str = "demo"
     # The bearer token of the example bank MCP server at /api/bank/mcp. While
     # it is empty, the server refuses every request.
     bank_mcp_token: str = ""

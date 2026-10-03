@@ -1,4 +1,5 @@
 # Import every model here, so Alembic autogenerate sees it in Base.metadata.
+from app.db.models.auth_token import AuthToken
 from app.db.models.bank import (
     BankAccount,
     BankClient,
@@ -15,6 +16,7 @@ from app.db.models.policy import Policy
 from app.db.models.user import User
 
 __all__ = [
+    "AuthToken",
     "BankAccount",
     "BankClient",
     "BankDataCatalog",

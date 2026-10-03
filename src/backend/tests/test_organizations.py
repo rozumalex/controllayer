@@ -45,11 +45,9 @@ def test_employees_of_another_organization_are_hidden(client: TestClient) -> Non
 
     # when
     employees = client.get("/api/employees").json()["employees"]
-    sign_in = client.get("/api/employees/sign-in").json()
 
     # then
     assert "Eve Acme" not in {e["name"] for e in employees}
-    assert "Eve Acme" not in {e["name"] for e in sign_in}
 
 
 def test_trace_of_another_organization_is_hidden(client: TestClient) -> None:

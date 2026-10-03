@@ -1,24 +1,31 @@
-import { LogOut, Search } from "lucide-react"
-import { useEffect, useState, type ReactNode } from "react"
+import { LogOut } from "lucide-react"
+import {
+  useEffect,
+  useState,
+  type ComponentProps,
+  type FormEvent,
+  type ReactNode,
+} from "react"
 
 import { COMPANY, Logo } from "@/components/brand"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import type { Employee } from "@/lib/policy"
 import { SessionContext, useSession } from "@/lib/session"
 import {
   fetchMe,
-  fetchSignInEmployees,
   initials,
-  storeUserId,
-  type SignInEmployee,
+  signIn,
+  signInToDemo,
+  signOut,
+  signUp,
 } from "@/lib/users"
 
-// A demo sign-in: the user picks who they are from the staff list. Nothing
-// proves it, the pick only names the user to the API.
+// Shows the app to a signed-in user, and the sign-in screen to anyone else.
 export function SignedIn({ children }: { children: ReactNode }) {
-  // undefined while the stored user loads, null when nobody is signed in.
+  // undefined while the stored session loads, null when nobody is signed in.
   const [user, setUser] = useState<Employee | null | undefined>(undefined)
 
   useEffect(() => {
@@ -28,113 +35,147 @@ export function SignedIn({ children }: { children: ReactNode }) {
   }, [])
 
   if (user === undefined) return null
-  if (user === null) {
-    return (
-      <SignIn
-        onPick={async (picked) => {
-          storeUserId(picked.id)
-          // The sign-in list holds only a few details; load the rest.
-          setUser(await fetchMe().catch(() => null))
-        }}
-      />
-    )
-  }
-  const signOut = () => {
-    storeUserId(null)
+  if (user === null) return <SignIn onSignedIn={setUser} />
+  const leave = () => {
+    void signOut()
     setUser(null)
   }
   return (
-    <SessionContext.Provider value={{ user, signOut }}>
+    <SessionContext.Provider value={{ user, signOut: leave }}>
       {children}
     </SessionContext.Provider>
   )
 }
 
-function SignIn({ onPick }: { onPick: (user: SignInEmployee) => void }) {
-  const [query, setQuery] = useState("")
-  const [users, setUsers] = useState<SignInEmployee[]>([])
-  const [error, setError] = useState<string | null>(null)
+function Field({
+  name,
+  label,
+  ...props
+}: { name: string; label: string } & ComponentProps<typeof Input>) {
+  return (
+    <div className="flex flex-col gap-2">
+      <Label htmlFor={name}>{label}</Label>
+      <Input
+        id={name}
+        name={name}
+        required
+        className="bg-background"
+        {...props}
+      />
+    </div>
+  )
+}
 
-  useEffect(() => {
-    let current = true
-    // Waits for a pause in typing, so each key press is not a request.
-    const timer = setTimeout(() => {
-      fetchSignInEmployees(query.trim())
-        .then((found) => {
-          if (!current) return
-          setUsers(found)
-          setError(null)
-        })
-        .catch((e: Error) => {
-          if (current) setError(e.message)
-        })
-    }, 200)
-    return () => {
-      current = false
-      clearTimeout(timer)
+function SignIn({ onSignedIn }: { onSignedIn: (user: Employee) => void }) {
+  const [mode, setMode] = useState<"sign-in" | "sign-up">("sign-in")
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const signingUp = mode === "sign-up"
+
+  async function run(action: () => Promise<Employee>) {
+    setBusy(true)
+    setError(null)
+    try {
+      onSignedIn(await action())
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(false)
     }
-  }, [query])
+  }
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    const field = (name: string) => String(form.get(name) ?? "")
+    void run(() =>
+      signingUp
+        ? signUp({
+            organization: field("organization"),
+            name: field("name"),
+            email: field("email"),
+            password: field("password"),
+          })
+        : signIn(field("email"), field("password"))
+    )
+  }
 
   return (
     <div className="flex min-h-svh items-start justify-center bg-muted/40 px-4 py-16">
-      <div className="flex w-full max-w-xl animate-in flex-col gap-6 duration-200 fade-in slide-in-from-bottom-1">
+      <div className="flex w-full max-w-sm animate-in flex-col gap-6 duration-200 fade-in slide-in-from-bottom-1">
         <div className="flex flex-col gap-3">
           <Logo className="size-12" />
           <h1 className="font-serif text-3xl font-semibold tracking-tight text-primary">
-            Welcome back. Who are you?
+            {signingUp ? "Start an organization" : "Sign in"}
           </h1>
           <p className="text-muted-foreground">
-            Pick yourself from the {COMPANY} staff to continue.
+            {signingUp
+              ? "Put your agents behind the AI control layer. Colleagues join by invitation."
+              : "Sign in to the AI control layer."}
           </p>
         </div>
-        <div className="relative">
-          <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            autoFocus
-            className="bg-background pl-9"
-            placeholder="Search by name or email"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
+
+        <div className="flex flex-col gap-2">
+          <Button size="lg" disabled={busy} onClick={() => run(signInToDemo)}>
+            Try the demo
+          </Button>
+          <p className="text-center text-xs text-muted-foreground">
+            Signs you in as a vice president of {COMPANY}, a demo bank.
+          </p>
         </div>
-        {error && <p className="text-sm text-destructive">{error}</p>}
-        <ul className="flex flex-col divide-y overflow-hidden rounded-lg border bg-background">
-          {users.map((user) => (
-            <li key={user.id}>
-              <button
-                type="button"
-                onClick={() => onPick(user)}
-                className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
-              >
-                <Avatar>
-                  <AvatarFallback>{initials(user.name)}</AvatarFallback>
-                </Avatar>
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate font-medium">{user.name}</span>
-                  <span className="truncate text-sm text-muted-foreground">
-                    {[user.role, user.team].filter(Boolean).join(" · ")}
-                  </span>
-                </span>
-                {user.clearance_level && (
-                  <span className="shrink-0 rounded-full border px-2 py-0.5 text-xs text-muted-foreground">
-                    {user.clearance_level.toLowerCase()}
-                  </span>
-                )}
-              </button>
-            </li>
-          ))}
-          {users.length === 0 && !error && (
-            <li className="px-4 py-6 text-center text-sm text-muted-foreground">
-              No one matches “{query}”.
-            </li>
+
+        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          <span className="h-px flex-1 bg-border" />
+          or with your email
+          <span className="h-px flex-1 bg-border" />
+        </div>
+
+        <form key={mode} onSubmit={submit} className="flex flex-col gap-4">
+          {signingUp && (
+            <>
+              <Field name="organization" label="Organization" autoFocus />
+              <Field name="name" label="Your name" autoComplete="name" />
+            </>
           )}
-        </ul>
+          <Field
+            name="email"
+            label="Email"
+            type="email"
+            autoComplete="email"
+            autoFocus={!signingUp}
+          />
+          <Field
+            name="password"
+            label="Password"
+            type="password"
+            minLength={signingUp ? 8 : undefined}
+            autoComplete={signingUp ? "new-password" : "current-password"}
+          />
+          {error && <p className="text-sm text-destructive">{error}</p>}
+          <Button type="submit" variant="outline" disabled={busy}>
+            {signingUp ? "Create the organization" : "Sign in"}
+          </Button>
+        </form>
+
+        <p className="text-center text-sm text-muted-foreground">
+          {signingUp ? "Have an account?" : "New here?"}{" "}
+          <Button
+            variant="link"
+            className="h-auto p-0"
+            onClick={() => {
+              setError(null)
+              setMode(signingUp ? "sign-in" : "sign-up")
+            }}
+          >
+            {signingUp ? "Sign in" : "Start an organization"}
+          </Button>
+        </p>
       </div>
     </div>
   )
 }
 
-// The signed-in user in the header, with a way to switch to another one.
+// The signed-in user in the header, with a way to sign out.
 export function UserMenu() {
   const session = useSession()
   if (!session) return null
@@ -151,7 +192,7 @@ export function UserMenu() {
         variant="ghost"
         size="icon"
         className="size-8 text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground"
-        title="Switch user"
+        title="Sign out"
         onClick={signOut}
       >
         <LogOut className="size-4" />

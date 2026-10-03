@@ -11,6 +11,7 @@ from sqlalchemy.pool import NullPool
 
 from app.api.deps import PRIVILEGED
 from app.core.config import settings
+from app.db.auth import issue_token
 from app.db.base import Base
 from app.db.models import ControlEvent, Organization, User
 from app.db.models.organization import DEMO_SLUG
@@ -131,8 +132,14 @@ def user() -> User:
     return asyncio.run(tester())
 
 
+async def session_token(user: User) -> str:
+    async with SessionLocal() as session:
+        return await issue_token(session, user.id)
+
+
 def signed_in(user: User) -> dict[str, str]:
-    return {"User-Id": str(user.id)}
+    """The header of a session token for the user, as a sign-in gives one."""
+    return {"Authorization": f"Bearer {asyncio.run(session_token(user))}"}
 
 
 @pytest.fixture

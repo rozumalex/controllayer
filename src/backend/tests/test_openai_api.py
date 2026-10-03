@@ -4,6 +4,7 @@ from app.core.assistant import ASSISTANT_MODEL, SYSTEM_PROMPT, conversation
 from app.core.config import settings
 from app.db.models import User
 from app.main import app
+from tests.conftest import signed_in
 from tests.test_chat import INJECTION, URL, ask, blocked, reply, streamed, tool_turn
 
 MODELS_URL = "/api/v1/models"
@@ -23,9 +24,11 @@ def test_models_lists_the_assistant_and_the_allowed_models(client: TestClient) -
     ]
 
 
-def test_openai_client_signs_in_with_the_user_id_as_its_api_key(user: User) -> None:
+def test_openai_client_signs_in_with_a_session_token_as_its_api_key(
+    user: User,
+) -> None:
     # given
-    headers = {"Authorization": f"Bearer {user.id}"}
+    headers = signed_in(user)
 
     # when
     with TestClient(app, headers=headers) as client:
@@ -36,7 +39,7 @@ def test_openai_client_signs_in_with_the_user_id_as_its_api_key(user: User) -> N
     assert "What is 2 + 2?" in reply(response.json())
 
 
-def test_api_key_that_is_not_a_user_is_401() -> None:
+def test_api_key_that_is_no_session_is_401() -> None:
     # given
     headers = {"Authorization": "Bearer sk-proj-not-a-user"}
 

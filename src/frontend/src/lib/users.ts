@@ -1,9 +1,10 @@
 import type { Employee } from "@/lib/policy"
 
-// The picked user stays in the browser, so a reload keeps them signed in.
-const KEY = "user-id"
+// The session token stays in the browser, so a reload keeps the user signed
+// in.
+const KEY = "session-token"
 
-export function storedUserId(): string | null {
+export function storedToken(): string | null {
   try {
     return localStorage.getItem(KEY)
   } catch {
@@ -11,24 +12,24 @@ export function storedUserId(): string | null {
   }
 }
 
-export function storeUserId(id: string | null) {
+export function storeToken(token: string | null) {
   try {
-    if (id) localStorage.setItem(KEY, id)
+    if (token) localStorage.setItem(KEY, token)
     else localStorage.removeItem(KEY)
   } catch {
-    // Without storage the user picks again after a reload.
+    // Without storage the user signs in again after a reload.
   }
 }
 
-// The header that names the signed-in user on every API call.
+// The header that signs in every API call.
 export const userHeaders = (): Record<string, string> => {
-  const id = storedUserId()
-  return id ? { "User-Id": id } : {}
+  const token = storedToken()
+  return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
-// The stored user, or null if there is none or the server no longer knows them.
+// The signed-in user, or null if there is no token or it has expired.
 export async function fetchMe(): Promise<Employee | null> {
-  if (!storedUserId()) return null
+  if (!storedToken()) return null
   const response = await fetch("/api/employees/me", { headers: userHeaders() })
   if (response.status === 401) return null
   if (!response.ok)
@@ -36,21 +37,48 @@ export async function fetchMe(): Promise<Employee | null> {
   return response.json()
 }
 
-// What the sign-in screen shows of an employee, see sign_in_employees.
-export type SignInEmployee = Pick<
-  Employee,
-  "id" | "name" | "role" | "team" | "clearance_level"
->
+// What a sign-in returns, see SignedIn in the backend.
+type SignedIn = { token: string; user: Employee }
 
-export async function fetchSignInEmployees(
-  q: string
-): Promise<SignInEmployee[]> {
-  const query = new URLSearchParams({ limit: "12" })
-  if (q) query.set("q", q)
-  const response = await fetch(`/api/employees/sign-in?${query}`)
-  if (!response.ok)
-    throw new Error(`Loading the staff failed with ${response.status}.`)
-  return response.json()
+async function authenticate(
+  path: string,
+  body?: Record<string, string>
+): Promise<Employee> {
+  const response = await fetch(`/api/auth/${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: body && JSON.stringify(body),
+  })
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}))
+    const detail = Array.isArray(error.detail)
+      ? error.detail[0]?.msg
+      : error.detail
+    throw new Error(detail ?? `The request failed with ${response.status}.`)
+  }
+  const signed: SignedIn = await response.json()
+  storeToken(signed.token)
+  return signed.user
+}
+
+export const signIn = (email: string, password: string) =>
+  authenticate("sign-in", { email, password })
+
+export const signUp = (fields: {
+  organization: string
+  name: string
+  email: string
+  password: string
+}) => authenticate("sign-up", fields)
+
+export const signInToDemo = () => authenticate("demo")
+
+export async function signOut() {
+  await fetch("/api/auth/sign-out", {
+    method: "POST",
+    headers: userHeaders(),
+  }).catch(() => undefined)
+  storeToken(null)
 }
 
 export const initials = (name: string) =>

@@ -130,16 +130,6 @@ class Employee(BaseModel):
     employment_status: str | None
 
 
-class SignInEmployee(BaseModel):
-    """What the sign-in screen shows of an employee, for anyone to see."""
-
-    id: uuid.UUID
-    name: str
-    role: str
-    team: str | None
-    clearance_level: str | None
-
-
 class EmployeeList(BaseModel):
     total: int
     employees: list[Employee]

@@ -5,9 +5,9 @@ them, all in one transaction. The bank is the demo organization: the staff
 in users are updated in place and belong to it, so the rows that refer to
 them, such as the control events, are kept. Rows that predate organizations
 join it too. It also saves the policies in scripts/policies.yaml for the
-demo's roles that have none, so a policy someone changed is kept. Other
-users and tables are left alone, so it is safe to run again. Apply the
-migrations first.
+demo's roles that have none, so a policy someone changed is kept, and the
+demo account that "Try the demo" signs in as. Other users and tables are
+left alone, so it is safe to run again. Apply the migrations first.
 
 Run from src/backend: `uv run python -m scripts.seed`, or `./dev seed` from
 the repo root. Pass `--url <postgres url>` to seed another database, such as
@@ -32,10 +32,12 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
 
+from app.api.deps import PRIVILEGED
 from app.core.config import Settings, settings
+from app.core.passwords import hash_password
 from app.db import models  # noqa: F401  registers the models in Base.metadata
 from app.db.base import Base
-from app.db.models import Organization, Policy
+from app.db.models import Organization, Policy, User
 from app.db.models.organization import DEMO_SLUG
 from scripts.policies import POLICIES
 
@@ -45,7 +47,10 @@ LOCAL_HOSTS = {"db", "localhost", "127.0.0.1"}
 # The bank's staff are the users with an email at this domain.
 STAFF_DOMAIN = "goldensocks.com"
 # Columns the seed sets itself, which the data files don't have.
-OWN_COLUMNS = {"org_id"}
+OWN_COLUMNS = {"org_id", "password_hash"}
+# The demo account's job title, so its policy is the Vice President's: most
+# tools, but no payments, and data above CONFIDENTIAL masked.
+DEMO_ROLE = "Vice President"
 # The tables whose rows belong to an organization, and may predate them.
 ORG_TABLES = ["users", "mcp_servers", "control_events"]
 
@@ -169,6 +174,21 @@ async def seed(url: str) -> None:
                 .on_conflict_do_nothing(index_elements=[Policy.org_id, Policy.role])
             )
             print(f"policies: {added.rowcount} new of {len(POLICIES)}")
+            account = {
+                "email": settings.demo_email,
+                "name": "Demo User",
+                "title": DEMO_ROLE,
+                "clearance_level": PRIVILEGED,
+                "employment_status": "ACTIVE",
+                "org_id": demo,
+                "password_hash": await hash_password(settings.demo_password),
+            }
+            await connection.execute(
+                insert(User)
+                .values(account)
+                .on_conflict_do_update(index_elements=[User.email], set_=account)
+            )
+            print(f"demo account: {settings.demo_email}, a {DEMO_ROLE}")
     finally:
         await engine.dispose()
 

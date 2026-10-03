@@ -38,6 +38,7 @@ from app.core.assistant import ASSISTANT_MODEL, SYSTEM_PROMPT
 from app.core.config import settings
 from app.core.schema.chat import ChatCompletionRequest
 from app.core.schema.policy import PolicySettings
+from app.db.auth import token_user
 from app.db.event_sink import DatabaseEventSink
 from app.db.models import McpServer, User
 from app.db.policy import (
@@ -51,39 +52,31 @@ from app.db.policy import (
 from app.db.session import SessionLocal
 
 
-def bearer_user_id(authorization: str | None) -> uuid.UUID | None:
+def bearer_token(authorization: str | None) -> str | None:
     scheme, _, token = (authorization or "").partition(" ")
-    if scheme.lower() != "bearer":
+    if scheme.lower() != "bearer" or not token.strip():
         return None
-    try:
-        return uuid.UUID(token.strip())
-    except ValueError:
-        return None
+    return token.strip()
 
 
-async def current_user(
-    user_id: Annotated[
-        uuid.UUID | None,
-        Header(description="The ID of the user picked on the sign-in screen."),
-    ] = None,
-    authorization: Annotated[
-        str | None,
-        Header(
-            description=(
-                "`Bearer <user ID>`, as OpenAI clients send their API key. Used "
-                "when there is no User-Id header."
-            )
-        ),
-    ] = None,
-) -> User:
-    """The user the caller picked on the sign-in screen, from the User-Id
-    header, or from the API key of an OpenAI client. It is a demo sign-in:
-    the caller names the user, and nothing proves the caller is them."""
-    user_id = user_id or bearer_user_id(authorization)
+Authorization = Annotated[
+    str | None,
+    Header(
+        description=(
+            "`Bearer <token>`, with the token from `/api/auth/sign-in`. OpenAI "
+            "clients send it as their API key."
+        )
+    ),
+]
+
+
+async def current_user(authorization: Authorization = None) -> User:
+    """The user the session token signs in, or 401."""
+    token = bearer_token(authorization)
     async with SessionLocal() as session:
-        user = await session.get(User, user_id) if user_id else None
+        user = await token_user(session, token) if token else None
     if user is None:
-        raise HTTPException(401, "Pick a user to sign in")
+        raise HTTPException(401, "Sign in first")
     return user
 
 
