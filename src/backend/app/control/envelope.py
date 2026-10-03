@@ -8,6 +8,7 @@ class Direction(StrEnum):
     INBOUND = "inbound"  # agent -> tool: the tool call and its arguments
     OUTBOUND = "outbound"  # tool -> agent: the tool result
     RESPONSE = "response"  # model -> user: the model's answer
+    DEFINITION = "definition"  # tool -> model: a tool's description and schema
 
 
 class Action(StrEnum):

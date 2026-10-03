@@ -59,3 +59,7 @@ class McpTool(BaseModel):
     destructive: bool | None = Field(
         description="The tool's changes are hard to undo, such as moving money."
     )
+    changed: bool = Field(
+        description="The definition differs from the approved one, so agents "
+        "don't get the tool until it is approved again."
+    )

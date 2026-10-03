@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint, func, true
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -31,6 +32,12 @@ class McpServer(Base):
     # A secret: the API never returns it.
     auth_header: Mapped[str | None] = mapped_column(String(4096))
     enabled: Mapped[bool] = mapped_column(default=True, server_default=true())
+    # The SHA-256 of each tool's definition, by tool name, as an admin last
+    # approved it, or as the gateway first saw it. A tool whose definition
+    # differs is hidden until an admin approves it again (a rug pull).
+    tool_pins: Mapped[dict[str, str]] = mapped_column(
+        JSONB, default=dict, server_default="{}"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

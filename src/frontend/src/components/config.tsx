@@ -28,6 +28,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import {
+  approveTools,
   createServer,
   deleteServer,
   listServers,
@@ -56,6 +57,8 @@ function Tools({
 }) {
   const [tools, setTools] = useState<McpTool[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // Bumped after an approval, to list the tools again.
+  const [version, setVersion] = useState(0)
 
   useEffect(() => {
     let current = true
@@ -65,7 +68,16 @@ function Tools({
     return () => {
       current = false
     }
-  }, [load])
+  }, [load, version])
+
+  async function approve() {
+    try {
+      await approveTools(server.id)
+      setVersion((version) => version + 1)
+    } catch (error) {
+      setError((error as Error).message)
+    }
+  }
 
   if (error) return <p className="text-sm text-destructive">{error}</p>
   if (!tools) return <p className="text-sm text-muted-foreground">Loading…</p>
@@ -74,6 +86,17 @@ function Tools({
   }
   return (
     <ul className="divide-y rounded-lg border">
+      {tools.some((tool) => tool.changed) && (
+        <li className="flex items-center gap-3 bg-destructive/5 px-3 py-2">
+          <p className="flex-1 text-sm">
+            A tool changed since it was approved, so agents don't get it. Read
+            it before you approve it again.
+          </p>
+          <Button size="sm" onClick={() => void approve()}>
+            Approve
+          </Button>
+        </li>
+      )}
       {tools.map((tool) => (
         <li key={tool.name} className="flex flex-col gap-1 px-3 py-2">
           <div className="flex flex-wrap items-center gap-2">
@@ -83,6 +106,7 @@ function Tools({
               {tool.name}
             </code>
             <ToolHint tool={tool} />
+            {tool.changed && <Badge variant="destructive">Changed</Badge>}
           </div>
           {tool.description && (
             <p className="text-xs text-muted-foreground">{tool.description}</p>

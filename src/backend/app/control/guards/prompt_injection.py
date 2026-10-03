@@ -74,6 +74,23 @@ PATTERNS: list[tuple[str, float, re.Pattern[str]]] = [
         ),
     ),
     (
+        # Asks the model to keep something from the user, as a poisoned tool
+        # description does. "the user's" is left out: it names their data.
+        "concealment",
+        0.8,
+        re.compile(
+            r"\b(do not|don['’]?t|never)\s+(tell|mention|inform|reveal|disclose)\b"
+            r".{0,40}\bthe user\b(?!['’]s)",
+            re.I | re.S,
+        ),
+    ),
+    (
+        # A tag that marks text as orders for the model, such as <IMPORTANT>.
+        "instruction_tag",
+        0.8,
+        re.compile(r"<\s*/?\s*(important|instructions?|secret)\s*>", re.I),
+    ),
+    (
         "exfiltration",
         0.7,
         re.compile(

@@ -5,9 +5,10 @@ them, all in one transaction. The bank is the demo organization: the staff
 in users are updated in place and belong to it, so the rows that refer to
 them, such as the control events, are kept. Rows that predate organizations
 join it too. It also saves the policies in scripts/policies.yaml for the
-demo's roles that have none, so a policy someone changed is kept, and the
-demo account that "Try the demo" signs in as. Other users and tables are
-left alone, so it is safe to run again. Apply the migrations first.
+demo's roles that have none, so a policy someone changed is kept, the demo
+account that "Try the demo" signs in as, and the demo FX rates MCP server.
+Other users and tables are left alone, so it is safe to run again. Apply the
+migrations first.
 
 Run from src/backend: `uv run python -m scripts.seed`, or `./dev seed` from
 the repo root. Pass `--url <postgres url>` to seed another database, such as
@@ -36,7 +37,7 @@ from app.api.deps import PRIVILEGED
 from app.core.config import Settings, settings
 from app.db import models  # noqa: F401  registers the models in Base.metadata
 from app.db.base import Base
-from app.db.models import IdentityProvider, Organization, Policy, User
+from app.db.models import IdentityProvider, McpServer, Organization, Policy, User
 from app.db.models.organization import DEMO_SLUG
 from scripts.policies import POLICIES
 
@@ -66,6 +67,9 @@ DEMO_IDP = {
     "default_role": None,
     "enabled": True,
 }
+# The demo FX rates server in the API, which shows tool poisoning. The gateway
+# pins its tools the first time it lists them.
+FX_SERVER = {"name": "fx-rates", "url": "http://localhost:8000/api/fx/mcp"}
 # The tables whose rows belong to an organization, and may predate them.
 ORG_TABLES = ["users", "mcp_servers", "control_events"]
 
@@ -211,6 +215,14 @@ async def seed(url: str) -> None:
                 )
             )
             print(f"demo single sign-on: {DEMO_IDP['name']}")
+            await connection.execute(
+                insert(McpServer)
+                .values(org_id=demo, **FX_SERVER)
+                .on_conflict_do_nothing(
+                    index_elements=[McpServer.org_id, McpServer.name]
+                )
+            )
+            print(f"demo MCP server: {FX_SERVER['name']}")
     finally:
         await engine.dispose()
 

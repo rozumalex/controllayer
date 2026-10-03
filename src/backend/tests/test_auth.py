@@ -12,6 +12,8 @@ from tests.conftest import demo_org_id, signed_in
 ADMIN_URLS = [
     ("GET", "/api/traces"),
     ("GET", "/api/mcp-servers"),
+    ("POST", f"/api/mcp-servers/{uuid.uuid4()}/approve"),
+    ("PUT", "/api/demo/fx-rates"),
     ("GET", "/api/policy"),
     ("PUT", "/api/policy/default"),
     ("GET", "/api/employees"),

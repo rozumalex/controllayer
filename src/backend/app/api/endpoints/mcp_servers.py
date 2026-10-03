@@ -1,6 +1,7 @@
 import uuid
 from typing import Annotated
 
+import mcp_types as types
 from fastapi import APIRouter, Depends, HTTPException, Response
 from mcp_types import ToolAnnotations
 from sqlalchemy import select
@@ -8,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, OrgId, mcp_connect
-from app.control.adapters.mcp_gateway import Connect, list_upstream_tools
+from app.control.adapters.mcp_gateway import Connect, list_upstream_tools, tool_pin
 from app.core.schema.mcp_servers import (
     McpServerCreate,
     McpServerRead,
@@ -26,12 +27,20 @@ Session = Annotated[AsyncSession, Depends(get_session)]
 ConnectDep = Annotated[Connect, Depends(mcp_connect)]
 
 
-async def tools_of(server: McpServer, connect: Connect) -> list[McpTool]:
+async def upstream_tools(server: McpServer, connect: Connect) -> list[types.Tool]:
     try:
-        tools = await list_upstream_tools(server, connect)
+        return await list_upstream_tools(server, connect)
     except Exception as exc:
         detail = f"Can't list the tools of {server.url}: {exc!r}"
         raise HTTPException(422, detail) from exc
+
+
+def pins(tools: list[types.Tool]) -> dict[str, str]:
+    return {tool.name: tool_pin(tool) for tool in tools}
+
+
+async def tools_of(server: McpServer, connect: Connect) -> list[McpTool]:
+    tools = await upstream_tools(server, connect)
     return [
         McpTool(
             name=t.name,
@@ -39,6 +48,7 @@ async def tools_of(server: McpServer, connect: Connect) -> list[McpTool]:
             input_schema=t.input_schema,
             read_only=(t.annotations or ToolAnnotations()).read_only_hint,
             destructive=(t.annotations or ToolAnnotations()).destructive_hint,
+            changed=server.tool_pins.get(t.name, tool_pin(t)) != tool_pin(t),
         )
         for t in tools
     ]
@@ -71,7 +81,8 @@ async def list_servers(session: Session, org_id: OrgId) -> list[McpServerRead]:
         "The control layer connects to the server and lists its tools first, "
         "so a server it can't reach is refused with 422. Its tools are then "
         "given to the organization's agents through the gateway as "
-        "`<name>__<tool>`."
+        "`<name>__<tool>`. Each tool's definition is pinned: if the server "
+        "changes it later, agents lose the tool until it is approved again."
     ),
 )
 async def create_server(
@@ -89,7 +100,7 @@ async def create_server(
         created_by_id=user.id,
         updated_by_id=user.id,
     )
-    await tools_of(server, connect)
+    server.tool_pins = pins(await upstream_tools(server, connect))
     session.add(server)
     try:
         await session.commit()
@@ -113,6 +124,24 @@ async def delete_server(server: Server, session: Session) -> Response:
     await session.delete(server)
     await session.commit()
     return Response(status_code=204)
+
+
+@router.post(
+    "/{id}/approve",
+    summary="Approve the tools of an MCP server as they are now",
+    description=(
+        "Pins every tool's current definition, so a tool that changed since "
+        "it was approved reaches agents again. Its definition still passes "
+        "the injection guards."
+    ),
+)
+async def approve_tools(
+    server: Server, session: Session, connect: ConnectDep, user: CurrentUser
+) -> McpServerRead:
+    server.tool_pins = pins(await upstream_tools(server, connect))
+    server.updated_by_id = user.id
+    await session.commit()
+    return McpServerRead.of(server)
 
 
 @router.get("/{id}/tools", summary="List the tools of an MCP server")

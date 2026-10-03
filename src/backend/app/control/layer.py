@@ -1,10 +1,11 @@
 from collections.abc import Sequence
 
-from app.control.audit import AuditSink, EventAuditSink
+from app.control.audit import AuditSink, EventAuditSink, FindingAuditSink
 from app.control.envelope import Direction, Envelope
 from app.control.guard import Guard
 from app.control.guards.prompt_injection import PromptInjectionGuard
 from app.control.guards.spotlight import SpotlightGuard
+from app.control.guards.tool_poisoning import ToolPoisoningGuard
 from app.control.pipeline import Decision, Mode, Pipeline
 
 
@@ -53,5 +54,13 @@ def build_layer(
                 "outbound", [*outbound, *injection, SpotlightGuard()], audit, mode
             ),
             Direction.RESPONSE: Pipeline("response", response, audit, mode),
+            # A tool's definition reaches the model as instructions do, so it
+            # passes the injection guards too, before the model sees it.
+            Direction.DEFINITION: Pipeline(
+                "definition",
+                [ToolPoisoningGuard(injection)],
+                FindingAuditSink(audit),
+                mode,
+            ),
         }
     )

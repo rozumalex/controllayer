@@ -1,7 +1,7 @@
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import mcp_types as types
@@ -37,6 +37,7 @@ class Upstream:
     name: str
     url: str = "memory://"
     auth_header: str | None = None
+    tool_pins: dict[str, str] = field(default_factory=dict)
 
 
 @asynccontextmanager

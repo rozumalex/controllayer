@@ -63,10 +63,10 @@ class Agent:
         # see. Everyone is anonymous until the app has users.
         self.agent_id = agent_id
 
-    async def tools(self) -> list[dict[str, Any]]:
+    async def tools(self, trace_id: str) -> list[dict[str, Any]]:
         tools = [
             openai_tool(tool)
-            for tool in await self.gateway.list_tools()
+            for tool in await self.gateway.list_tools(self.agent_id, trace_id)
             if self.allows(tool.name)
         ]
         if len(tools) > MAX_TOOLS:
@@ -105,7 +105,7 @@ class Agent:
     async def complete(
         self, messages: list[dict[str, Any]], trace_id: str
     ) -> dict[str, Any]:
-        tools = await self.tools()
+        tools = await self.tools(trace_id)
         for step in range(MAX_STEPS):
             response = await self.control.complete(
                 self.request(messages, tools, step), trace_id
@@ -124,7 +124,7 @@ class Agent:
         """Like complete, but yields the answer's chunks as the model writes
         them. The chunks that ask for tools are kept back: the agent runs
         the tools instead."""
-        tools = await self.tools()
+        tools = await self.tools(trace_id)
         for step in range(MAX_STEPS):
             content: list[str] = []
             calls: list[dict[str, Any]] = []

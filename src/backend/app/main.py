@@ -14,6 +14,7 @@ from app.core.config import settings
 from app.core.sentry import init_sentry
 from app.db.session import engine
 from app.servers.bank import bank_mcp_app
+from app.servers.fx import fx_mcp_app
 
 PYPROJECT = Path(__file__).resolve().parents[1] / "pyproject.toml"
 PROJECT = tomllib.loads(PYPROJECT.read_text())["project"]
@@ -23,7 +24,7 @@ init_sentry()
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    async with bank_mcp_app.run():
+    async with bank_mcp_app.run(), fx_mcp_app.run():
         yield
     await OPENAI_HTTP.aclose()
     await engine.dispose()
@@ -50,3 +51,5 @@ async def scim_error(request: Request, exc: ScimError) -> JSONResponse:
 # The example bank tools, for the gateway to connect to like any MCP server.
 # A Route, not a Mount, so the path has no trailing slash to redirect to.
 app.router.routes.append(Route(f"{settings.api_prefix}/bank/mcp", bank_mcp_app))
+# The demo FX rates tool, which an admin can poison to show the guards.
+app.router.routes.append(Route(f"{settings.api_prefix}/fx/mcp", fx_mcp_app))
