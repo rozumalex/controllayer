@@ -21,8 +21,10 @@ from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 from mcp.shared._httpx_utils import create_mcp_http_client
 
+from app.control.audit import EventSink, LogEventSink
 from app.control.envelope import Action, Direction, Envelope
 from app.control.layer import ControlLayer
+from app.control.pipeline import Decision
 
 logger = logging.getLogger("app.control.mcp")
 
@@ -80,12 +82,16 @@ class McpGateway:
         layer: ControlLayer,
         connect: Connect,
         servers: Callable[[], Awaitable[Sequence[UpstreamServer]]],
+        log_payloads: bool = False,
+        sink: EventSink | None = None,
     ) -> None:
         self.layer = layer
         self.connect = connect
         # The enabled servers, read on every request, so a server added in
         # the Control tab shows up without a restart.
         self.servers = servers
+        self.log_payloads = log_payloads
+        self.sink = sink or LogEventSink(logger)
 
     async def list_tools(self) -> list[types.Tool]:
         tools = []
@@ -110,12 +116,20 @@ class McpGateway:
             return error(UNKNOWN_TOOL.format(tool=name))
 
         trace_id = uuid4().hex
+        await self.log(
+            trace_id,
+            "request",
+            agent_id=agent_id,
+            server=server.name,
+            tool=tool,
+            arguments=arguments,
+        )
         inbound = Envelope(
             Direction.INBOUND, agent_id, server.name, tool, arguments, trace_id
         )
-        decision = await self.layer.inspect(inbound)
+        decision = await self.inspect(inbound)
         if decision.action is Action.BLOCK:
-            return error(BLOCKED_CALL.format(tool=name))
+            return await self.respond(trace_id, error(BLOCKED_CALL.format(tool=name)))
 
         async with self.connect(server) as client:
             result = await client.call_tool(tool, decision.envelope.payload)
@@ -129,9 +143,9 @@ class McpGateway:
         outbound = Envelope(
             Direction.OUTBOUND, agent_id, server.name, tool, payload, trace_id
         )
-        decision = await self.layer.inspect(outbound)
+        decision = await self.inspect(outbound)
         if decision.action is Action.BLOCK:
-            return error(WITHHELD)
+            return await self.respond(trace_id, error(WITHHELD))
 
         checked = iter(decision.envelope.payload["content"])
         content = [
@@ -140,8 +154,42 @@ class McpGateway:
             else block
             for block in result.content
         ]
-        return types.CallToolResult(
-            content=content,
-            structured_content=decision.envelope.payload.get("structured_content"),
-            is_error=result.is_error,
+        return await self.respond(
+            trace_id,
+            types.CallToolResult(
+                content=content,
+                structured_content=decision.envelope.payload.get("structured_content"),
+                is_error=result.is_error,
+            ),
         )
+
+    async def inspect(self, envelope: Envelope) -> Decision:
+        decision = await self.layer.inspect(envelope)
+        # What the layer did, next to the verdicts of its guards, as the chat
+        # adapter logs it, so the dashboard reads both the same way.
+        await self.log(
+            envelope.trace_id,
+            "decision",
+            direction=envelope.direction,
+            server=envelope.server,
+            tool=envelope.tool,
+            action=decision.action,
+        )
+        return decision
+
+    async def respond(
+        self, trace_id: str, result: types.CallToolResult
+    ) -> types.CallToolResult:
+        await self.log(
+            trace_id,
+            "response",
+            is_error=bool(result.is_error),
+            body=result.model_dump(mode="json", exclude_none=True),
+        )
+        return result
+
+    async def log(self, trace_id: str, stage: str, **data: Any) -> None:
+        # Arguments and results may hold secrets, like prompts in the chat.
+        if not self.log_payloads:
+            data = {k: v for k, v in data.items() if k not in ("arguments", "body")}
+        await self.sink.write({"event": stage, "trace_id": trace_id, **data})
