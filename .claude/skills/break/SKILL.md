@@ -1,6 +1,6 @@
 ---
 name: break
-description: Stop and check in with the user before the work gets out of hand. Use it when the diff against master is too big (the PostToolUse hook tells you so), when the work drifts away from what the user asked for, or when the scope grows, for example you start fixing things you found along the way, touch areas the request never mentioned, or the task turns into several tasks. Also use it when the user types /break.
+description: Stop and check in with the user before the work gets out of hand. Use it when the diff against main is too big (the PostToolUse hook tells you so), when the work drifts away from what the user asked for, or when the scope grows, for example you start fixing things you found along the way, touch areas the request never mentioned, or the task turns into several tasks. Also use it when the user types /break.
 ---
 
 # Break
@@ -15,7 +15,7 @@ Make no more changes to files until the user answers. Finish the sentence you ar
 
 ```sh
 .claude/skills/break/diff-size.sh
-git diff --stat "$(git merge-base HEAD origin/master)"
+git diff --stat "$(git merge-base HEAD origin/main)"
 git status --short
 ```
 
@@ -55,5 +55,5 @@ Ask which plan to follow, and do nothing until they answer. Don't revert, stash 
 Then follow their choice:
 
 - **Split:** stash the off-track files with `git stash push -- <paths>`, commit the rest, then create the follow-up branch from this one and run `git stash pop` there.
-- **Trim:** revert each off-track file with `git restore --source "$(git merge-base HEAD origin/master)" -- <path>`, and delete the new files. List the files first and get a yes, because this throws work away.
+- **Trim:** revert each off-track file with `git restore --source "$(git merge-base HEAD origin/main)" -- <path>`, and delete the new files. List the files first and get a yes, because this throws work away.
 - **Go on:** run `.claude/skills/break/diff-size.sh --ack`, so the hook stays quiet until the change grows by another full limit.

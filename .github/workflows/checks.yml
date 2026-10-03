@@ -1,4 +1,4 @@
-# Shared checks. The PR and master workflows call this workflow.
+# Shared checks. The PR and main workflows call this workflow.
 name: Checks
 
 on:

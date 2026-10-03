@@ -63,12 +63,12 @@ If no document describes the task the team picked, still run the clock and the s
 
 ```sh
 git fetch --quiet origin
-git log --oneline origin/master
-git diff --stat "$(git merge-base HEAD origin/master)"
+git log --oneline origin/main
+git diff --stat "$(git merge-base HEAD origin/main)"
 git status --short
 ```
 
-Also read the README and anything the submission will show the jury, such as a demo link, screenshots or a pitch. Judge the whole project: what is on `master`, plus this branch. When a criterion depends on the running app, such as design or usability, look at the code for it. Don't start the app unless the user asks.
+Also read the README and anything the submission will show the jury, such as a demo link, screenshots or a pitch. Judge the whole project: what is on `main`, plus this branch. When a criterion depends on the running app, such as design or usability, look at the code for it. Don't start the app unless the user asks.
 
 ## 3. Apply the frameworks
 

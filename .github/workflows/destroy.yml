@@ -1,6 +1,6 @@
 # Deletes the DigitalOcean app and its database clusters, with all the data,
 # so they stop costing money. Run it by hand from the Actions tab. The next
-# deploy on master creates them again, with an empty database.
+# deploy on main creates them again, with an empty database.
 name: Destroy
 
 on:
