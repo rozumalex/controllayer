@@ -10,5 +10,5 @@
       }
     ]
   },
-  "ignorePatterns": ["src/components/ui"]
+  "ignorePatterns": ["src/components/ui", "src/components/assistant-ui"]
 }
