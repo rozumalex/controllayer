@@ -68,6 +68,17 @@ services:
       OLLAMA_URL: ${OLLAMA_URL:-}
       # Sign in with Google; empty turns it off.
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      # Sign-in codes go out through Resend when RESEND_API_KEY is set, and to
+      # Mailpit otherwise, whose inbox is at http://localhost:8025.
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      # The frontend's address, for the sign-in link in the email.
+      APP_URL: ${APP_URL:-http://localhost:${APP_PORT:-3000}}
+      SMTP_FROM: ${SMTP_FROM:-Portcullis <hello@controllayer.net>}
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_TLS: ${SMTP_TLS:-none}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       # Save the messages with the events, so the dashboard shows what was
       # asked. Off in production, where prompts may hold secrets.
       CONTROL_LOG_PAYLOADS: ${CONTROL_LOG_PAYLOADS:-true}
@@ -152,6 +163,13 @@ services:
       NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:-}
     depends_on:
       - app
+
+  # Catches the email the api sends, such as sign-in codes, and shows it at
+  # http://localhost:8025, so nothing leaves the machine.
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "${MAIL_UI_PORT:-8025}:8025"
 
   # Local models, started only by `./dev ollama`. Docker on a Mac has no GPU,
   # so there it is slow; run Ollama on the host instead.

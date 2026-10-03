@@ -72,6 +72,14 @@ services:
       # Sign in with Google; unset, it is off. Not a secret.
       - key: GOOGLE_CLIENT_ID
         value: "${GOOGLE_CLIENT_ID}"
+      # Sign-in codes go out through Resend, from hello@controllayer.net,
+      # whose domain Resend has verified. Without the key, email sign-in is off.
+      - key: RESEND_API_KEY
+        value: "${RESEND_API_KEY}"
+        type: SECRET
+      # The sign-in link in the email opens the app here.
+      - key: APP_URL
+        value: https://controllayer.net
 
 workers:
   # Worker and beat in one process. Keep one instance, or beat sends every

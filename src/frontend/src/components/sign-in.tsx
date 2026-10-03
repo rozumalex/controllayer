@@ -1,7 +1,7 @@
+import { REGEXP_ONLY_DIGITS } from "input-otp"
 import { LogOut } from "lucide-react"
 import {
   useEffect,
-  useRef,
   useState,
   type ComponentProps,
   type FormEvent,
@@ -13,33 +13,73 @@ import { GoogleButton } from "@/components/google-button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import {
+  InputOTP,
+  InputOTPGroup,
+  InputOTPSlot,
+} from "@/components/ui/input-otp"
 import { Label } from "@/components/ui/label"
 import type { Employee } from "@/lib/policy"
-import { SessionContext, useSession } from "@/lib/session"
+import { SessionContext, isPrivileged, useSession } from "@/lib/session"
 import {
   fetchMe,
   googleEnabled,
   initials,
-  signIn,
+  sendCode,
   signInToDemo,
+  signInWithCode,
   signInWithGoogle,
   signOut,
-  signUp,
 } from "@/lib/users"
+import { cn } from "@/lib/utils"
 
 // Shows the app to a signed-in user, and the sign-in screen to anyone else.
 export function SignedIn({ children }: { children: ReactNode }) {
   // undefined while the stored session loads, null when nobody is signed in.
   const [user, setUser] = useState<Employee | null | undefined>(undefined)
+  const [linkFailed, setLinkFailed] = useState(false)
+
+  // A fresh sign-in lands on the admin pages, for those who may open them.
+  // A reload stays where it was.
+  const signedIn = (user: Employee) => {
+    if (isPrivileged(user) && !window.location.pathname.startsWith("/admin"))
+      window.history.replaceState(null, "", "/admin")
+    setUser(user)
+  }
 
   useEffect(() => {
+    // The link in the sign-in email carries the email and its code.
+    const params = new URLSearchParams(window.location.search)
+    const email = params.get("email")
+    const code = params.get("code")
+    if (email && code) {
+      // Out of the address bar and the history, as the code is a secret.
+      window.history.replaceState(null, "", window.location.pathname)
+      signInWithCode(email, code)
+        .then(signedIn)
+        .catch(() => {
+          setLinkFailed(true)
+          setUser(null)
+        })
+      return
+    }
     fetchMe()
       .then(setUser)
       .catch(() => setUser(null))
   }, [])
 
   if (user === undefined) return null
-  if (user === null) return <SignIn onSignedIn={setUser} />
+  if (user === null)
+    return (
+      <SignIn
+        onSignedIn={signedIn}
+        initialError={
+          linkFailed
+            ? "That link has expired or was used. Ask for a new code."
+            : null
+        }
+      />
+    )
   const leave = () => {
     void signOut()
     setUser(null)
@@ -54,15 +94,22 @@ export function SignedIn({ children }: { children: ReactNode }) {
 function Field({
   name,
   label,
+  invalid = false,
   ...props
-}: { name: string; label: string } & ComponentProps<typeof Input>) {
+}: { name: string; label: string; invalid?: boolean } & ComponentProps<
+  typeof Input
+>) {
   return (
     <div className="flex flex-col gap-2">
-      <Label htmlFor={name}>{label}</Label>
+      {/* An error takes the label's place, so nothing below moves. */}
+      <Label htmlFor={name} className={cn(invalid && "text-destructive")}>
+        {label}
+      </Label>
       <Input
         id={name}
         name={name}
         required
+        aria-invalid={invalid}
         className="bg-background"
         {...props}
       />
@@ -80,18 +127,29 @@ function Divider({ children }: { children: ReactNode }) {
   )
 }
 
-function SignIn({ onSignedIn }: { onSignedIn: (user: Employee) => void }) {
-  const [mode, setMode] = useState<"sign-in" | "sign-up">("sign-in")
-  const [error, setError] = useState<string | null>(null)
+// One screen for everyone: the demo, Google, or a code sent by email. A new
+// user's first sign-in creates their account and organization.
+function SignIn({
+  onSignedIn,
+  initialError,
+}: {
+  onSignedIn: (user: Employee) => void
+  initialError: string | null
+}) {
+  // The email a code went to, or null before one is sent.
+  const [codeSentTo, setCodeSentTo] = useState<string | null>(null)
+  const [code, setCode] = useState("")
+  // Not an error: news about the code, such as one sent moments ago.
+  const [notice, setNotice] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(initialError)
   const [busy, setBusy] = useState(false)
-  const organization = useRef<HTMLInputElement>(null)
-  const signingUp = mode === "sign-up"
 
-  async function run(action: () => Promise<Employee>) {
+  async function run(action: () => Promise<Employee | null>) {
     setBusy(true)
     setError(null)
     try {
-      onSignedIn(await action())
+      const user = await action()
+      if (user) onSignedIn(user)
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -99,29 +157,42 @@ function SignIn({ onSignedIn }: { onSignedIn: (user: Employee) => void }) {
     }
   }
 
-  function google(credential: string) {
-    const name = organization.current?.value.trim()
-    if (signingUp && !name) {
-      setError("Name your organization first, then continue with Google.")
-      return
-    }
-    void run(() => signInWithGoogle(credential, signingUp ? name : undefined))
+  function field(event: FormEvent<HTMLFormElement>, name: string) {
+    event.preventDefault()
+    return String(new FormData(event.currentTarget).get(name) ?? "").trim()
   }
 
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    const form = new FormData(event.currentTarget)
-    const field = (name: string) => String(form.get(name) ?? "")
-    void run(() =>
-      signingUp
-        ? signUp({
-            organization: field("organization"),
-            name: field("name"),
-            email: field("email"),
-            password: field("password"),
-          })
-        : signIn(field("email"), field("password"))
-    )
+  function askForCode(email: string) {
+    void run(async () => {
+      const answer = await sendCode(email)
+      // The demo's email signs in at once; any other gets a code.
+      if (typeof answer !== "string") return answer
+      setCode("")
+      setCodeSentTo(email)
+      setNotice(
+        answer === "recent"
+          ? "A code went out moments ago. Use that one."
+          : null
+      )
+      return null
+    })
+  }
+
+  function enterCode(value: string) {
+    setCode(value)
+    // Typing again puts the button back in the message's place.
+    setError(null)
+    setNotice(null)
+    if (value.length === 6 && codeSentTo)
+      void run(async () => {
+        try {
+          return await signInWithCode(codeSentTo, value)
+        } catch (e) {
+          // Empty boxes, ready for the code typed again.
+          setCode("")
+          throw e
+        }
+      })
   }
 
   return (
@@ -130,17 +201,16 @@ function SignIn({ onSignedIn }: { onSignedIn: (user: Employee) => void }) {
         <div className="flex flex-col gap-3">
           <Logo className="size-12" />
           <h1 className="font-serif text-3xl font-semibold tracking-tight text-primary">
-            {signingUp ? "Start an organization" : "Sign in"}
+            Sign in to Portcullis
           </h1>
           <p className="text-muted-foreground">
-            {signingUp
-              ? "Put your agents behind the AI control layer. Colleagues join by invitation."
-              : "Sign in to the AI control layer."}
+            The control layer for your AI agents. New here? Signing in creates
+            your organization.
           </p>
         </div>
 
         <div className="flex flex-col gap-2">
-          <Button size="lg" disabled={busy} onClick={() => run(signInToDemo)}>
+          <Button disabled={busy} onClick={() => run(signInToDemo)}>
             Try the demo
           </Button>
           <p className="text-center text-xs text-muted-foreground">
@@ -148,67 +218,109 @@ function SignIn({ onSignedIn }: { onSignedIn: (user: Employee) => void }) {
           </p>
         </div>
 
-        {googleEnabled && <Divider>or</Divider>}
-        {signingUp && (
-          // Outside the form, as Google sign-up needs it too; the form
-          // attribute still sends it with the form.
-          <Field
-            key="organization"
-            ref={organization}
-            name="organization"
-            label="Organization"
-            form="credentials"
-            autoFocus
-          />
+        {googleEnabled && (
+          <>
+            <Divider>or</Divider>
+            <GoogleButton
+              text="continue_with"
+              onCredential={(credential) =>
+                run(() => signInWithGoogle(credential))
+              }
+            />
+          </>
         )}
-        <GoogleButton
-          text={signingUp ? "signup_with" : "signin_with"}
-          onCredential={google}
-        />
         <Divider>or with your email</Divider>
 
-        <form
-          id="credentials"
-          key={mode}
-          onSubmit={submit}
-          className="flex flex-col gap-4"
-        >
-          {signingUp && (
-            <Field name="name" label="Your name" autoComplete="name" />
-          )}
-          <Field
-            name="email"
-            label="Email"
-            type="email"
-            autoComplete="email"
-            autoFocus={!signingUp}
-          />
-          <Field
-            name="password"
-            label="Password"
-            type="password"
-            minLength={signingUp ? 8 : undefined}
-            autoComplete={signingUp ? "new-password" : "current-password"}
-          />
-          {error && <p className="text-sm text-destructive">{error}</p>}
-          <Button type="submit" variant="outline" disabled={busy}>
-            {signingUp ? "Create the organization" : "Sign in"}
-          </Button>
-        </form>
-
-        <p className="text-center text-sm text-muted-foreground">
-          {signingUp ? "Have an account?" : "New here?"}{" "}
-          <Button
-            variant="link"
-            className="h-auto p-0"
-            onClick={() => {
-              setError(null)
-              setMode(signingUp ? "sign-in" : "sign-up")
-            }}
+        {codeSentTo === null ? (
+          <form
+            onSubmit={(e) => askForCode(field(e, "email"))}
+            className="flex flex-col gap-4"
           >
-            {signingUp ? "Sign in" : "Start an organization"}
-          </Button>
-        </p>
+            <Field
+              name="email"
+              label={error ?? "Email"}
+              invalid={Boolean(error)}
+              type="email"
+              autoComplete="email"
+            />
+            <Button type="submit" disabled={busy}>
+              Email me a code
+            </Button>
+          </form>
+        ) : (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              enterCode(code)
+            }}
+            className="flex flex-col gap-4"
+          >
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="code">The code we sent to {codeSentTo}</Label>
+              <InputOTP
+                id="code"
+                maxLength={6}
+                pattern={REGEXP_ONLY_DIGITS}
+                value={code}
+                onChange={enterCode}
+                disabled={busy}
+                autoFocus
+                containerClassName="justify-center"
+              >
+                <InputOTPGroup className="gap-1.5 has-aria-invalid:ring-0">
+                  {[0, 1, 2, 3, 4, 5].map((index) => (
+                    <InputOTPSlot
+                      key={index}
+                      index={index}
+                      aria-invalid={Boolean(error)}
+                      className="size-8 rounded-lg border bg-background text-base"
+                    />
+                  ))}
+                </InputOTPGroup>
+              </InputOTP>
+            </div>
+            {/* The code signs in as soon as it is whole. The button's place
+                shows a message instead while there is one, so nothing moves. */}
+            {busy || error || notice ? (
+              <p
+                aria-live="polite"
+                className={cn(
+                  "flex h-8 items-center justify-center text-sm",
+                  error ? "text-destructive" : "text-muted-foreground"
+                )}
+              >
+                {busy ? "Signing in…" : (error ?? notice)}
+              </p>
+            ) : (
+              <Button type="submit" disabled={code.length < 6}>
+                Sign in
+              </Button>
+            )}
+            <div className="-mt-2 flex justify-between text-sm">
+              <Button
+                type="button"
+                variant="link"
+                className="h-auto p-0"
+                onClick={() => {
+                  setError(null)
+                  setNotice(null)
+                  setCodeSentTo(null)
+                }}
+              >
+                Use another email
+              </Button>
+              <Button
+                type="button"
+                variant="link"
+                className="h-auto p-0"
+                disabled={busy}
+                onClick={() => askForCode(codeSentTo)}
+              >
+                Send a new code
+              </Button>
+            </div>
+          </form>
+        )}
       </div>
     </div>
   )

@@ -95,11 +95,11 @@ Every user belongs to an organization, and so do its role policies, its MCP serv
 
 ### Sign-in
 
-A user signs in with Google, or with their email and password, and gets a session token that every API call sends as `Authorization: Bearer <token>`. The database keeps only the token's SHA-256 and the password's scrypt hash. Sign-in lasts `AUTH_SESSION_DAYS`, 30 by default, or until the user signs out.
+There are no passwords and no sign-up form. A user signs in with Google or with a one-time code sent to their email, and gets a session token that every API call sends as `Authorization: Bearer <token>`. A user's first sign-in creates their account and an organization of their own, which they administer: one named after their company's email domain, such as `acme.com`, or "Eve's organization" for a public mail service such as Gmail. Others join an organization only by invitation. The database keeps only the SHA-256 of tokens and codes. A sign-in lasts `AUTH_SESSION_DAYS`, 30 by default, or until the user signs out.
 
-- **Start an organization** on the sign-in screen, or with `POST /api/auth/sign-up`: it creates the organization and its first user, who administers it. Others join only by invitation.
-- **Sign in with Google** shows when `GOOGLE_CLIENT_ID` is set. The browser gets an ID token from Google, and the backend checks its signature against Google's public keys, that it was issued for this client ID, and that Google verified the email. No client secret is involved. A Google user with an account signs in to it; one without starts the organization named on the sign-up screen.
-- **Try the demo** signs in as the demo account, `demo@controllayer.net` with the password `demo`, which `./dev seed` creates: a Vice President of Golden Socks in the `demo` organization. `POST /api/auth/demo` does the same, and `DEMO_EMAIL` and `DEMO_PASSWORD` change the account.
+- **Continue with Google** shows when `GOOGLE_CLIENT_ID` is set. The browser gets an ID token from Google, and the backend checks its signature against Google's public keys, that it was issued for this client ID, and that Google verified the email. No client secret is involved.
+- **Email me a code** (`POST /api/auth/email`) sends an email with a sign-in link and a six-digit code, "Welcome to Portcullis" to a new user and "Sign in to Portcullis" to one with an account. The link opens `APP_URL` and signs in at once; the code is for typing in on another device. Either one goes to `POST /api/auth/email/verify`. A code works for 10 minutes and once, five wrong tries void it, and a new one can be sent every 30 seconds. The answer is the same whether or not the email has an account. It goes out through [Resend](https://resend.com/) when `RESEND_API_KEY` is set, as in production, and in Compose without the key to [Mailpit](https://mailpit.axllent.org/), whose inbox is at http://localhost:8025, so development never emails anyone by mistake.
+- **Try the demo** (`POST /api/auth/demo`) signs in as the demo account, `demo@controllayer.net`, which `./dev seed` creates: a Vice President of Golden Socks in the `demo` organization. Entering that email on the sign-in screen signs in at once too, as no one can read its mail.
 
 ### OpenAI-compatible API
 
@@ -346,7 +346,12 @@ Every variable has a default, so the project runs without any setup.
 | `GOOGLE_CLIENT_ID` | Backend, Compose, the frontend build as `VITE_GOOGLE_CLIENT_ID` | empty, Google sign-in off | OAuth client ID of Sign in with Google. In the Google Cloud console: an External consent screen, and a Web application client whose JavaScript origins are the app's URLs, such as `http://localhost:3000`. Not a secret: the deploy reads it from a repository variable |
 | `AUTH_SESSION_DAYS` | Backend | `30` | Days a sign-in lasts |
 | `DEMO_EMAIL` | Backend | `demo@controllayer.net` | Email of the demo account that `./dev seed` creates and "Try the demo" signs in as |
-| `DEMO_PASSWORD` | Backend | `demo` | Password of the demo account; the seed sets it again on every run |
+| `RESEND_API_KEY` | Backend, Compose | empty | Sends the sign-in codes through Resend, in place of the `SMTP_*` settings. A repository secret in production. Resend sends only from a verified domain: verify `controllayer.net`, or set `SMTP_FROM=onboarding@resend.dev` to send to your own Resend account's email |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_TLS` | Backend, Compose | Mailpit in Compose, else empty: email sign-in off | Any other SMTP server for the sign-in codes; `SMTP_TLS` is `starttls`, `ssl` or `none` |
+| `SMTP_USERNAME`, `SMTP_PASSWORD` | Backend, Compose | empty | That server's login |
+| `SMTP_FROM` | Backend, Compose | `Portcullis <hello@controllayer.net>` | Sender of the sign-in codes; its domain must be verified with the provider |
+| `APP_URL` | Backend, Compose | `http://localhost:3000` | Where people open the app, for the sign-in link in the email. `https://controllayer.net` in production |
+| `MAIL_UI_PORT` | Compose | `8025` | Host port for Mailpit's inbox |
 | `BANK_MCP_TOKEN`              | Backend, Compose           | `dev-bank` in Compose, else empty: server closed            | Bearer token for the bank MCP server at `/api/bank/mcp`. A repository secret in production         |
 | `CONTROL_SIGNATURE_FEED`      | Backend                    | empty, the bundled `app/control/signatures.json`            | File path or http(s) URL of the attack signature feed, see [Attack signatures](#attack-signatures) |
 | `CONTROL_SIGNATURE_REFRESH`   | Backend                    | `30`                                                        | Seconds between two fetches of a feed URL. A file is read again when it changes                    |

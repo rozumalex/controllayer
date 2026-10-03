@@ -2,7 +2,7 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import NamedTuple
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 
@@ -111,10 +111,28 @@ class Settings(BaseSettings):
     # The OAuth client ID of Sign in with Google, from the Google Cloud
     # console. Empty turns Google sign-in off.
     google_client_id: str = ""
-    # The demo account the seed creates in the demo organization, and that
-    # "Try the demo" signs in as.
+    # The demo account the seed creates in the demo organization. "Try the
+    # demo", or this email on the sign-in screen, signs in as it at once.
     demo_email: str = "demo@controllayer.net"
-    demo_password: str = "demo"
+    # The SMTP server that sends the sign-in codes: Mailpit in Compose,
+    # Resend or another provider in production. Empty turns email sign-in
+    # off. smtp_tls is "starttls", "ssl" or "none".
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_tls: str = "starttls"
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from: str = "Portcullis <hello@controllayer.net>"
+    # A Resend API key sends the codes through Resend's SMTP server, in place
+    # of the SMTP settings above.
+    resend_api_key: str = ""
+    # Where people open the app, for the sign-in link in the email.
+    app_url: str = "http://localhost:3000"
+    # How long a sign-in code works, how often one may be sent to an email,
+    # and how many wrong codes void it.
+    email_code_minutes: int = 10
+    email_code_resend_seconds: int = 30
+    email_code_attempts: int = 5
     # The bearer token of the example bank MCP server at /api/bank/mcp. While
     # it is empty, the server refuses every request.
     bank_mcp_token: str = ""
@@ -133,6 +151,16 @@ class Settings(BaseSettings):
             query["ssl"] = query.pop("sslmode")
             url = url.set(query=query)
         return url.render_as_string(hide_password=False)
+
+    @model_validator(mode="after")
+    def use_resend(self) -> Settings:
+        if self.resend_api_key:
+            self.smtp_host = "smtp.resend.com"
+            self.smtp_port = 587
+            self.smtp_tls = "starttls"
+            self.smtp_username = "resend"
+            self.smtp_password = self.resend_api_key
+        return self
 
     @field_validator("redis_url")
     @classmethod
