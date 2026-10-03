@@ -105,7 +105,7 @@ Extra arguments go straight to the tool:
 ./dev makemigrations "add posts table"
 ```
 
-`./dev seed` replaces the rows of the `bank_` tables with the synthetic Golden Socks bank data in `src/backend/scripts/bank_data` (clients, accounts, trades, transactions, research, employees, and the sensitivity of every field). It leaves the other tables alone, so you can run it again. Apply the migrations first. To seed production, pass its URL: `./dev seed --url "postgresql://..."`.
+`./dev seed` replaces the rows of the `bank_` tables with the Golden Socks bank data in `src/backend/scripts/bank_data`: clients, accounts, trades, payments, research and employees, made up but consistent with each other, and the sensitivity of every field. `scripts/generate_bank_data.py` writes the files; change it and run `uv run python -m scripts.generate_bank_data` in `src/backend` to regenerate them. It leaves the other tables alone, so you can run it again. Apply the migrations first. To seed production, pass its URL: `./dev seed --url "postgresql://..."`.
 
 The database data lives in the `db-data` volume, so it stays between `down` and `up`. Only `./dev destroy` deletes it.
 

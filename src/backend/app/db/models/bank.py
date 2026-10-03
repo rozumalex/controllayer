@@ -1,5 +1,6 @@
-"""Golden Socks, the synthetic bank behind the demo. Every name, number and
-identifier is made up. `./dev seed` loads the rows from scripts/bank_data.
+"""Golden Socks, the bank behind the demo. Every name, number and identifier
+is made up. scripts/generate_bank_data.py writes the rows and `./dev seed`
+loads them.
 
 The tables share the bank_ prefix, so they stay apart from the app's own.
 """
@@ -7,7 +8,7 @@ The tables share the bank_ prefix, so they stay apart from the app's own.
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import ForeignKey, Numeric
+from sqlalchemy import BigInteger, ForeignKey, Numeric
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -37,10 +38,11 @@ class BankEmployee(Base):
     base_salary_usd: Mapped[int]
     bonus_usd: Mapped[int]
     home_address: Mapped[str]
-    national_id_demo: Mapped[str]
+    national_id: Mapped[str]
     device_id: Mapped[str]
     privileged_access: Mapped[bool]
-    api_token_demo: Mapped[str]
+    # Only people with privileged access have one.
+    api_token: Mapped[str | None]
     performance_rating: Mapped[str]
 
 
@@ -64,7 +66,7 @@ class BankClient(Base):
     aum_usd_mn: Mapped[Decimal] = mapped_column(Money)
     credit_limit_usd_mn: Mapped[Decimal] = mapped_column(Money)
     annual_revenue_usd_mn: Mapped[Decimal] = mapped_column(Money)
-    tax_id_demo: Mapped[str]
+    tax_id: Mapped[str]
     legal_address: Mapped[str]
     contact_name: Mapped[str]
     contact_email: Mapped[str]
@@ -90,9 +92,9 @@ class BankAccount(Base):
     margin_requirement_usd: Mapped[Decimal] = mapped_column(Money)
     portfolio_value_usd: Mapped[Decimal] = mapped_column(Money)
     internal_rating: Mapped[str]
-    account_number_demo: Mapped[str]
-    swift_bic_demo: Mapped[str]
-    iban_or_local_account_demo: Mapped[str]
+    account_number: Mapped[str]
+    swift_bic: Mapped[str]
+    iban_or_local_account: Mapped[str]
     authorized_signatory: Mapped[str]
     restriction_flag: Mapped[str]
 
@@ -111,8 +113,9 @@ class BankTrade(Base):
     asset_class: Mapped[str]
     instrument: Mapped[str]
     side: Mapped[str]
-    quantity: Mapped[int]
-    price_demo: Mapped[Decimal] = mapped_column(Numeric(18, 4))
+    # Shares, contracts, or the face value or base currency amount.
+    quantity: Mapped[int] = mapped_column(BigInteger)
+    price: Mapped[Decimal] = mapped_column(Numeric(18, 6))
     notional_usd: Mapped[Decimal] = mapped_column(Money)
     currency: Mapped[str]
     trade_timestamp: Mapped[datetime]
@@ -123,7 +126,7 @@ class BankTrade(Base):
     var_1d_usd: Mapped[Decimal] = mapped_column(Money)
     status: Mapped[str]
     strategy: Mapped[str]
-    counterparty_demo: Mapped[str]
+    counterparty: Mapped[str]
     internal_comment: Mapped[str | None]
 
 
@@ -144,7 +147,7 @@ class BankTransaction(Base):
     origin_country: Mapped[str]
     destination_country: Mapped[str]
     beneficiary_name: Mapped[str]
-    beneficiary_account_demo: Mapped[str]
+    beneficiary_account: Mapped[str]
     purpose: Mapped[str]
     channel: Mapped[str]
     aml_risk_score: Mapped[int]
@@ -168,7 +171,7 @@ class BankResearch(Base):
     publication_date: Mapped[date]
     audience: Mapped[str]
     rating: Mapped[str]
-    target_price_demo: Mapped[Decimal | None] = mapped_column(Numeric(18, 4))
+    target_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 4))
     embargo_until: Mapped[date]
     client_access_tier: Mapped[str]
     summary: Mapped[str]
@@ -176,7 +179,7 @@ class BankResearch(Base):
     source_model: Mapped[str]
     # A unique marker per report: if it shows up in an answer, the report
     # leaked.
-    canary_token_demo: Mapped[str]
+    watermark: Mapped[str]
 
 
 class BankDataCatalog(Base):

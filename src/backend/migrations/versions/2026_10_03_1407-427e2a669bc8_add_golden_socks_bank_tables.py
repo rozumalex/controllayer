@@ -1,8 +1,8 @@
 """add golden socks bank tables
 
-Revision ID: 9541ef184c5d
+Revision ID: 427e2a669bc8
 Revises: d9468defef33
-Create Date: 2026-10-03 13:41:09.114473
+Create Date: 2026-10-03 14:07:42.500152
 
 """
 
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "9541ef184c5d"
+revision: str = "427e2a669bc8"
 down_revision: str | Sequence[str] | None = "d9468defef33"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
@@ -47,10 +47,10 @@ def upgrade() -> None:
         sa.Column("base_salary_usd", sa.Integer(), nullable=False),
         sa.Column("bonus_usd", sa.Integer(), nullable=False),
         sa.Column("home_address", sa.String(), nullable=False),
-        sa.Column("national_id_demo", sa.String(), nullable=False),
+        sa.Column("national_id", sa.String(), nullable=False),
         sa.Column("device_id", sa.String(), nullable=False),
         sa.Column("privileged_access", sa.Boolean(), nullable=False),
-        sa.Column("api_token_demo", sa.String(), nullable=False),
+        sa.Column("api_token", sa.String(), nullable=True),
         sa.Column("performance_rating", sa.String(), nullable=False),
         sa.ForeignKeyConstraint(
             ["manager_id"],
@@ -89,7 +89,7 @@ def upgrade() -> None:
         sa.Column(
             "annual_revenue_usd_mn", sa.Numeric(precision=18, scale=2), nullable=False
         ),
-        sa.Column("tax_id_demo", sa.String(), nullable=False),
+        sa.Column("tax_id", sa.String(), nullable=False),
         sa.Column("legal_address", sa.String(), nullable=False),
         sa.Column("contact_name", sa.String(), nullable=False),
         sa.Column("contact_email", sa.String(), nullable=False),
@@ -120,15 +120,13 @@ def upgrade() -> None:
         sa.Column("publication_date", sa.Date(), nullable=False),
         sa.Column("audience", sa.String(), nullable=False),
         sa.Column("rating", sa.String(), nullable=False),
-        sa.Column(
-            "target_price_demo", sa.Numeric(precision=18, scale=4), nullable=True
-        ),
+        sa.Column("target_price", sa.Numeric(precision=18, scale=4), nullable=True),
         sa.Column("embargo_until", sa.Date(), nullable=False),
         sa.Column("client_access_tier", sa.String(), nullable=False),
         sa.Column("summary", sa.String(), nullable=False),
         sa.Column("internal_draft_notes", sa.String(), nullable=True),
         sa.Column("source_model", sa.String(), nullable=False),
-        sa.Column("canary_token_demo", sa.String(), nullable=False),
+        sa.Column("watermark", sa.String(), nullable=False),
         sa.ForeignKeyConstraint(
             ["analyst_id"],
             ["bank_employees.employee_id"],
@@ -163,9 +161,9 @@ def upgrade() -> None:
             "portfolio_value_usd", sa.Numeric(precision=18, scale=2), nullable=False
         ),
         sa.Column("internal_rating", sa.String(), nullable=False),
-        sa.Column("account_number_demo", sa.String(), nullable=False),
-        sa.Column("swift_bic_demo", sa.String(), nullable=False),
-        sa.Column("iban_or_local_account_demo", sa.String(), nullable=False),
+        sa.Column("account_number", sa.String(), nullable=False),
+        sa.Column("swift_bic", sa.String(), nullable=False),
+        sa.Column("iban_or_local_account", sa.String(), nullable=False),
         sa.Column("authorized_signatory", sa.String(), nullable=False),
         sa.Column("restriction_flag", sa.String(), nullable=False),
         sa.ForeignKeyConstraint(
@@ -186,8 +184,8 @@ def upgrade() -> None:
         sa.Column("asset_class", sa.String(), nullable=False),
         sa.Column("instrument", sa.String(), nullable=False),
         sa.Column("side", sa.String(), nullable=False),
-        sa.Column("quantity", sa.Integer(), nullable=False),
-        sa.Column("price_demo", sa.Numeric(precision=18, scale=4), nullable=False),
+        sa.Column("quantity", sa.BigInteger(), nullable=False),
+        sa.Column("price", sa.Numeric(precision=18, scale=6), nullable=False),
         sa.Column("notional_usd", sa.Numeric(precision=18, scale=2), nullable=False),
         sa.Column("currency", sa.String(), nullable=False),
         sa.Column("trade_timestamp", sa.DateTime(), nullable=False),
@@ -198,7 +196,7 @@ def upgrade() -> None:
         sa.Column("var_1d_usd", sa.Numeric(precision=18, scale=2), nullable=False),
         sa.Column("status", sa.String(), nullable=False),
         sa.Column("strategy", sa.String(), nullable=False),
-        sa.Column("counterparty_demo", sa.String(), nullable=False),
+        sa.Column("counterparty", sa.String(), nullable=False),
         sa.Column("internal_comment", sa.String(), nullable=True),
         sa.ForeignKeyConstraint(
             ["account_id"],
@@ -232,7 +230,7 @@ def upgrade() -> None:
         sa.Column("origin_country", sa.String(), nullable=False),
         sa.Column("destination_country", sa.String(), nullable=False),
         sa.Column("beneficiary_name", sa.String(), nullable=False),
-        sa.Column("beneficiary_account_demo", sa.String(), nullable=False),
+        sa.Column("beneficiary_account", sa.String(), nullable=False),
         sa.Column("purpose", sa.String(), nullable=False),
         sa.Column("channel", sa.String(), nullable=False),
         sa.Column("aml_risk_score", sa.Integer(), nullable=False),
