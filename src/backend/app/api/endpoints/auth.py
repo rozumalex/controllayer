@@ -6,6 +6,7 @@ an organization only by invitation."""
 import re
 import secrets
 from typing import Annotated
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import select
@@ -24,6 +25,7 @@ from app.core.schema.auth import (
     GoogleSignIn,
     SignedIn,
 )
+from app.core.sign_in_email import sign_in_email
 from app.db.auth import issue_token, new_code, revoke_token, use_code
 from app.db.models import Organization, User
 from app.db.session import get_session
@@ -121,14 +123,13 @@ async def email(request: EmailSignIn, session: Session) -> CodeSent | SignedIn:
     # The mail goes to the email's owner, so saying whether it has an
     # account tells no one else anything.
     known = await session.scalar(select(User.id).where(User.email == request.email))
-    subject = "Sign in to Portcullis" if known else "Welcome to Portcullis"
-    text = (
-        f"Your Portcullis sign-in code is {code}.\n\n"
-        f"It works for {minutes} minutes. If you didn't ask for it, ignore "
-        "this email."
-    )
+    # The link carries the same one-time code, so it signs in once, within
+    # the same minutes.
+    query = urlencode({"email": request.email, "code": code})
+    link = f"{settings.app_url.rstrip('/')}/?{query}"
+    mail = sign_in_email(code, link, minutes, welcome=not known)
     try:
-        await send_mail(request.email, subject, text)
+        await send_mail(request.email, mail.subject, mail.text, mail.html)
     except MailError as error:
         raise HTTPException(503, "The email didn't go out. Try again.") from error
     return CodeSent()

@@ -26,7 +26,9 @@ def _send(message: EmailMessage) -> None:
         server.send_message(message)
 
 
-async def send_mail(to: str, subject: str, text: str) -> None:
+async def send_mail(to: str, subject: str, text: str, html: str = "") -> None:
+    """Sends the text, and the HTML as an alternative for clients that show
+    it."""
     if not settings.smtp_host:
         raise MailError("no SMTP_HOST")
     message = EmailMessage()
@@ -34,6 +36,8 @@ async def send_mail(to: str, subject: str, text: str) -> None:
     message["To"] = to
     message["Subject"] = subject
     message.set_content(text)
+    if html:
+        message.add_alternative(html, subtype="html")
     try:
         await asyncio.to_thread(_send, message)
     except (OSError, smtplib.SMTPException) as error:

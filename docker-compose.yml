@@ -71,6 +71,8 @@ services:
       # Sign-in codes go out through Resend when RESEND_API_KEY is set, and to
       # Mailpit otherwise, whose inbox is at http://localhost:8025.
       RESEND_API_KEY: ${RESEND_API_KEY:-}
+      # The frontend's address, for the sign-in link in the email.
+      APP_URL: ${APP_URL:-http://localhost:${APP_PORT:-3000}}
       SMTP_FROM: ${SMTP_FROM:-Portcullis <hello@controllayer.net>}
       SMTP_HOST: ${SMTP_HOST:-mailpit}
       SMTP_PORT: ${SMTP_PORT:-1025}

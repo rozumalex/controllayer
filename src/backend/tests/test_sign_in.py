@@ -25,8 +25,8 @@ def inbox(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, str]]:
     """The emails sign-in sends, kept instead of sent."""
     sent: list[dict[str, str]] = []
 
-    async def send_mail(to: str, subject: str, text: str) -> None:
-        sent.append({"to": to, "subject": subject, "text": text})
+    async def send_mail(to: str, subject: str, text: str, html: str = "") -> None:
+        sent.append({"to": to, "subject": subject, "text": text, "html": html})
 
     monkeypatch.setattr(settings, "smtp_host", "mailpit")
     monkeypatch.setattr(auth, "send_mail", send_mail)
@@ -76,6 +76,10 @@ def test_code_goes_to_the_email(inbox: list[dict[str, str]]) -> None:
     [mail] = inbox
     assert mail["to"] == "eve.adams@acme.com"
     assert mail["subject"] == "Welcome to Portcullis"
+    code = code_in(mail)
+    link = f"{settings.app_url}/?email=eve.adams%40acme.com&code={code}"
+    assert link in mail["text"]
+    assert link.replace("&", "&amp;") in mail["html"]
 
 
 def test_returning_user_is_asked_to_sign_in(inbox: list[dict[str, str]]) -> None:
@@ -210,7 +214,7 @@ def test_new_code_waits_a_moment(inbox: list[dict[str, str]]) -> None:
 
 def test_mail_failure_is_503(monkeypatch: pytest.MonkeyPatch) -> None:
     # given
-    async def send_mail(to: str, subject: str, text: str) -> None:
+    async def send_mail(to: str, subject: str, text: str, html: str = "") -> None:
         raise MailError("refused")
 
     monkeypatch.setattr(settings, "smtp_host", "mailpit")

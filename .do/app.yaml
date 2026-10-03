@@ -77,6 +77,9 @@ services:
       - key: RESEND_API_KEY
         value: "${RESEND_API_KEY}"
         type: SECRET
+      # The sign-in link in the email opens the app here.
+      - key: APP_URL
+        value: https://controllayer.net
 
 workers:
   # Worker and beat in one process. Keep one instance, or beat sends every

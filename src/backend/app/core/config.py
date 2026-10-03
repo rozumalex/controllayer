@@ -126,6 +126,8 @@ class Settings(BaseSettings):
     # A Resend API key sends the codes through Resend's SMTP server, in place
     # of the SMTP settings above.
     resend_api_key: str = ""
+    # Where people open the app, for the sign-in link in the email.
+    app_url: str = "http://localhost:3000"
     # How long a sign-in code works, how often one may be sent to an email,
     # and how many wrong codes void it.
     email_code_minutes: int = 10

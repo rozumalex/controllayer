@@ -37,15 +37,41 @@ import { cn } from "@/lib/utils"
 export function SignedIn({ children }: { children: ReactNode }) {
   // undefined while the stored session loads, null when nobody is signed in.
   const [user, setUser] = useState<Employee | null | undefined>(undefined)
+  const [linkFailed, setLinkFailed] = useState(false)
 
   useEffect(() => {
+    // The link in the sign-in email carries the email and its code.
+    const params = new URLSearchParams(window.location.search)
+    const email = params.get("email")
+    const code = params.get("code")
+    if (email && code) {
+      // Out of the address bar and the history, as the code is a secret.
+      window.history.replaceState(null, "", window.location.pathname)
+      signInWithCode(email, code)
+        .then(setUser)
+        .catch(() => {
+          setLinkFailed(true)
+          setUser(null)
+        })
+      return
+    }
     fetchMe()
       .then(setUser)
       .catch(() => setUser(null))
   }, [])
 
   if (user === undefined) return null
-  if (user === null) return <SignIn onSignedIn={setUser} />
+  if (user === null)
+    return (
+      <SignIn
+        onSignedIn={setUser}
+        initialError={
+          linkFailed
+            ? "That link has expired or was used. Ask for a new code."
+            : null
+        }
+      />
+    )
   const leave = () => {
     void signOut()
     setUser(null)
@@ -95,13 +121,19 @@ function Divider({ children }: { children: ReactNode }) {
 
 // One screen for everyone: the demo, Google, or a code sent by email. A new
 // user's first sign-in creates their account and organization.
-function SignIn({ onSignedIn }: { onSignedIn: (user: Employee) => void }) {
+function SignIn({
+  onSignedIn,
+  initialError,
+}: {
+  onSignedIn: (user: Employee) => void
+  initialError: string | null
+}) {
   // The email a code went to, or null before one is sent.
   const [codeSentTo, setCodeSentTo] = useState<string | null>(null)
   const [code, setCode] = useState("")
   // Not an error: news about the code, such as one sent moments ago.
   const [notice, setNotice] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(initialError)
   const [busy, setBusy] = useState(false)
 
   async function run(action: () => Promise<Employee | null>) {
