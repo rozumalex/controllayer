@@ -105,7 +105,7 @@ Extra arguments go straight to the tool:
 ./dev makemigrations "add posts table"
 ```
 
-`./dev seed` replaces the rows of the `bank_` tables with the Golden Socks bank data in `src/backend/scripts/bank_data`: clients, accounts, trades, payments, research and employees, made up but consistent with each other, and the sensitivity of every field. `scripts/generate_bank_data.py` writes the files; change it and run `uv run python -m scripts.generate_bank_data` in `src/backend` to regenerate them. It leaves the other tables alone, so you can run it again. Apply the migrations first. To seed production, pass its URL: `./dev seed --url "postgresql://..."`.
+`./dev seed` replaces the rows of the `bank_` tables with the Golden Socks bank data in `src/backend/scripts/bank_data`: clients, accounts, trades, payments, research and employees, made up but consistent with each other, and the sensitivity of every field. `scripts/generate_bank_data.py` writes the files; change it and run `uv run python -m scripts.generate_bank_data` in `src/backend` to regenerate them. It leaves the other tables alone, so you can run it again. Apply the migrations first. Every deploy to DigitalOcean seeds production too, right after the migrations, so it starts from the same rows. To seed it by hand, pass its URL: `./dev seed --url "postgresql://..."`.
 
 The database data lives in the `db-data` volume, so it stays between `down` and `up`. Only `./dev destroy` deletes it.
 
@@ -119,7 +119,7 @@ To change the ports or the database credentials, see [Environment variables](#en
 
 Both Dockerfiles use multi-stage builds. A `dev` stage is for Compose, and the last stage, the default one, is for production:
 
-- Backend: a small image with Python, the virtual environment without dev dependencies, and the app code. It runs `fastapi run` under `newrelic-admin run-program`, which starts the New Relic agent, as a non-root user. Run `alembic upgrade head` in the same image to apply the migrations, and `newrelic-admin run-program celery -A app.worker worker --beat` to run the worker.
+- Backend: a small image with Python, the virtual environment without dev dependencies, and the app code. It runs `fastapi run` under `newrelic-admin run-program`, which starts the New Relic agent, as a non-root user. Run `alembic upgrade head` in the same image to apply the migrations, `python -m scripts.seed -y` to load the bank data, and `newrelic-admin run-program celery -A app.worker worker --beat` to run the worker.
 - Frontend: no image. The frontend deploys as static HTML, JS and CSS files. The last stage holds only the built files, so Docker can copy them out to `src/frontend/dist`. Running `pnpm build` locally gives the same files.
 
 ```sh
