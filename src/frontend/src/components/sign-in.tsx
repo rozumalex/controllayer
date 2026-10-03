@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/input-otp"
 import { Label } from "@/components/ui/label"
 import type { Employee } from "@/lib/policy"
-import { SessionContext, useSession } from "@/lib/session"
+import { SessionContext, isPrivileged, useSession } from "@/lib/session"
 import {
   fetchMe,
   googleEnabled,
@@ -39,6 +39,14 @@ export function SignedIn({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<Employee | null | undefined>(undefined)
   const [linkFailed, setLinkFailed] = useState(false)
 
+  // A fresh sign-in lands on the admin pages, for those who may open them.
+  // A reload stays where it was.
+  const signedIn = (user: Employee) => {
+    if (isPrivileged(user) && !window.location.pathname.startsWith("/admin"))
+      window.history.replaceState(null, "", "/admin")
+    setUser(user)
+  }
+
   useEffect(() => {
     // The link in the sign-in email carries the email and its code.
     const params = new URLSearchParams(window.location.search)
@@ -48,7 +56,7 @@ export function SignedIn({ children }: { children: ReactNode }) {
       // Out of the address bar and the history, as the code is a secret.
       window.history.replaceState(null, "", window.location.pathname)
       signInWithCode(email, code)
-        .then(setUser)
+        .then(signedIn)
         .catch(() => {
           setLinkFailed(true)
           setUser(null)
@@ -64,7 +72,7 @@ export function SignedIn({ children }: { children: ReactNode }) {
   if (user === null)
     return (
       <SignIn
-        onSignedIn={setUser}
+        onSignedIn={signedIn}
         initialError={
           linkFailed
             ? "That link has expired or was used. Ask for a new code."
