@@ -206,13 +206,14 @@ function SignIn({ onSignedIn }: { onSignedIn: (user: Employee) => void }) {
                 onChange={enterCode}
                 disabled={busy}
                 autoFocus
+                containerClassName="justify-center"
               >
-                <InputOTPGroup>
+                <InputOTPGroup className="gap-2">
                   {[0, 1, 2, 3, 4, 5].map((index) => (
                     <InputOTPSlot
                       key={index}
                       index={index}
-                      className="size-8 bg-background text-base"
+                      className="size-8 rounded-lg border bg-background text-base"
                     />
                   ))}
                 </InputOTPGroup>
