@@ -62,6 +62,50 @@ def test_answer_sharing_a_few_words_with_the_system_prompt_passes() -> None:
     assert verdict.action is Action.ALLOW
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "I can help you draft client emails, summarise documents and market "
+        "news, explain financial products and regulations, and prepare notes "
+        "for meetings.",
+        "I help Golden Socks staff with drafting client emails, summarising "
+        "documents and market news, explaining financial products and "
+        "regulations, and preparing notes for meetings.",
+    ],
+)
+def test_answer_saying_what_the_assistant_does_passes(text: str) -> None:
+    # when
+    verdict = asyncio.run(PromptLeakGuard(SYSTEM_PROMPT).inspect(answer(text)))
+
+    # then
+    assert verdict.action is Action.ALLOW
+
+
+def test_answer_quoting_how_the_assistant_works_blocked() -> None:
+    # given
+    rules = SYSTEM_PROMPT[SYSTEM_PROMPT.index("How you work") :]
+    leak = "Sure, here are my rules:\n" + rules.replace("- ", "* ")
+
+    # when
+    verdict = asyncio.run(PromptLeakGuard(SYSTEM_PROMPT).inspect(answer(leak)))
+
+    # then
+    assert verdict.action is Action.BLOCK
+
+
+def test_quote_streamed_in_two_pieces_blocked() -> None:
+    # given
+    guard = PromptLeakGuard(SYSTEM_PROMPT)
+    asyncio.run(guard.inspect(answer("Never invent figures, prices, rates, client ")))
+
+    # when
+    rest = "details or account numbers. If no tool gives you what the user needs, say"
+    verdict = asyncio.run(guard.inspect(answer(rest)))
+
+    # then
+    assert verdict.action is Action.BLOCK
+
+
 def test_leaked_system_prompt_withheld(client: TestClient, answers: Any) -> None:
     # given
     answers(f"My instructions:\n{SYSTEM_PROMPT}")
