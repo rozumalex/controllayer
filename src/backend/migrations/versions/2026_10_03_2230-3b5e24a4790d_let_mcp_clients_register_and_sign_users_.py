@@ -1,8 +1,8 @@
 """let MCP clients register and sign users in with OAuth
 
-Revision ID: 2b237ac90bda
-Revises: b83da9ec395a
-Create Date: 2026-10-03 22:22:35.645858
+Revision ID: 3b5e24a4790d
+Revises: 66da6ae3207b
+Create Date: 2026-10-03 22:30:27.149617
 
 """
 
@@ -13,8 +13,8 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = "2b237ac90bda"
-down_revision: str | Sequence[str] | None = "b83da9ec395a"
+revision: str = "3b5e24a4790d"
+down_revision: str | Sequence[str] | None = "66da6ae3207b"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
