@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     # attack. It runs only with an OpenAI key, and needs a model that takes
     # temperature and structured outputs, so not a reasoning model.
     control_semantic_model: str = "gpt-4.1-mini"
+    # The models a policy may allow. A role allows the default model unless
+    # its policy says otherwise.
+    available_models: list[str] = ["gpt-4.1-mini", "gpt-4.1", "gpt-4o-mini", "o4-mini"]
     control_semantic_timeout: float = 10.0
     # Block when the semantic check fails, for example when OpenAI is down.
     # Turn it off to fall back to the heuristic guard alone.
