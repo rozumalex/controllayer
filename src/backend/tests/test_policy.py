@@ -11,7 +11,7 @@ from app.core.config import settings
 from app.db.models import Policy, User
 from app.db.session import SessionLocal
 from app.main import app
-from tests.conftest import signed_in
+from tests.conftest import demo_org_id, signed_in
 from tests.test_mcp_gateway import gateway
 
 URL = "/api/policy"
@@ -27,6 +27,7 @@ POLICY: dict[str, Any] = {
 
 
 async def add_staff() -> None:
+    org_id = await demo_org_id()
     async with SessionLocal() as session:
         session.add_all(
             [
@@ -36,6 +37,8 @@ async def add_staff() -> None:
                 User(email="guest@example.com", name="A Guest"),
             ]
         )
+        for staff in session.new:
+            staff.org_id = org_id
         await session.commit()
 
 
@@ -96,8 +99,9 @@ def test_role_policy_overrides_default(staff: TestClient) -> None:
 
 
 async def saved_policy(role: str) -> Policy | None:
+    org_id = await demo_org_id()
     async with SessionLocal() as session:
-        return await session.get(Policy, role)
+        return await session.get(Policy, (org_id, role))
 
 
 def test_policy_records_who_saved_it_last(staff: TestClient, user: User) -> None:

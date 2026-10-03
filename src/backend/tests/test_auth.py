@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from app.db.models import User
 from app.db.session import SessionLocal
 from app.main import app
-from tests.conftest import signed_in
+from tests.conftest import demo_org_id, signed_in
 
 ADMIN_URLS = [
     ("GET", "/api/traces"),
@@ -19,11 +19,13 @@ ADMIN_URLS = [
 
 
 async def staff(clearance: str | None) -> User:
+    org_id = await demo_org_id()
     async with SessionLocal() as session:
         user = User(
             email=f"{uuid.uuid4()}@example.com",
             name="Staff",
             clearance_level=clearance,
+            org_id=org_id,
         )
         session.add(user)
         await session.commit()

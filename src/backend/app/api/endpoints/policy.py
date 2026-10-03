@@ -1,3 +1,4 @@
+import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response
@@ -5,7 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import CurrentUser, mcp_gateway
+from app.api.deps import CurrentUser, OrgId, mcp_gateway
 from app.control.adapters.mcp_gateway import McpGateway
 from app.core.schema.policy import (
     GatewayTool,
@@ -29,6 +30,7 @@ async def save(
     session: AsyncSession, role: str, settings: PolicySettings, user: User
 ) -> None:
     values = {
+        "org_id": user.org_id,
         "role": role,
         "settings": settings.model_dump(mode="json"),
         "updated_by_id": user.id,
@@ -37,7 +39,7 @@ async def save(
         insert(Policy)
         .values(values)
         .on_conflict_do_update(
-            index_elements=[Policy.role],
+            index_elements=[Policy.org_id, Policy.role],
             set_={
                 "settings": values["settings"],
                 "updated_by_id": user.id,
@@ -48,16 +50,17 @@ async def save(
     await session.commit()
 
 
-async def reset(session: AsyncSession, role: str) -> None:
-    policy = await session.get(Policy, role)
+async def reset(session: AsyncSession, org_id: uuid.UUID, role: str) -> None:
+    policy = await session.get(Policy, (org_id, role))
     if policy is not None:
         await session.delete(policy)
         await session.commit()
 
 
-async def known_role(role: str, session: Session) -> str:
-    """A job title that at least one employee holds."""
-    if not await session.scalar(select(User.id).where(User.title == role).limit(1)):
+async def known_role(role: str, session: Session, org_id: OrgId) -> str:
+    """A job title that at least one employee of the organization holds."""
+    query = select(User.id).where(User.org_id == org_id, User.title == role)
+    if not await session.scalar(query.limit(1)):
         raise HTTPException(404, f"No employee is a {role}")
     return role
 
@@ -71,12 +74,13 @@ Role = Annotated[str, Depends(known_role)]
     description="A role is a job title in users. A role without a policy of "
     "its own follows the default policy.",
 )
-async def get_policy(session: Session) -> PolicyOverview:
-    saved = {p.role: p for p in await session.scalars(select(Policy))}
-    fallback = await default_policy(session)
+async def get_policy(session: Session, org_id: OrgId) -> PolicyOverview:
+    policies = await session.scalars(select(Policy).where(Policy.org_id == org_id))
+    saved = {p.role: p for p in policies}
+    fallback = await default_policy(session, org_id)
     headcount = await session.execute(
         select(User.title, func.count())
-        .where(User.title.is_not(None))
+        .where(User.org_id == org_id, User.title.is_not(None))
         .group_by(User.title)
         .order_by(User.title)
     )
@@ -101,7 +105,7 @@ async def get_policy(session: Session) -> PolicyOverview:
 
 @router.put("/default", summary="Save the default policy")
 async def save_default(
-    request: PolicySettings, session: Session, user: CurrentUser
+    request: PolicySettings, session: Session, user: CurrentUser, _: OrgId
 ) -> PolicyRead:
     await save(session, DEFAULT_ROLE, request, user)
     return PolicyRead(customized=True, settings=request)
@@ -112,8 +116,8 @@ async def save_default(
     status_code=204,
     summary="Reset the default policy to the environment's settings",
 )
-async def reset_default(session: Session) -> Response:
-    await reset(session, DEFAULT_ROLE)
+async def reset_default(session: Session, org_id: OrgId) -> Response:
+    await reset(session, org_id, DEFAULT_ROLE)
     return Response(status_code=204)
 
 
@@ -130,8 +134,8 @@ async def save_role(
     status_code=204,
     summary="Make a role follow the default policy again",
 )
-async def reset_role(role: Role, session: Session) -> Response:
-    await reset(session, role)
+async def reset_role(role: Role, session: Session, org_id: OrgId) -> Response:
+    await reset(session, org_id, role)
     return Response(status_code=204)
 
 

@@ -1,11 +1,13 @@
 """Load the Golden Socks bank data into a database.
 
 Empties the bank_ tables and copies every row from scripts/bank_data into
-them, all in one transaction. The bank's staff in users are updated in place,
-so the rows that refer to them, such as the control events, are kept. It also
-saves the policies in scripts/policies.yaml for the roles that have none, so a
-policy someone changed is kept. Other users and tables are left alone, so it
-is safe to run again. Apply the migrations first.
+them, all in one transaction. The bank is the demo organization: the staff
+in users are updated in place and belong to it, so the rows that refer to
+them, such as the control events, are kept. Rows that predate organizations
+join it too. It also saves the policies in scripts/policies.yaml for the
+demo's roles that have none, so a policy someone changed is kept. Other
+users and tables are left alone, so it is safe to run again. Apply the
+migrations first.
 
 Run from src/backend: `uv run python -m scripts.seed`, or `./dev seed` from
 the repo root. Pass `--url <postgres url>` to seed another database, such as
@@ -33,7 +35,8 @@ from sqlalchemy.pool import NullPool
 from app.core.config import Settings, settings
 from app.db import models  # noqa: F401  registers the models in Base.metadata
 from app.db.base import Base
-from app.db.models import Policy
+from app.db.models import Organization, Policy
+from app.db.models.organization import DEMO_SLUG
 from scripts.policies import POLICIES
 
 DATA_DIR = Path(__file__).resolve().parent / "bank_data"
@@ -41,6 +44,10 @@ DATA_DIR = Path(__file__).resolve().parent / "bank_data"
 LOCAL_HOSTS = {"db", "localhost", "127.0.0.1"}
 # The bank's staff are the users with an email at this domain.
 STAFF_DOMAIN = "goldensocks.com"
+# Columns the seed sets itself, which the data files don't have.
+OWN_COLUMNS = {"org_id"}
+# The tables whose rows belong to an organization, and may predate them.
+ORG_TABLES = ["users", "mcp_servers", "control_events"]
 
 PARSERS: dict[type, Callable[[str], Any]] = {
     str: str,
@@ -68,7 +75,7 @@ def load(table: Table) -> tuple[list[str], list[tuple[Any, ...]]]:
     with gzip.open(path, "rt", newline="") as file:
         reader = csv.reader(file)
         columns = next(reader)
-        if set(columns) != set(table.columns.keys()):
+        if set(columns) != set(table.columns.keys()) - OWN_COLUMNS:
             raise ValueError(f"{path.name} doesn't have the columns of {table.name}")
         parsers = [PARSERS[table.columns[c].type.python_type] for c in columns]
         rows = [
@@ -119,6 +126,14 @@ async def seed(url: str) -> None:
                     f"The database has no {', '.join(missing)}. "
                     "Apply the migrations first."
                 )
+            demo = await connection.scalar(
+                insert(Organization)
+                .values(slug=DEMO_SLUG, name="Golden Socks")
+                .on_conflict_do_update(
+                    index_elements=[Organization.slug], set_={"name": "Golden Socks"}
+                )
+                .returning(Organization.id)
+            )
             names = ", ".join(t.name for t in tables if t.name != "users")
             await connection.execute(text(f"TRUNCATE {names}"))
             # COPY, through asyncpg, loads the rows far faster than INSERT.
@@ -133,15 +148,25 @@ async def seed(url: str) -> None:
                         table.name, records=rows, columns=columns
                     )
                 print(f"{table.name}: {len(rows)} rows")
+            for name in ORG_TABLES:
+                joined = await connection.execute(
+                    text(f"UPDATE {name} SET org_id = :demo WHERE org_id IS NULL"),
+                    {"demo": demo},
+                )
+                print(f"{name}: {joined.rowcount} joined the demo organization")
             added = await connection.execute(
                 insert(Policy)
                 .values(
                     [
-                        {"role": role, "settings": policy.model_dump(mode="json")}
+                        {
+                            "org_id": demo,
+                            "role": role,
+                            "settings": policy.model_dump(mode="json"),
+                        }
                         for role, policy in POLICIES.items()
                     ]
                 )
-                .on_conflict_do_nothing(index_elements=[Policy.role])
+                .on_conflict_do_nothing(index_elements=[Policy.org_id, Policy.role])
             )
             print(f"policies: {added.rowcount} new of {len(POLICIES)}")
     finally:

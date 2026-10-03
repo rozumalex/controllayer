@@ -89,6 +89,17 @@ async def current_user(
 
 CurrentUser = Annotated[User, Depends(current_user)]
 
+
+async def current_org_id(user: CurrentUser) -> uuid.UUID:
+    """The signed-in user's organization, whose data alone they see, or 403
+    if they belong to none."""
+    if user.org_id is None:
+        raise HTTPException(403, "The user belongs to no organization")
+    return user.org_id
+
+
+OrgId = Annotated[uuid.UUID, Depends(current_org_id)]
+
 # The clearance level that opens the admin pages: the dashboard, the MCP
 # servers and the policy.
 PRIVILEGED = "PRIVILEGED"
@@ -111,7 +122,7 @@ async def user_policy(user: CurrentUser) -> PolicySettings:
     """The policy of the user's role, read on every request, so a policy
     saved in the admin pages applies to the next one."""
     async with SessionLocal() as session:
-        return await role_policy(session, user.title)
+        return await role_policy(session, user.org_id, user.title)
 
 
 UserPolicy = Annotated[PolicySettings, Depends(user_policy)]
@@ -224,7 +235,7 @@ async def chat_control(
     server runs the conversation and its tools, through the MCP gateway. For
     a model from the pool, the client runs them, so the layer checks the
     tool calls and results in the messages itself."""
-    sink = UserEventSink(event_sink(), user.id)
+    sink = UserEventSink(event_sink(), user.id, user.org_id)
     assistant = request.model == ASSISTANT_MODEL
     model = chat_model(policy) if assistant else request.model
     async with SessionLocal() as session:
@@ -252,9 +263,12 @@ async def chat_control(
     )
 
 
-async def enabled_mcp_servers() -> list[McpServer]:
+async def enabled_mcp_servers(org_id: uuid.UUID | None) -> list[McpServer]:
+    """The organization's MCP servers that are turned on."""
     async with SessionLocal() as session:
-        servers = await session.scalars(select(McpServer).where(McpServer.enabled))
+        servers = await session.scalars(
+            select(McpServer).where(McpServer.enabled, McpServer.org_id == org_id)
+        )
         return list(servers)
 
 
@@ -263,7 +277,7 @@ def mcp_connect() -> Connect:
 
 
 async def mcp_gateway(user: CurrentUser, policy: UserPolicy) -> McpGateway:
-    sink = UserEventSink(event_sink(), user.id)
+    sink = UserEventSink(event_sink(), user.id, user.org_id)
     async with SessionLocal() as session:
         catalog = await data_catalog(session)
         labels, seen = await recent_flows(session, user.id)
@@ -293,7 +307,7 @@ async def mcp_gateway(user: CurrentUser, policy: UserPolicy) -> McpGateway:
             [flow, clearance, patterns],
         ),
         mcp_connect(),
-        enabled_mcp_servers,
+        lambda: enabled_mcp_servers(user.org_id),
         settings.control_log_payloads,
         sink,
     )

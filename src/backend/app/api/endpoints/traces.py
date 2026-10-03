@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import Integer, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps import OrgId
 from app.control.adapters.openai_chat import text_of
 from app.core.schema.traces import (
     Analytics,
@@ -104,19 +105,22 @@ def summary(events: Sequence[ControlEvent]) -> TraceSummary:
     )
 
 
-async def stats(session: AsyncSession) -> Stats:
+async def stats(session: AsyncSession, org_id: UUID) -> Stats:
+    mine = ControlEvent.org_id == org_id
+
     def traces(*where: Any) -> Any:
         query = select(func.count(func.distinct(ControlEvent.trace_id)))
-        return query.where(*where).scalar_subquery()
+        return query.where(mine, *where).scalar_subquery()
 
     blocked_ids = select(ControlEvent.trace_id).where(
-        ControlEvent.event == "decision", ControlEvent.action == "block"
+        mine, ControlEvent.event == "decision", ControlEvent.action == "block"
     )
 
     def tokens(name: str) -> Any:
         value = ControlEvent.data["usage"][name].astext.cast(Integer)
         query = select(func.coalesce(func.sum(value), 0))
-        return query.where(ControlEvent.event == "upstream_response").scalar_subquery()
+        query = query.where(mine, ControlEvent.event == "upstream_response")
+        return query.scalar_subquery()
 
     row = (
         await session.execute(
@@ -152,11 +156,14 @@ async def stats(session: AsyncSession) -> Stats:
     summary="List the newest traces of the control layer",
 )
 async def list_traces(
-    session: Session, limit: Annotated[int, Query(ge=1, le=500)] = 50
+    session: Session,
+    org_id: OrgId,
+    limit: Annotated[int, Query(ge=1, le=500)] = 50,
 ) -> TraceList:
     started = func.min(ControlEvent.created_at).label("started")
     newest = (
         select(ControlEvent.trace_id, started)
+        .where(ControlEvent.org_id == org_id)
         .group_by(ControlEvent.trace_id)
         .order_by(started.desc())
         .limit(limit)
@@ -164,14 +171,14 @@ async def list_traces(
     trace_ids = [row.trace_id for row in await session.execute(newest)]
     rows = await session.scalars(
         select(ControlEvent)
-        .where(ControlEvent.trace_id.in_(trace_ids))
+        .where(ControlEvent.org_id == org_id, ControlEvent.trace_id.in_(trace_ids))
         .order_by(ControlEvent.id)
     )
     events: dict[str, list[ControlEvent]] = defaultdict(list)
     for row in rows:
         events[row.trace_id].append(row)
     return TraceList(
-        stats=await stats(session),
+        stats=await stats(session, org_id),
         traces=[summary(events[trace_id]) for trace_id in trace_ids],
     )
 
@@ -185,18 +192,22 @@ def percentile(values: list[float], fraction: float) -> float | None:
 
 
 async def events_since(
-    session: AsyncSession, start: datetime | None, end: datetime | None = None
+    session: AsyncSession,
+    org_id: UUID,
+    start: datetime | None,
+    end: datetime | None = None,
 ) -> dict[str, list[ControlEvent]]:
-    """The events of every trace that started at or after start, and before
-    end. No start or no end leaves that side open."""
-    started = select(ControlEvent.trace_id).where(ControlEvent.event == "request")
+    """The events of every trace of the organization that started at or after
+    start, and before end. No start or no end leaves that side open."""
+    mine = ControlEvent.org_id == org_id
+    started = select(ControlEvent.trace_id).where(mine, ControlEvent.event == "request")
     if start:
         started = started.where(ControlEvent.created_at >= start)
     if end:
         started = started.where(ControlEvent.created_at < end)
     rows = await session.scalars(
         select(ControlEvent)
-        .where(ControlEvent.trace_id.in_(started))
+        .where(mine, ControlEvent.trace_id.in_(started))
         .order_by(ControlEvent.id)
     )
     events: dict[str, list[ControlEvent]] = defaultdict(list)
@@ -216,7 +227,9 @@ async def events_since(
     ),
 )
 async def analytics(
-    session: Session, period: Annotated[Range, Query(alias="range")] = "1h"
+    session: Session,
+    org_id: OrgId,
+    period: Annotated[Range, Query(alias="range")] = "1h",
 ) -> Analytics:
     window, step = RANGES[period]
     # Buckets end on whole steps, so a refresh doesn't shift them.
@@ -228,7 +241,7 @@ async def analytics(
     buckets = [Bucket(start=start + i * step) for i in range(window // step)]
     durations: list[list[float]] = [[] for _ in buckets]
     findings: Counter[tuple[str, str]] = Counter()
-    for events in (await events_since(session, start)).values():
+    for events in (await events_since(session, org_id, start)).values():
         trace = summary(events)
         index = int((trace.started_at - start) / step)
         if not 0 <= index < len(buckets):
@@ -319,6 +332,7 @@ def csv_of(traces: list[TraceSummary]) -> str:
 )
 async def export_traces(
     session: Session,
+    org_id: OrgId,
     fmt: Annotated[Literal["csv", "json"], Query(alias="format")] = "csv",
     start: Annotated[
         datetime | None, Query(description="Traces that started at or after it.")
@@ -334,7 +348,8 @@ async def export_traces(
     ] = None,
 ) -> Response:
     traces = [
-        summary(events) for events in (await events_since(session, start, end)).values()
+        summary(events)
+        for events in (await events_since(session, org_id, start, end)).values()
     ]
     traces = [
         trace
@@ -360,11 +375,11 @@ async def export_traces(
     summary="Get every event of one trace",
     responses={404: {"description": "No trace has this id."}},
 )
-async def get_trace(trace_id: str, session: Session) -> TraceDetail:
+async def get_trace(trace_id: str, session: Session, org_id: OrgId) -> TraceDetail:
     rows = list(
         await session.scalars(
             select(ControlEvent)
-            .where(ControlEvent.trace_id == trace_id)
+            .where(ControlEvent.org_id == org_id, ControlEvent.trace_id == trace_id)
             .order_by(ControlEvent.id)
         )
     )

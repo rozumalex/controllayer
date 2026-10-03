@@ -89,6 +89,10 @@ uv run ty check
 
 To run it on the host: `uv run celery -A app.worker worker --beat --loglevel INFO`, with Redis running (`docker compose up -d redis`).
 
+### Organizations
+
+Every user belongs to an organization, and so do its role policies, its MCP servers and the control layer's events. A user sees and manages only their own organization's: the admin pages, the dashboard, the traces and the audit export filter by it, and another organization's MCP server or trace is not found. The Golden Socks bank is the `demo` organization, which `./dev seed` creates. The seed also moves every row that has no organization yet into `demo`, so a database from before organizations keeps working. The sign-in screen lists only the demo's staff.
+
 ### OpenAI-compatible API
 
 The control layer speaks OpenAI's chat completions API, so any OpenAI client, SDK or agent framework goes through it by changing two settings: the base URL, and the API key, which is the user's ID for now. The chat in the frontend uses the same API.
