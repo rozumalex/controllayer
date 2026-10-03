@@ -14,10 +14,11 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
 
+from app.control.audit import EventSink, LogEventSink
 from app.control.envelope import Action, Direction, Envelope
 from app.control.layer import ControlLayer
 from app.control.pipeline import Decision
-from app.control.upstream import ChatUpstream, chunk, completion
+from app.control.upstream import ChatUpstream, UpstreamError, chunk, completion
 
 logger = logging.getLogger("app.control.chat")
 
@@ -50,30 +51,52 @@ class Trace:
 
 class ChatControl:
     def __init__(
-        self, layer: ControlLayer, upstream: ChatUpstream, log_payloads: bool
+        self,
+        layer: ControlLayer,
+        upstream: ChatUpstream,
+        log_payloads: bool,
+        sink: EventSink | None = None,
     ) -> None:
         self.layer = layer
         self.upstream = upstream
         self.log_payloads = log_payloads
+        self.sink = sink or LogEventSink(logger)
 
     async def complete(self, request: dict[str, Any], trace_id: str) -> dict[str, Any]:
         trace = Trace(trace_id, agent_id=request.get("user") or "anonymous")
         model = request.get("model", "")
-        self.log(trace, "request", model=model, messages=request["messages"])
+        await self.log(
+            trace,
+            "request",
+            agent_id=trace.agent_id,
+            model=model,
+            messages=request["messages"],
+        )
 
         messages, blocked = await self.check_messages(request["messages"], trace)
         if blocked:
             response = completion(model, BLOCKED_PROMPT, "content_filter")
         else:
             upstream_request = {**request, "messages": messages, "stream": False}
-            self.log(trace, "upstream_request", messages=messages)
+            await self.log(trace, "upstream_request", messages=messages)
             start = time.perf_counter()
-            response = await self.upstream.complete(upstream_request)
+            try:
+                response = await self.upstream.complete(upstream_request)
+            except UpstreamError as error:
+                await self.upstream_failed(trace, error)
+                raise
             latency_ms = round((time.perf_counter() - start) * 1000, 3)
-            self.log(trace, "upstream_response", latency_ms=latency_ms, body=response)
+            await self.log(
+                trace,
+                "upstream_response",
+                latency_ms=latency_ms,
+                usage=response.get("usage"),
+                body=response,
+            )
             response = await self.check_response(response, trace)
 
-        self.log(trace, "response", body=response)
+        finish_reason = response["choices"][0]["finish_reason"]
+        await self.log(trace, "response", finish_reason=finish_reason, body=response)
         return response
 
     async def stream(
@@ -86,29 +109,43 @@ class ChatControl:
         trace = Trace(trace_id, agent_id=request.get("user") or "anonymous")
         model = request.get("model", "")
         id = f"chatcmpl-{uuid4().hex}"
-        self.log(trace, "request", model=model, messages=request["messages"])
+        await self.log(
+            trace,
+            "request",
+            agent_id=trace.agent_id,
+            model=model,
+            messages=request["messages"],
+        )
 
         messages, blocked = await self.check_messages(request["messages"], trace)
         if blocked:
-            self.log(trace, "response", body=BLOCKED_PROMPT)
+            await self.log(
+                trace, "response", finish_reason="content_filter", body=BLOCKED_PROMPT
+            )
             yield chunk(id, model, {"content": BLOCKED_PROMPT}, "content_filter")
             return
 
         upstream_request = {**request, "messages": messages, "stream": True}
-        self.log(trace, "upstream_request", messages=messages)
+        await self.log(trace, "upstream_request", messages=messages)
         start = time.perf_counter()
         content: list[str] = []
         calls: dict[int, dict[str, Any]] = {}
         finish_reason = "stop"
-        async for part in self.upstream.stream(upstream_request):
-            for choice in part.get("choices", [])[:1]:
-                delta = choice.get("delta") or {}
-                for call in delta.get("tool_calls") or []:
-                    add_call_delta(calls, call)
-                finish_reason = choice.get("finish_reason") or finish_reason
-                if delta.get("content"):
-                    content.append(delta["content"])
-                    yield chunk(id, model, {"content": delta["content"]})
+        usage = None
+        try:
+            async for part in self.upstream.stream(upstream_request):
+                usage = part.get("usage") or usage
+                for choice in part.get("choices", [])[:1]:
+                    delta = choice.get("delta") or {}
+                    for call in delta.get("tool_calls") or []:
+                        add_call_delta(calls, call)
+                    finish_reason = choice.get("finish_reason") or finish_reason
+                    if delta.get("content"):
+                        content.append(delta["content"])
+                        yield chunk(id, model, {"content": delta["content"]})
+        except UpstreamError as error:
+            await self.upstream_failed(trace, error)
+            raise
         latency_ms = round((time.perf_counter() - start) * 1000, 3)
 
         message: dict[str, Any] = {"role": "assistant", "content": "".join(content)}
@@ -116,11 +153,20 @@ class ChatControl:
             message["tool_calls"] = [calls[index] for index in sorted(calls)]
         response = completion(model, "", finish_reason)
         response["choices"][0]["message"] = message
-        self.log(trace, "upstream_response", latency_ms=latency_ms, body=response)
+        response["usage"] = usage
+        await self.log(
+            trace,
+            "upstream_response",
+            latency_ms=latency_ms,
+            usage=usage,
+            body=response,
+        )
         response = await self.check_response(response, trace)
-        self.log(trace, "response", body=response)
-
         choice = response["choices"][0]
+        await self.log(
+            trace, "response", finish_reason=choice["finish_reason"], body=response
+        )
+
         if choice["finish_reason"] == "content_filter":
             delta = {"content": choice["message"]["content"]}
         elif calls:
@@ -207,13 +253,28 @@ class ChatControl:
             payload=payload,
             trace_id=trace.trace_id,
         )
-        return await self.layer.inspect(envelope)
+        decision = await self.layer.inspect(envelope)
+        # What the layer did, next to the verdicts of its guards. In monitor
+        # mode a guard may say block while the decision is still allow.
+        await self.log(
+            trace,
+            "decision",
+            direction=direction,
+            server=server,
+            tool=tool,
+            action=decision.action,
+        )
+        return decision
 
-    def log(self, trace: Trace, stage: str, **data: Any) -> None:
+    async def upstream_failed(self, trace: Trace, error: UpstreamError) -> None:
+        await self.log(
+            trace, "upstream_error", status_code=error.status_code, body=error.body
+        )
+
+    async def log(self, trace: Trace, stage: str, **data: Any) -> None:
         if not self.log_payloads:
             data = {k: v for k, v in data.items() if k not in ("messages", "body")}
-        event = {"event": stage, "trace_id": trace.trace_id, **data}
-        logger.info(json.dumps(event, default=str))
+        await self.sink.write({"event": stage, "trace_id": trace.trace_id, **data})
 
 
 def add_call_delta(calls: dict[int, dict[str, Any]], delta: dict[str, Any]) -> None:
