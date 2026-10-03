@@ -2,10 +2,11 @@
 Claude Code or Cursor.
 
 It is mounted at /api/mcp and takes the session token from sign-in, the same
-token as the rest of the API. Each request works for the user that token
-signs in: it lists only the tools their role allows, and calls a tool through
-the gateway, with every guard of their policy, so the call shows up in the
-traces under their name.
+token as the rest of the API. A client without one learns from the 401 how to
+sign the user in with OAuth, see app/api/oauth.py. Each request works for the
+user that token signs in: it lists only the tools their role allows, and
+calls a tool through the gateway, with every guard of their policy, so the
+call shows up in the traces under their name.
 """
 
 from collections.abc import AsyncIterator, Callable
@@ -20,10 +21,12 @@ from mcp.server.context import ServerRequestContext
 from mcp.server.lowlevel import Server
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.datastructures import Headers
+from starlette.requests import HTTPConnection
 from starlette.responses import JSONResponse
 from starlette.types import Receive, Scope, Send
 
 from app.api.deps import current_user, mcp_gateway, tool_access, user_policy
+from app.api.oauth import resource_metadata_url
 from app.control.adapters.mcp_gateway import McpGateway
 
 # The agent id of every call, so the traces show it came from an outside
@@ -100,8 +103,10 @@ class GatewayMcpApp:
         try:
             user = await current_user(Headers(scope=scope).get("authorization"))
         except HTTPException as exc:
+            metadata = resource_metadata_url(HTTPConnection(scope))
+            challenge = f'Bearer resource_metadata="{metadata}"'
             response = JSONResponse(
-                {"detail": exc.detail}, exc.status_code, {"WWW-Authenticate": "Bearer"}
+                {"detail": exc.detail}, exc.status_code, {"WWW-Authenticate": challenge}
             )
             await response(scope, receive, send)
             return

@@ -9,6 +9,7 @@ from starlette.routing import Route
 
 from app.api.endpoints.scim import ScimError, error
 from app.api.mcp import gateway_mcp_app
+from app.api.oauth import oauth_routes
 from app.api.router import router as api_router
 from app.control.http import OPENAI_HTTP
 from app.core.config import settings
@@ -53,3 +54,5 @@ async def scim_error(request: Request, exc: ScimError) -> JSONResponse:
 app.router.routes.append(Route(f"{settings.api_prefix}/bank/mcp", bank_mcp_app))
 # The gateway itself, for agents outside Portcullis, under the user's policy.
 app.router.routes.append(Route(f"{settings.api_prefix}/mcp", gateway_mcp_app))
+# Its OAuth, so a client such as Claude signs the user in by itself.
+app.router.routes.extend(oauth_routes)

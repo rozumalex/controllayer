@@ -15,9 +15,11 @@ export default defineConfig({
     // Let `./dev ngrok` reach the dev server. Vite blocks unknown hosts.
     allowedHosts: [".ngrok-free.app", ".ngrok-free.dev", ".ngrok.app"],
     // Send requests under /api/ to the backend. The backend serves every
-    // route under /api.
+    // route under /api, but for the OAuth metadata of its MCP server, which
+    // clients look for under /.well-known/ at the root.
     proxy: {
       "/api": process.env.API_URL ?? "http://localhost:8000",
+      "/.well-known": process.env.API_URL ?? "http://localhost:8000",
     },
   },
 })

@@ -8,6 +8,7 @@ from app.api.endpoints import (
     health,
     identity,
     mcp_servers,
+    oauth,
     policy,
     scim,
     sso,
@@ -17,7 +18,7 @@ from app.core.config import settings
 
 # Every endpoint router is included here, under the API prefix. All but health
 # and auth need a signed-in user, and the admin ones need a privileged user.
-# The employees router checks each of its endpoints.
+# The employees and oauth routers check each of their endpoints.
 router = APIRouter(prefix=settings.api_prefix)
 signed_in = [Depends(current_user)]
 privileged = [Depends(privileged_user)]
@@ -28,6 +29,7 @@ router.include_router(sso.router)
 router.include_router(scim.router)
 router.include_router(employees.router)
 router.include_router(chat.router, dependencies=signed_in)
+router.include_router(oauth.router)
 router.include_router(traces.router, dependencies=privileged)
 router.include_router(mcp_servers.router, dependencies=privileged)
 router.include_router(policy.router, dependencies=privileged)

@@ -15,7 +15,8 @@ import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard"
 import { storedToken } from "@/lib/users"
 
 // How to plug the user's own agent, such as Claude Code, into the gateway's
-// MCP server. It signs in with the user's session token.
+// MCP server. Claude Code takes the user's session token; Claude Desktop
+// signs the user in with OAuth.
 export function ConnectAgent({ className }: { className?: string }) {
   const { isCopied, copyToClipboard } = useCopyToClipboard()
   const url = `${window.location.origin}/api/mcp`
@@ -43,6 +44,10 @@ export function ConnectAgent({ className }: { className?: string }) {
         <div className="grid gap-2">
           <Label>MCP URL</Label>
           <Input readOnly className="font-mono" value={url} />
+          <p className="text-xs text-muted-foreground">
+            In Claude Desktop or claude.ai, add it as a custom connector. Claude
+            signs you in here, from a public HTTPS address.
+          </p>
         </div>
         <div className="grid gap-2">
           <Label>Claude Code</Label>

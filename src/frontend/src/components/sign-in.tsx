@@ -33,6 +33,7 @@ import {
   signInWithGoogle,
   signOut,
   startSso,
+  takeReturnPath,
 } from "@/lib/users"
 import { cn } from "@/lib/utils"
 
@@ -43,9 +44,11 @@ export function SignedIn({ children }: { children: ReactNode }) {
   const [linkFailed, setLinkFailed] = useState(false)
 
   // A fresh sign-in lands on the admin pages, for those who may open them.
-  // A reload stays where it was.
+  // A reload stays where it was, and so does an MCP client's consent page.
   const signedIn = (user: Employee) => {
-    if (isPrivileged(user) && !window.location.pathname.startsWith("/admin"))
+    const path = window.location.pathname
+    const stays = path.startsWith("/admin") || path.startsWith("/oauth")
+    if (isPrivileged(user) && !stays)
       window.history.replaceState(null, "", "/admin")
     setUser(user)
   }
@@ -56,7 +59,7 @@ export function SignedIn({ children }: { children: ReactNode }) {
     if (window.location.pathname === "/auth/callback") {
       const code = params.get("code")
       const state = params.get("state")
-      window.history.replaceState(null, "", "/")
+      window.history.replaceState(null, "", takeReturnPath())
       if (code && state) {
         finishSso(code, state)
           .then(signedIn)

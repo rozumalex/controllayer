@@ -105,11 +105,34 @@ export async function startSso(fields: {
 }): Promise<boolean> {
   try {
     const { url } = await post<{ url: string }>("sso", fields)
+    try {
+      sessionStorage.setItem(
+        RETURN_KEY,
+        window.location.pathname + window.location.search
+      )
+    } catch {
+      // Without storage the user lands on the home page.
+    }
     window.location.assign(url)
     return true
   } catch (e) {
     if (e instanceof RequestError && e.status === 404) return false
     throw e
+  }
+}
+
+// Where the browser was before single sign-on, such as an MCP client's
+// consent page, to go back to after it.
+const RETURN_KEY = "sso-return-path"
+
+export function takeReturnPath(): string {
+  try {
+    const path = sessionStorage.getItem(RETURN_KEY)
+    sessionStorage.removeItem(RETURN_KEY)
+    // Only a path on this site, never another one.
+    return path?.startsWith("/") && !path.startsWith("//") ? path : "/"
+  } catch {
+    return "/"
   }
 }
 
