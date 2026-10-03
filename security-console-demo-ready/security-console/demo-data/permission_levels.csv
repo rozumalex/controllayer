@@ -1,4 +1,0 @@
-permission,rank,nominal_access,description
-LOW,1,PUBLIC,Can access public directory fields only
-STANDARD,2,"PUBLIC, INTERNAL, selected CONFIDENTIAL",Can access internal data; confidential fields may be redacted according to policy
-PRIVILEGED,3,"PUBLIC, INTERNAL, CONFIDENTIAL, RESTRICTED",Can access restricted business data for legitimate requests; security bypass attempts remain blocked
