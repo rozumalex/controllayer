@@ -3,14 +3,14 @@ from collections.abc import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import delete, text
+from sqlalchemy import delete, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.core.config import settings
 from app.db.base import Base
-from app.db.models import ControlEvent
+from app.db.models import ControlEvent, User
 from app.db.session import SessionLocal
 from app.main import app
 
@@ -72,7 +72,32 @@ def no_events() -> None:
     asyncio.run(delete_events())
 
 
+TESTER_EMAIL = "tester@example.com"
+
+
+async def tester() -> User:
+    async with SessionLocal() as session:
+        user = await session.scalar(select(User).where(User.email == TESTER_EMAIL))
+        if user is None:
+            user = User(email=TESTER_EMAIL, name="Test User")
+            session.add(user)
+            await session.commit()
+        return user
+
+
 @pytest.fixture
-def client() -> Iterator[TestClient]:
-    with TestClient(app) as client:
+def user() -> User:
+    """The user the test signs in as. Ask for it after db, which empties the
+    users table."""
+    return asyncio.run(tester())
+
+
+def signed_in(user: User) -> dict[str, str]:
+    return {"User-Id": str(user.id)}
+
+
+@pytest.fixture
+def client(user: User) -> Iterator[TestClient]:
+    """A client signed in as the test user."""
+    with TestClient(app, headers=signed_in(user)) as client:
         yield client

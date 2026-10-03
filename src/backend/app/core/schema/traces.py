@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Any, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -23,10 +24,18 @@ class Finding(BaseModel):
     tool: str
 
 
+class TraceUser(BaseModel):
+    id: UUID
+    name: str
+
+
 class TraceSummary(BaseModel):
     trace_id: str
     started_at: datetime
     agent_id: str | None
+    user: TraceUser | None = Field(
+        description="The signed-in user the request came from, if any."
+    )
     prompt: str | None = Field(
         description=(
             "The user's message, or the tool an MCP call went to. The message "

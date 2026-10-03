@@ -10,6 +10,7 @@ from app.control.adapters.openai_chat import ChatControl
 from app.control.pipeline import Mode
 from app.control.upstream import MockUpstream, UpstreamError
 from app.core.config import settings
+from app.db.models import User
 from app.main import app
 from tests.test_mcp_gateway import gateway
 
@@ -44,6 +45,28 @@ def test_streamed_chat_traced_with_every_stage(client: TestClient) -> None:
     ]
     assert trace["summary"]["outcome"] == "allowed"
     assert trace["summary"]["findings"] == []
+
+
+def test_every_event_names_the_user(client: TestClient, user: User) -> None:
+    # given
+    trace_id = chat(client, INJECTION)
+
+    # when
+    events = client.get(f"/api/traces/{trace_id}").json()["events"]
+
+    # then
+    assert {e["data"]["user_id"] for e in events} == {str(user.id)}
+
+
+def test_trace_lists_the_user(client: TestClient, user: User) -> None:
+    # given
+    chat(client, "What is 2 + 2?")
+
+    # when
+    [trace] = client.get("/api/traces").json()["traces"]
+
+    # then
+    assert trace["user"] == {"id": str(user.id), "name": user.name}
 
 
 def test_token_usage_recorded(client: TestClient) -> None:

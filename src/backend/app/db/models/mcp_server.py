@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, String, func, true
+from sqlalchemy import DateTime, ForeignKey, String, func, true
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -25,4 +25,11 @@ class McpServer(Base):
     enabled: Mapped[bool] = mapped_column(default=True, server_default=true())
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
+    )
+    # The users who added it and who last turned it on or off.
+    created_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", name="mcp_servers_created_by_id_fkey")
+    )
+    updated_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", name="mcp_servers_updated_by_id_fkey")
     )

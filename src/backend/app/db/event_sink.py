@@ -20,6 +20,7 @@ class DatabaseEventSink:
             trace_id=data["trace_id"],
             event=data["event"],
             action=data.get("action"),
+            user_id=data.get("user_id"),
             data=data,
         )
         try:
@@ -29,4 +30,8 @@ class DatabaseEventSink:
         except SQLAlchemyError, OSError:
             # The event is still in the logs. A database outage should not
             # take the chat down with it.
-            logger.exception("could not save event: trace_id=%s", data["trace_id"])
+            logger.exception(
+                "could not save event: trace_id=%s user_id=%s",
+                data["trace_id"],
+                data.get("user_id"),
+            )

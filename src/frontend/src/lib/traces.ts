@@ -1,3 +1,5 @@
+import { userHeaders } from "@/lib/users"
+
 // The responses of GET /api/traces, see app/core/schema/traces.py.
 
 export type Outcome = "allowed" | "flagged" | "blocked" | "error"
@@ -21,6 +23,7 @@ export type TraceSummary = {
   trace_id: string
   started_at: string
   agent_id: string | null
+  user: { id: string; name: string } | null
   prompt: string | null
   outcome: Outcome
   findings: Finding[]
@@ -49,7 +52,7 @@ export type TraceEvent = {
 export type TraceDetail = { summary: TraceSummary; events: TraceEvent[] }
 
 async function get<T>(url: string): Promise<T> {
-  const response = await fetch(url)
+  const response = await fetch(url, { headers: userHeaders() })
   if (!response.ok) throw new Error(`${url} failed with ${response.status}.`)
   return response.json()
 }

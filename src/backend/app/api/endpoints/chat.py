@@ -7,7 +7,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from app.api.deps import chat_control
+from app.api.deps import CurrentUser, chat_control
 from app.control.adapters.openai_chat import ChatControl
 from app.control.upstream import UpstreamError
 from app.core.assistant import conversation
@@ -31,7 +31,9 @@ UPSTREAM_FAILED = {"detail": "The model is unavailable. Try again later."}
     ),
 )
 async def chat(
-    request: ChatRequest, control: Annotated[ChatControl, Depends(chat_control)]
+    request: ChatRequest,
+    control: Annotated[ChatControl, Depends(chat_control)],
+    user: CurrentUser,
 ) -> Any:
     trace_id = uuid4().hex
     completion = {"messages": conversation(request.message)}
@@ -41,8 +43,9 @@ async def chat(
         # The upstream error is about the server's key and the model, not the
         # caller's request, so the caller gets a plain 502.
         logger.warning(
-            "upstream failed: trace_id=%s status=%s body=%s",
+            "upstream failed: trace_id=%s user_id=%s status=%s body=%s",
             trace_id,
+            user.id,
             error.status_code,
             error.body,
         )
@@ -73,7 +76,9 @@ def event(**data: Any) -> str:
     ),
 )
 async def chat_stream(
-    request: ChatRequest, control: Annotated[ChatControl, Depends(chat_control)]
+    request: ChatRequest,
+    control: Annotated[ChatControl, Depends(chat_control)],
+    user: CurrentUser,
 ) -> StreamingResponse:
     trace_id = uuid4().hex
     completion = {"messages": conversation(request.message)}
@@ -88,8 +93,9 @@ async def chat_stream(
                 blocked = blocked or choice["finish_reason"] == "content_filter"
         except UpstreamError as error:
             logger.warning(
-                "upstream failed: trace_id=%s status=%s body=%s",
+                "upstream failed: trace_id=%s user_id=%s status=%s body=%s",
                 trace_id,
+                user.id,
                 error.status_code,
                 error.body,
             )

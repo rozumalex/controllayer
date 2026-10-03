@@ -184,6 +184,9 @@ export function Dashboard() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-24">Time</TableHead>
+                  <TableHead className="hidden w-40 lg:table-cell">
+                    User
+                  </TableHead>
                   <TableHead>Prompt</TableHead>
                   <TableHead className="w-24">Outcome</TableHead>
                   <TableHead className="hidden md:table-cell">
@@ -199,7 +202,7 @@ export function Dashboard() {
                 {traces?.traces.length === 0 && (
                   <TableRow>
                     <TableCell
-                      colSpan={6}
+                      colSpan={7}
                       className="py-10 text-center text-muted-foreground"
                     >
                       No requests yet. Send a message in the assistant.
@@ -214,6 +217,13 @@ export function Dashboard() {
                   >
                     <TableCell className="text-muted-foreground tabular-nums">
                       {formatTime(trace.started_at)}
+                    </TableCell>
+                    <TableCell className="hidden max-w-0 truncate lg:table-cell">
+                      {trace.user?.name ?? (
+                        <span className="text-muted-foreground italic">
+                          no user
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell className="max-w-0 truncate">
                       {trace.prompt ?? (
