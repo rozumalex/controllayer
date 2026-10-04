@@ -4,11 +4,11 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.api import deps
-from app.core.schema.policy import ToolAction
-from app.db.models import ControlEvent, McpServer, User
+from app.core.schema.policy import PolicySettings, ToolAction
+from app.db.models import ControlEvent, McpServer, Policy, User
 from app.db.policy import DEFAULT_ROLE
 from app.db.session import SessionLocal
 from app.main import app
@@ -35,6 +35,13 @@ def crm(db: None, monkeypatch: pytest.MonkeyPatch) -> None:
     blocked = {"crm__delete_client": ToolAction.BLOCK}
     asyncio.run(save(DEFAULT_ROLE, policy(tools=blocked)))
     asyncio.run(save("Analyst", policy(tools={})))
+
+
+async def save_over(role: str, settings: PolicySettings) -> None:
+    async with SessionLocal() as session:
+        await session.execute(delete(Policy).where(Policy.role == role))
+        await session.commit()
+    await save(role, settings)
 
 
 def rpc(client: TestClient, method: str, **params: Any) -> dict[str, Any]:
@@ -71,6 +78,20 @@ def test_lists_only_the_tools_the_role_allows(
     # then
     assert tester_tools == {"crm__get_client"}
     assert analyst_tools == {"crm__get_client", "crm__delete_client"}
+
+
+def test_lists_blocked_tools_when_the_role_shows_them(tester: TestClient) -> None:
+    # given
+    blocked = {"crm__delete_client": ToolAction.BLOCK}
+    shown = policy(tools=blocked, show_blocked_tools=True)
+    asyncio.run(save_over(DEFAULT_ROLE, shown))
+
+    # when
+    tools = {t["name"]: t for t in rpc(tester, "tools/list")["tools"]}
+
+    # then
+    assert set(tools) == {"crm__get_client", "crm__delete_client"}
+    assert tools["crm__delete_client"]["description"].startswith("Blocked")
 
 
 def test_call_to_a_blocked_tool_is_refused(tester: TestClient) -> None:

@@ -217,7 +217,9 @@ def chat_upstream(model: str) -> ChatUpstream:
 
 
 def tool_access(policy: PolicySettings) -> ToolAccessGuard:
-    return ToolAccessGuard(policy.tools, policy.default_tool_action)
+    return ToolAccessGuard(
+        policy.tools, policy.default_tool_action, policy.show_blocked_tools
+    )
 
 
 def sensitive_data(policy: PolicySettings) -> SensitiveDataGuard:
@@ -440,5 +442,5 @@ def chat_agent(
     mode: SimulatedMode,
 ) -> Agent:
     # With security off, the model gets every tool.
-    allows = tool_access(policy).allows if mode is not Mode.OFF else None
-    return Agent(control, gateway, allows=allows or (lambda name: True))
+    listed = tool_access(policy).listed if mode is not Mode.OFF else None
+    return Agent(control, gateway, listed=listed or (lambda tools: tools))

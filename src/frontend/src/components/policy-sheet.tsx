@@ -13,6 +13,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet"
 import { Slider } from "@/components/ui/slider"
+import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   CLEARANCES,
@@ -358,6 +359,22 @@ export function PolicySheet({
                   />
                 </div>
               </div>
+              <Label className="flex items-center justify-between gap-3 font-normal">
+                <span>
+                  Show blocked tools to agents
+                  <span className="block text-xs text-muted-foreground">
+                    Marked as blocked, so the user knows they exist. A call to
+                    one is still refused, but doesn&apos;t count toward a
+                    lockout.
+                  </span>
+                </span>
+                <Switch
+                  checked={draft.show_blocked_tools}
+                  onCheckedChange={(show_blocked_tools) =>
+                    update({ show_blocked_tools })
+                  }
+                />
+              </Label>
               {tools === null && (
                 <p className="text-sm text-muted-foreground">
                   Loading the gateway tools…

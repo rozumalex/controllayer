@@ -31,8 +31,9 @@ export function ConnectAgent() {
         <DialogHeader>
           <DialogTitle>Connect your agent</DialogTitle>
           <DialogDescription>
-            Any MCP client gets the tools your role allows, through the same
-            guards, and each call shows in the traces under your name.
+            Any MCP client gets the tools your role allows, and the blocked ones
+            marked as blocked if your role shows them, through the same guards,
+            and each call shows in the traces under your name.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-2">

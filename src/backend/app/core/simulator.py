@@ -85,7 +85,7 @@ RISKS = [
     # Injections planted in the data a tool returns.
     Risk("LLM04", "Data poisoning", INJECTION),
     Risk("LLM05", "Output handling", ("attack_signatures",)),
-    Risk("LLM06", "Excessive agency", ("policy_tools",)),
+    Risk("LLM06", "Excessive agency", ("policy_tools", "policy_tools_listed")),
     Risk("LLM07", "Prompt leakage", ("prompt_leak",)),
     Risk("LLM08", "Vectors", ()),
     Risk("LLM09", "Misinformation", ()),
@@ -611,8 +611,8 @@ class Simulation:
             connect=self.connect,
             mode=self.mode,
         )
-        allows = tool_access(self.policy).allows if self.security else None
-        agent = Agent(control, tools, allows=allows or (lambda name: True))
+        listed = tool_access(self.policy).listed if self.security else None
+        agent = Agent(control, tools, listed=listed or (lambda tools: tools))
         messages = conversation([*history, {"role": "user", "content": prompt}])
         response = await agent.complete(messages, trace_id)
         return str(response["choices"][0]["message"].get("content") or "")

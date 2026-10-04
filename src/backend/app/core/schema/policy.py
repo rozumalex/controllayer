@@ -98,6 +98,11 @@ class PolicySettings(BaseModel):
         description="Gateway tools, as `<server>__<tool>`, and what happens "
         "when the role calls them: allow, redact the result, or block.",
     )
+    show_blocked_tools: bool = Field(
+        default=False,
+        description="Whether agents see the tools the role blocks, marked as "
+        "blocked. The gateway refuses a call to them either way.",
+    )
 
     @field_validator("above_clearance")
     @classmethod

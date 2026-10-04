@@ -3,9 +3,9 @@ Claude Code or Cursor.
 
 It is mounted at /api/mcp and takes the session token from sign-in, the same
 token as the rest of the API. Each request works for the user that token
-signs in: it lists only the tools their role allows, and calls a tool through
-the gateway, with every guard of their policy, so the call shows up in the
-traces under their name.
+signs in: it lists the tools their role allows, and the blocked ones too if
+the role shows them, and calls a tool through the gateway, with every guard
+of their policy, so the call shows up in the traces under their name.
 """
 
 from collections.abc import AsyncIterator, Callable
@@ -33,11 +33,11 @@ AGENT_ID = "mcp-client"
 
 @dataclass(frozen=True)
 class Caller:
-    """The gateway of the user who sent the request, and whether their role
-    allows a tool, by its gateway name."""
+    """The gateway of the user who sent the request, and the tools their role
+    shows them."""
 
     gateway: McpGateway
-    allows: Callable[[str], bool]
+    listed: Callable[[list[types.Tool]], list[types.Tool]]
 
 
 # Set for each request alone, so no two users ever share a gateway.
@@ -47,10 +47,10 @@ caller: ContextVar[Caller] = ContextVar("caller")
 async def list_tools(
     ctx: ServerRequestContext, params: types.PaginatedRequestParams | None
 ) -> types.ListToolsResult:
-    """The user's tools: a tool their role blocks is never listed."""
+    """The user's tools: a tool their role blocks is listed only if the role
+    shows blocked tools, marked as blocked."""
     user = caller.get()
-    tools = await user.gateway.list_tools()
-    return types.ListToolsResult(tools=[t for t in tools if user.allows(t.name)])
+    return types.ListToolsResult(tools=user.listed(await user.gateway.list_tools()))
 
 
 async def call_tool(
@@ -107,7 +107,7 @@ class GatewayMcpApp:
             return
         policy = await user_policy(user)
         gateway = await mcp_gateway(user, policy)
-        caller.set(Caller(gateway, tool_access(policy).allows))
+        caller.set(Caller(gateway, tool_access(policy).listed))
         await server.session_manager.handle_request(scope, receive, send)
 
 

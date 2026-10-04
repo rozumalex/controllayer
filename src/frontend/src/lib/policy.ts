@@ -61,6 +61,8 @@ export type PolicySettings = {
   lockout: { blocks: number; flags: number; minutes: number }
   default_tool_action: ToolAction
   tools: Record<string, ToolAction>
+  // Whether agents see the blocked tools, marked as blocked.
+  show_blocked_tools: boolean
 }
 
 export type PolicyRead = { customized: boolean; settings: PolicySettings }

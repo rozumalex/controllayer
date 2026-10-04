@@ -52,21 +52,17 @@ class Agent:
         control: ChatControl,
         gateway: McpGateway,
         agent_id: str = "anonymous",
-        allows: Callable[[str], bool] = lambda name: True,
+        listed: Callable[[list[types.Tool]], list[types.Tool]] = lambda tools: tools,
     ) -> None:
         self.control = control
         self.gateway = gateway
-        # Whether the user's policy lets them call a tool. The model never
-        # sees the others; the gateway blocks them too, in case it asks.
-        self.allows = allows
+        # The tools the user's policy shows the model. The gateway blocks a
+        # call to a blocked tool too, in case the model asks for it.
+        self.listed = listed
         self.agent_id = agent_id
 
     async def tools(self) -> list[dict[str, Any]]:
-        tools = [
-            openai_tool(tool)
-            for tool in await self.gateway.list_tools()
-            if self.allows(tool.name)
-        ]
+        tools = [openai_tool(t) for t in self.listed(await self.gateway.list_tools())]
         if len(tools) > MAX_TOOLS:
             logger.warning(
                 "%d tools, the model gets the first %d", len(tools), MAX_TOOLS
