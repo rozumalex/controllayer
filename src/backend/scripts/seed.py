@@ -1,7 +1,8 @@
 """Load the Golden Socks bank data into a database.
 
-Empties the bank_ tables and copies every row from scripts/bank_data into
-them, all in one transaction. The bank is the demo organization: the staff
+Replaces the demo organization's rows in the bank_ tables with every row
+from scripts/bank_data, all in one transaction. The demo sandboxes keep
+their own copies. The bank is the demo organization: the staff
 in users are updated in place and belong to it, so the rows that refer to
 them, such as the control events, are kept. Rows that predate organizations
 join it too. It also saves the policies in scripts/policies.yaml for the
@@ -122,7 +123,7 @@ def load(table: Table) -> tuple[list[str], list[tuple[Any, ...]]]:
 
 
 async def upsert_staff(
-    raw: Any, columns: list[str], rows: list[tuple[Any, ...]]
+    raw: Any, demo: uuid.UUID, columns: list[str], rows: list[tuple[Any, ...]]
 ) -> None:
     """Update the staff in users to the rows, add the new ones and remove the
     ones the rows don't have. Other tables refer to users, so a staff member's
@@ -137,9 +138,12 @@ async def upsert_staff(
         f"INSERT INTO users ({names}) SELECT {names} FROM staff "
         f"ON CONFLICT (id) DO UPDATE SET {updates}"
     )
+    # The demo's staff only: each sandbox has its own copy of them.
     await raw.execute(
-        "DELETE FROM users WHERE email LIKE $1 AND id NOT IN (SELECT id FROM staff)",
+        "DELETE FROM users WHERE email LIKE $1 AND id NOT IN (SELECT id FROM staff) "
+        "AND (org_id = $2 OR org_id IS NULL)",
         f"%@{STAFF_DOMAIN}",
+        demo,
     )
 
 
@@ -307,18 +311,24 @@ async def seed(url: str) -> None:
                 )
                 .returning(Organization.id)
             )
-            names = ", ".join(t.name for t in tables if t.name != "users")
-            await connection.execute(text(f"TRUNCATE {names}"))
+            assert demo is not None
+            for table in tables:
+                if table.name != "users":
+                    await connection.execute(
+                        table.delete().where(table.c.org_id == demo)
+                    )
             # COPY, through asyncpg, loads the rows far faster than INSERT.
             raw = (await connection.get_raw_connection()).driver_connection
             assert raw is not None
             for table in tables:
                 columns, rows = load(table)
                 if table.name == "users":
-                    await upsert_staff(raw, columns, rows)
+                    await upsert_staff(raw, demo, columns, rows)
                 else:
                     await raw.copy_records_to_table(
-                        table.name, records=rows, columns=columns
+                        table.name,
+                        records=[(*r, demo) for r in rows],
+                        columns=[*columns, "org_id"],
                     )
                 print(f"{table.name}: {len(rows)} rows")
             for name in ORG_TABLES:
@@ -353,7 +363,9 @@ async def seed(url: str) -> None:
             await connection.execute(
                 insert(User)
                 .values(account)
-                .on_conflict_do_update(index_elements=[User.email], set_=account)
+                .on_conflict_do_update(
+                    index_elements=[User.org_id, User.email], set_=account
+                )
             )
             print(f"demo account: {settings.demo_email}, a {DEMO_ROLE}")
             await connection.execute(
@@ -364,7 +376,6 @@ async def seed(url: str) -> None:
                 )
             )
             print(f"demo single sign-on: {DEMO_IDP['name']}")
-            assert demo is not None
             await seed_directory(connection, demo)
     finally:
         await engine.dispose()

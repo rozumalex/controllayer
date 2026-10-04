@@ -27,7 +27,7 @@ logger = logging.getLogger("app.control.agent")
 MAX_STEPS = 6
 # OpenAI refuses a request with more tools.
 MAX_TOOLS = 128
-FAILED = "[control layer] The call to {tool} failed."
+FAILED = "The call to {tool} failed."
 
 
 def openai_tool(tool: types.Tool) -> dict[str, Any]:

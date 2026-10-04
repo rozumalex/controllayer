@@ -3,7 +3,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from enum import StrEnum
 
-from app.control.audit import AuditSink
+from app.control.audit import AuditSink, payload_hash
 from app.control.envelope import Action, Envelope, Verdict
 from app.control.guard import Guard
 
@@ -11,6 +11,7 @@ from app.control.guard import Guard
 class Mode(StrEnum):
     ENFORCE = "enforce"  # a BLOCK verdict stops the message
     MONITOR = "monitor"  # every verdict is logged, nothing is blocked
+    OFF = "off"  # every verdict is logged, nothing is blocked or changed
 
 
 @dataclass(frozen=True)
@@ -18,6 +19,17 @@ class Decision:
     action: Action
     envelope: Envelope
     verdicts: list[Verdict]
+
+    def blocker(self) -> dict[str, str]:
+        """For the decision event of a blocked message: the guard that blocked
+        it, and a hash of the message as that guard saw it, so a tool's
+        poisoned results are counted once each. Empty unless blocked."""
+        if self.action is not Action.BLOCK:
+            return {}
+        return {
+            "guard": self.verdicts[-1].guard,
+            "payload_sha256": payload_hash(self.envelope),
+        }
 
 
 class Pipeline:
@@ -44,6 +56,8 @@ class Pipeline:
             await self.audit.record(envelope, verdict, latency_ms)
             if verdict.action is Action.BLOCK and self.mode is Mode.ENFORCE:
                 return Decision(Action.BLOCK, envelope, verdicts)
+            if self.mode is Mode.OFF:
+                continue
             if verdict.action is Action.MODIFY and verdict.payload is not None:
                 envelope = replace(envelope, payload=verdict.payload)
                 modified = True

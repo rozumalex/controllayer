@@ -47,6 +47,8 @@ COPY app ./app
 # The bank data and its loader, for the deploy's pre-deploy job.
 COPY scripts/__init__.py scripts/seed.py scripts/policies.py scripts/policies.yaml ./scripts/
 COPY scripts/bank_data ./scripts/bank_data
+# The attack corpus, for the attack simulator.
+COPY scripts/attacks.py scripts/mutations.py scripts/attack_corpus.json scripts/attack_translations.json ./scripts/
 
 ENV PATH="/opt/venv/bin:$PATH"
 

@@ -72,19 +72,17 @@ def test_model_the_policy_does_not_allow_is_blocked() -> None:
 
 
 @pytest.mark.parametrize(
-    ("budget", "tokens", "usd", "action"),
+    ("budget", "weekly", "action"),
     [
-        (Budget(), 10**9, Decimal(10**6), Action.ALLOW),
-        (Budget(monthly_tokens=1000), 999, Decimal(0), Action.ALLOW),
-        (Budget(monthly_tokens=1000), 1000, Decimal(0), Action.BLOCK),
-        (Budget(monthly_usd=Decimal(5)), 0, Decimal("4.99"), Action.ALLOW),
-        (Budget(monthly_usd=Decimal(5)), 0, Decimal(5), Action.BLOCK),
-        (Budget(monthly_tokens=0), 0, Decimal(0), Action.BLOCK),
+        (Budget(), Decimal(10**6), Action.ALLOW),
+        (Budget(weekly_usd=Decimal(2)), Decimal("1.99"), Action.ALLOW),
+        (Budget(weekly_usd=Decimal(2)), Decimal(2), Action.BLOCK),
+        (Budget(weekly_usd=Decimal(0)), Decimal(0), Action.BLOCK),
     ],
 )
-def test_budget(budget: Budget, tokens: int, usd: Decimal, action: Action) -> None:
+def test_budget(budget: Budget, weekly: Decimal, action: Action) -> None:
     # given
-    guard = BudgetGuard(budget, tokens, usd)
+    guard = BudgetGuard(budget, weekly)
 
     # when / then
     assert inspect(guard, prompt()).action is action
@@ -92,7 +90,7 @@ def test_budget(budget: Budget, tokens: int, usd: Decimal, action: Action) -> No
 
 def test_budget_score_is_the_share_used() -> None:
     # given
-    guard = BudgetGuard(Budget(monthly_tokens=1000), 250, Decimal(0))
+    guard = BudgetGuard(Budget(weekly_usd=Decimal(4)), Decimal(1))
 
     # when / then
     assert inspect(guard, prompt()).score == 0.25

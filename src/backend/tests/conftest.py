@@ -75,6 +75,28 @@ def no_loop_limit(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "control_loop_call_limit", 0)
 
 
+@pytest.fixture(autouse=True)
+def no_lockout(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Turns the account lockout off, so tests that block many requests don't
+    lock the test user out. Its own tests turn it on."""
+    monkeypatch.setattr(settings, "control_lockout_blocks", 0)
+
+
+@pytest.fixture(autouse=True)
+def no_spoiled_tools(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Turns the spoiled tool block off, so tests that send many poisoned
+    results don't block the tool for the next. Its own tests turn it on."""
+    monkeypatch.setattr(settings, "control_spoiled_tool_results", 0)
+
+
+@pytest.fixture(autouse=True)
+def no_sandbox_pool(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Copies a demo sandbox at sign-in instead of ahead, so no copy runs
+    in the background while a test empties the tables. The pool's own tests
+    turn it back on."""
+    monkeypatch.setattr(settings, "demo_sandbox_pool", 0)
+
+
 @pytest.fixture
 def db() -> None:
     """Starts the test with empty tables."""

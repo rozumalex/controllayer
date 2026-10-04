@@ -2,6 +2,7 @@ import asyncio
 import json
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
+from decimal import Decimal
 from typing import Any
 
 import pytest
@@ -116,19 +117,18 @@ def test_chat_blocked_when_policy_allows_no_model(db: None, user: User) -> None:
     assert blocked(data) is True
 
 
-def test_chat_blocked_once_monthly_tokens_are_used(db: None, user: User) -> None:
+def test_chat_blocked_once_the_weekly_budget_is_spent(db: None, user: User) -> None:
     # given
-    asyncio.run(save(DEFAULT_ROLE, policy(budget=Budget(monthly_tokens=1))))
+    budget = Budget(weekly_usd=Decimal(0))
+    asyncio.run(save(DEFAULT_ROLE, policy(budget=budget)))
     request = ask("What is 2 + 2?")
 
     # when
     with TestClient(app, headers=signed_in(user)) as client:
-        first = client.post(URL, json=request).json()
-        second = client.post(URL, json=request).json()
+        data = client.post(URL, json=request).json()
 
     # then
-    assert blocked(first) is False
-    assert blocked(second) is True
+    assert blocked(data) is True
 
 
 def test_role_policy_applies_over_the_default(analyst: TestClient) -> None:
@@ -195,7 +195,7 @@ def test_model_never_sees_a_blocked_tool() -> None:
     # given
     settings = policy(tools={"crm__delete_client": ToolAction.BLOCK})
     upstream = ToolUsingUpstream("crm__get_client", {"client_id": "C1"})
-    control = ChatControl(control_layer(), upstream, False, check_tools=False)
+    control = ChatControl(control_layer(), upstream, check_tools=False)
     tools = ToolAccessGuard(settings.tools, settings.default_tool_action)
     subject = Agent(control, gateway(settings), allows=tools.allows)
 
@@ -212,7 +212,7 @@ def test_model_never_sees_pii_from_the_prompt_on_any_step() -> None:
     settings = policy(clearance=Clearance.INTERNAL)
     upstream = ToolUsingUpstream("crm__get_client", {"client_id": "C1"})
     layer = control_layer(policy=settings, inbound=[sensitive_data(settings)])
-    control = ChatControl(layer, upstream, False, check_tools=False)
+    control = ChatControl(layer, upstream, check_tools=False)
     subject = Agent(control, gateway(settings))
     question = [{"role": "user", "content": "Card 4111 1111 1111 1111 for C1?"}]
 
@@ -233,7 +233,7 @@ def test_pii_and_secrets_never_logged(message: str) -> None:
     settings = policy(clearance=Clearance.INTERNAL)
     sink = ListSink()
     layer = control_layer(sink, settings, inbound=[sensitive_data(settings)])
-    control = ChatControl(layer, MockUpstream(delay=0), True, sink)
+    control = ChatControl(layer, MockUpstream(delay=0), sink)
     request = {"messages": [{"role": "user", "content": message}]}
 
     # when
@@ -250,7 +250,7 @@ def test_secret_never_reaches_the_model() -> None:
     settings = policy(clearance=Clearance.RESTRICTED)
     upstream = ToolUsingUpstream("crm__get_client", {"client_id": "C1"})
     layer = control_layer(policy=settings, inbound=[sensitive_data(settings)])
-    control = ChatControl(layer, upstream, False, check_tools=False)
+    control = ChatControl(layer, upstream, check_tools=False)
     question = [{"role": "user", "content": "Use key AKIAIOSFODNN7EXAMPLE"}]
 
     # when

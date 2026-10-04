@@ -10,6 +10,7 @@ from app.db.models.bank import (
     BankTransaction,
 )
 from app.db.models.control_event import ControlEvent
+from app.db.models.conversation import Conversation
 from app.db.models.directory_event import DirectoryEvent
 from app.db.models.directory_group import DirectoryGroup, group_members
 from app.db.models.email_code import EmailCode
@@ -30,6 +31,7 @@ __all__ = [
     "BankTrade",
     "BankTransaction",
     "ControlEvent",
+    "Conversation",
     "DirectoryEvent",
     "DirectoryGroup",
     "EmailCode",

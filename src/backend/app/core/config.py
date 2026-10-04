@@ -49,9 +49,6 @@ class Settings(BaseSettings):
     # The control layer blocks in "enforce" mode and only logs in "monitor".
     control_mode: Mode = Mode.ENFORCE
     control_injection_threshold: float = 0.7
-    # Log message contents at each stage of a chat completion. Prompts and
-    # tool results may hold secrets, so turn it on only for a demo.
-    control_log_payloads: bool = False
     # OpenAI serves the pool's OpenAI models. Without a key, they are off.
     openai_api_key: str = ""
     openai_url: str = "https://api.openai.com/v1"
@@ -85,6 +82,18 @@ class Settings(BaseSettings):
     control_loop_window_seconds: int = 60
     control_loop_repeat_limit: int = 3
     control_loop_call_limit: int = 30
+    # Account lockout: once this many of a user's attacks were blocked in
+    # the window, every request of theirs is blocked until the window has
+    # passed with no more attacks. 0 turns it off. Each role's policy sets
+    # its own; these are the default policy's.
+    control_lockout_blocks: int = 5
+    control_lockout_window_seconds: int = 300
+    # Spoiled tools: once this many different results of one tool were
+    # blocked as injections in the window, every call to it is blocked, for
+    # the whole organization, until the window has passed with no more of
+    # them. 0 turns it off.
+    control_spoiled_tool_results: int = 3
+    control_spoiled_tool_window_seconds: int = 1800
     # The semantic injection guard asks the first of these models that a
     # provider serves whether a message is an attack; with none served, it
     # is off. It needs a model that takes temperature and structured outputs,
@@ -114,6 +123,9 @@ class Settings(BaseSettings):
     # The demo account the seed creates in the demo organization. "Try the
     # demo", or this email on the sign-in screen, signs in as it at once.
     demo_email: str = "demo@controllayer.net"
+    # Demo sandboxes copied ahead, so a visitor's first sign-in claims one at
+    # once instead of waiting for the copy. 0 copies at sign-in.
+    demo_sandbox_pool: int = 3
     # The SMTP server that sends the sign-in codes: Mailpit in Compose,
     # Resend or another provider in production. Empty turns email sign-in
     # off. smtp_tls is "starttls", "ssl" or "none".

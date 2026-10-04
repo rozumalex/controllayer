@@ -41,8 +41,9 @@ def test_streamed_chat_traced_with_every_stage(client: TestClient) -> None:
     events = [e["event"] for e in trace["events"]]
     assert events == [
         "request",
-        # The rate limit, the model, the budget, the sensitive data, the
-        # attack signatures and the injection guard.
+        # The lockout, the rate limit, the model, the budget, the sensitive
+        # data, the attack signatures and the injection guard.
+        "verdict",
         "verdict",
         "verdict",
         "verdict",
@@ -147,7 +148,7 @@ def test_upstream_error_traced(client: TestClient, user: User) -> None:
     # given
     sink = UserEventSink(event_sink(), user.id, user.org_id)
     app.dependency_overrides[chat_control] = lambda: ChatControl(
-        control_layer(), FailingUpstream(), False, sink
+        control_layer(), FailingUpstream(), sink
     )
     try:
         trace_id = chat_failing(client)
@@ -161,21 +162,15 @@ def test_upstream_error_traced(client: TestClient, user: User) -> None:
     assert summary["outcome"] == "error"
 
 
-def test_prompt_saved_only_with_payload_logging(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_prompt_saved(client: TestClient) -> None:
     # given
-    monkeypatch.setattr(settings, "control_log_payloads", False)
-    hidden = chat(client, "My PIN is 1234")
-    monkeypatch.setattr(settings, "control_log_payloads", True)
-    shown = chat(client, "What is 2 + 2?")
+    trace_id = chat(client, "What is 2 + 2?")
 
     # when
     traces = {t["trace_id"]: t for t in client.get("/api/traces").json()["traces"]}
 
     # then
-    assert traces[hidden]["prompt"] is None
-    assert traces[shown]["prompt"] == "What is 2 + 2?"
+    assert traces[trace_id]["prompt"] == "What is 2 + 2?"
 
 
 def test_mcp_call_listed_with_tool_and_arguments(
@@ -183,7 +178,7 @@ def test_mcp_call_listed_with_tool_and_arguments(
 ) -> None:
     # given
     sink = UserEventSink(event_sink(), user.id, user.org_id)
-    subject = gateway("bank", sink=sink, log_payloads=True)
+    subject = gateway("bank", sink=sink)
     asyncio.run(subject.call_tool("bank__get_client", {"client_id": "CLT-1"}, "a"))
 
     # when
@@ -332,18 +327,15 @@ def test_export_filters_by_time(client: TestClient) -> None:
     assert body["traces"] == []
 
 
-def test_export_leaves_out_prompts_without_payload_logging(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_export_holds_prompts(client: TestClient) -> None:
     # given
-    monkeypatch.setattr(settings, "control_log_payloads", False)
     chat(client, INJECTION)
 
     # when
     response = client.get("/api/traces/export?format=csv")
 
     # then
-    assert "Ignore all previous instructions" not in response.text
+    assert "Ignore all previous instructions" in response.text
 
 
 def test_export_unknown_format_rejected(client: TestClient) -> None:

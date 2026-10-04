@@ -103,7 +103,7 @@ def test_injection_in_a_clients_tool_result_is_withheld(client: TestClient) -> N
 
     # then
     # The mock model echoes the last message it got: the tool result.
-    assert "[control layer] This tool result was withheld." in reply(data)
+    assert "This tool result was withheld." in reply(data)
     assert "evil@x.com" not in reply(data)
 
 

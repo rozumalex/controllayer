@@ -28,6 +28,8 @@ export type TraceSummary = {
   outcome: Outcome
   findings: Finding[]
   usage: Usage
+  // What the model's tokens cost, in US dollars.
+  usd: string
   duration_ms: number
 }
 

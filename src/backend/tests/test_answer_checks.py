@@ -115,7 +115,7 @@ def test_leaked_system_prompt_withheld(client: TestClient, answers: Any) -> None
 
     # then
     assert blocked(data) is True
-    assert reply(data) == "[control layer] The answer was withheld."
+    assert reply(data) == "The answer was withheld."
 
 
 def test_leaked_system_prompt_cut_off_in_stream(
@@ -132,7 +132,7 @@ def test_leaked_system_prompt_cut_off_in_stream(
     pieces, was_blocked = streamed(response.text)
     text = "".join(pieces)
     assert "Golden Socks" not in text
-    assert text.endswith("[control layer] The answer was withheld.")
+    assert text.endswith("The answer was withheld.")
     assert was_blocked is True
 
 

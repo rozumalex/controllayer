@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react"
 
-import { COMPANY, Logo } from "@/components/brand"
+import { PortcullisLogo } from "@/components/brand"
 import { ConnectAgent } from "@/components/connect-agent"
 import { GoogleButton } from "@/components/google-button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -43,11 +43,14 @@ export function SignedIn({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<Employee | null | undefined>(undefined)
   const [linkFailed, setLinkFailed] = useState(false)
 
-  // A fresh sign-in lands on the admin pages, for those who may open them.
-  // A reload stays where it was, and so does an MCP client's consent page.
+  // A fresh sign-in lands on the admin pages, for those who may open them,
+  // and the demo on the simulator. A reload stays where it was, and so does
+  // an MCP client's consent page.
   const signedIn = (user: Employee) => {
     const path = window.location.pathname
-    const stays = path.startsWith("/admin") || path.startsWith("/oauth")
+    const stays = ["/admin", "/simulator", "/oauth"].some((p) =>
+      path.startsWith(p),
+    )
     if (isPrivileged(user) && !stays)
       window.history.replaceState(null, "", "/admin")
     setUser(user)
@@ -220,22 +223,34 @@ function SignIn({
     <div className="flex min-h-svh items-start justify-center bg-muted/40 px-4 py-16">
       <div className="flex w-full max-w-sm animate-in flex-col gap-6 duration-200 fade-in slide-in-from-bottom-1">
         <div className="flex flex-col gap-3">
-          <Logo className="size-12" />
-          <h1 className="font-serif text-3xl font-semibold tracking-tight text-primary">
-            Sign in to Portcullis
-          </h1>
+          <div className="flex items-center gap-3">
+            <PortcullisLogo className="size-10 shrink-0" />
+            <h1 className="font-serif text-3xl font-semibold tracking-tight text-primary">
+              Sign in to Portcullis
+            </h1>
+          </div>
           <p className="text-muted-foreground">
-            The control layer for your AI agents. New here? Signing in creates
-            your organization.
+            The control layer for your AI agents.
           </p>
         </div>
 
         <div className="flex flex-col gap-2">
-          <Button disabled={busy} onClick={() => run(signInToDemo)}>
-            Try the demo
+          <Button
+            disabled={busy}
+            className="bg-destructive text-white hover:bg-destructive/90"
+            onClick={() =>
+              run(async () => {
+                const user = await signInToDemo()
+                window.history.replaceState(null, "", "/simulator")
+                return user
+              })
+            }
+          >
+            Watch a live attack
           </Button>
           <p className="text-center text-xs text-muted-foreground">
-            Signs you in as a vice president of {COMPANY}, a demo bank.
+            An attacker takes over an AI assistant at a demo bank. See which
+            attacks Portcullis blocks.
           </p>
         </div>
 

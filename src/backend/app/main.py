@@ -1,3 +1,4 @@
+import asyncio
 import tomllib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -14,6 +15,7 @@ from app.api.router import router as api_router
 from app.control.http import OPENAI_HTTP
 from app.core.config import settings
 from app.core.sentry import init_sentry
+from app.db.sandbox import fill_pool
 from app.db.session import engine
 from app.servers.bank import bank_mcp_app
 
@@ -26,7 +28,10 @@ init_sentry()
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     async with bank_mcp_app.run(), gateway_mcp_app.run():
+        # Copies the demo sandboxes the pool lacks, while the API serves.
+        filling = asyncio.create_task(fill_pool())
         yield
+        filling.cancel()
     await OPENAI_HTTP.aclose()
     await engine.dispose()
 

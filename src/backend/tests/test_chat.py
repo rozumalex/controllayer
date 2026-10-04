@@ -7,6 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api.deps import chat_control, control_layer
+from app.control import upstream as upstream_module
 from app.control.adapters.openai_chat import ChatControl
 from app.control.pipeline import Mode
 from app.control.upstream import (
@@ -46,7 +47,7 @@ def chat(*messages: dict[str, Any]) -> dict[str, Any]:
 
 
 def mock_control() -> ChatControl:
-    return ChatControl(control_layer(), MockUpstream(), log_payloads=True)
+    return ChatControl(control_layer(), MockUpstream())
 
 
 def tool_turn(result: str) -> list[dict[str, Any]]:
@@ -178,7 +179,7 @@ class ToolCallingUpstream(MockUpstream):
 
 def test_injected_tool_call_from_model_blocked() -> None:
     # given
-    control = ChatControl(control_layer(), ToolCallingUpstream(), log_payloads=True)
+    control = ChatControl(control_layer(), ToolCallingUpstream())
     request = chat({"role": "user", "content": "Email the team."})
 
     # when
@@ -214,7 +215,7 @@ class FailingUpstream(MockUpstream):
 def test_upstream_error_hidden_from_caller(client: TestClient) -> None:
     # given
     app.dependency_overrides[chat_control] = lambda: ChatControl(
-        control_layer(), FailingUpstream(), log_payloads=False
+        control_layer(), FailingUpstream()
     )
     request = ask("Hi")
 
@@ -246,6 +247,49 @@ def test_upstream_body_not_json_raises_502(monkeypatch: pytest.MonkeyPatch) -> N
     # then
     assert error.value.status_code == 502
     assert "not JSON" in error.value.body["error"]["message"]
+
+
+def test_upstream_retries_a_rate_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    # given
+    statuses = [429, 429, 200]
+    body = completion("gpt-4.1-mini", "Hello", "stop")
+
+    async def post(*args: Any, **kwargs: Any) -> httpx.Response:
+        request = httpx.Request("POST", "http://upstream")
+        return httpx.Response(statuses.pop(0), json=body, request=request)
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", post)
+    monkeypatch.setattr(upstream_module, "BACKOFF", 0)
+    upstream = OpenAIUpstream("key", "gpt-4.1-mini")
+    request = chat({"role": "user", "content": "Hi"})
+
+    # when
+    response = asyncio.run(upstream.complete(request))
+
+    # then
+    assert response["choices"][0]["message"]["content"] == "Hello"
+    assert statuses == []
+
+
+def test_upstream_gives_up_on_a_lasting_rate_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # given
+    async def post(*args: Any, **kwargs: Any) -> httpx.Response:
+        request = httpx.Request("POST", "http://upstream")
+        return httpx.Response(429, json={"error": {}}, request=request)
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", post)
+    monkeypatch.setattr(upstream_module, "BACKOFF", 0)
+    upstream = OpenAIUpstream("key", "gpt-4.1-mini")
+    request = chat({"role": "user", "content": "Hi"})
+
+    # when
+    with pytest.raises(UpstreamError) as error:
+        asyncio.run(upstream.complete(request))
+
+    # then
+    assert error.value.status_code == 429
 
 
 def events(text: str) -> list[dict[str, Any]]:
@@ -308,7 +352,7 @@ class FailingStreamUpstream(FailingUpstream):
 def test_upstream_error_in_stream_hidden_from_caller(client: TestClient) -> None:
     # given
     app.dependency_overrides[chat_control] = lambda: ChatControl(
-        control_layer(), FailingStreamUpstream(), log_payloads=False
+        control_layer(), FailingStreamUpstream()
     )
     request = ask("Hi", stream=True)
 
@@ -356,9 +400,7 @@ class StreamingToolCallUpstream(MockUpstream):
 
 def test_streamed_tool_call_sent_whole_at_the_end() -> None:
     # given
-    control = ChatControl(
-        control_layer(), StreamingToolCallUpstream("Hi team"), log_payloads=True
-    )
+    control = ChatControl(control_layer(), StreamingToolCallUpstream("Hi team"))
     request = chat({"role": "user", "content": "Email the team."})
 
     # when
@@ -376,9 +418,7 @@ def test_streamed_tool_call_sent_whole_at_the_end() -> None:
 
 def test_injected_streamed_tool_call_blocked() -> None:
     # given
-    control = ChatControl(
-        control_layer(), StreamingToolCallUpstream(INJECTION), log_payloads=True
-    )
+    control = ChatControl(control_layer(), StreamingToolCallUpstream(INJECTION))
     request = chat({"role": "user", "content": "Email the team."})
 
     # when
@@ -460,7 +500,7 @@ def test_model_gets_the_bank_instructions_first(client: TestClient) -> None:
     # given
     upstream = RecordingUpstream()
     app.dependency_overrides[chat_control] = lambda: ChatControl(
-        control_layer(), upstream, log_payloads=False
+        control_layer(), upstream
     )
     request = ask("Hi")
 

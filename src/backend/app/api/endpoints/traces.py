@@ -5,6 +5,7 @@ import math
 from collections import Counter, defaultdict
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
@@ -31,6 +32,7 @@ from app.core.schema.traces import (
     Usage,
 )
 from app.db.models import ControlEvent
+from app.db.policy import cost
 from app.db.session import get_session
 
 router = APIRouter(prefix="/traces", tags=["traces"])
@@ -80,6 +82,22 @@ def usage(events: Sequence[ControlEvent]) -> Usage:
     return total
 
 
+def spent(events: Sequence[ControlEvent]) -> Decimal:
+    """What the model's tokens cost, in US dollars."""
+    return sum(
+        (
+            cost(
+                e.data.get("model") or "",
+                e.data["usage"].get("prompt_tokens", 0),
+                e.data["usage"].get("completion_tokens", 0),
+            )
+            for e in events
+            if e.event == "upstream_response" and e.data.get("usage")
+        ),
+        Decimal(0),
+    )
+
+
 def user(events: Sequence[ControlEvent]) -> TraceUser | None:
     found = next((e.user for e in events if e.user), None)
     return TraceUser(id=found.id, name=found.name) if found else None
@@ -101,6 +119,7 @@ def summary(events: Sequence[ControlEvent]) -> TraceSummary:
             if e.event == "verdict" and e.action != "allow"
         ],
         usage=usage(events),
+        usd=spent(events),
         duration_ms=round((ended - started).total_seconds() * 1000, 3),
     )
 
@@ -320,8 +339,8 @@ def csv_of(traces: list[TraceSummary]) -> str:
     description=(
         "One row per trace, the newest first, filtered by when it started, its "
         f"outcome, its user and the guards that found something. At most "
-        f"{EXPORT_LIMIT} traces. The prompt column is empty unless "
-        "CONTROL_LOG_PAYLOADS is on."
+        f"{EXPORT_LIMIT} traces. PII and secrets in the prompt column are "
+        "masked."
     ),
     responses={
         200: {

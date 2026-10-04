@@ -38,18 +38,27 @@ class PiiKind(StrEnum):
 
 
 class Budget(BaseModel):
-    monthly_tokens: int | None = Field(
-        default=None,
-        ge=0,
-        description="Tokens a month for each employee; none is unlimited.",
-    )
-    monthly_usd: Decimal | None = Field(
+    weekly_usd: Decimal | None = Field(
         default=None,
         ge=0,
         max_digits=12,
         decimal_places=2,
-        description="US dollars a month for each employee; none is unlimited.",
+        description="US dollars a week, from Monday (UTC), for each employee; "
+        "none is unlimited.",
     )
+
+
+class Lockout(BaseModel):
+    blocks: int = Field(
+        default=5,
+        ge=0,
+        description="Blocked attacks in the window that lock the account; 0 is off.",
+    )
+    minutes: int = Field(default=5, ge=1, le=1440, description="The window.")
+
+    @property
+    def seconds(self) -> int:
+        return self.minutes * 60
 
 
 class PolicySettings(BaseModel):
@@ -70,6 +79,11 @@ class PolicySettings(BaseModel):
     )
     allowed_models: list[str] = Field(description="The LLMs the role may use.")
     budget: Budget
+    lockout: Lockout = Field(
+        default_factory=Lockout,
+        description="When the layer locks an employee out: too many of their "
+        "attacks blocked in a short time is someone probing the guards.",
+    )
     default_tool_action: ToolAction = Field(
         description="For gateway tools that `tools` doesn't name."
     )

@@ -1,5 +1,5 @@
 import uuid
-from collections.abc import Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException
@@ -17,9 +17,11 @@ from app.control.audit import (
 )
 from app.control.guard import Guard
 from app.control.guards.data_flow import DataFlowGuard
-from app.control.guards.loop import LoopGuard
+from app.control.guards.lockout import LockoutGuard
+from app.control.guards.loop import Call, LoopGuard
 from app.control.guards.policy import (
     BudgetGuard,
+    Catalog,
     ClearanceGuard,
     ModelGuard,
     ToolAccessGuard,
@@ -32,7 +34,9 @@ from app.control.guards.semantic_injection import (
 )
 from app.control.guards.sensitive_data import SensitiveDataGuard
 from app.control.guards.signatures import BUNDLED, Feed, SignatureGuard
+from app.control.guards.spoiled_tool import SpoiledToolGuard, Tool
 from app.control.layer import ControlLayer, build_layer
+from app.control.pipeline import Mode
 from app.control.upstream import ChatUpstream, MockUpstream, OpenAIUpstream
 from app.core.assistant import ASSISTANT_MODEL, SYSTEM_PROMPT
 from app.core.config import settings
@@ -43,11 +47,13 @@ from app.db.event_sink import DatabaseEventSink
 from app.db.models import McpServer, User
 from app.db.policy import (
     data_catalog,
-    monthly_usage,
+    poisoned_tools,
+    recent_blocks,
     recent_flows,
     recent_questions,
     recent_tool_calls,
     role_policy,
+    spent_this_week,
 )
 from app.db.session import SessionLocal
 
@@ -111,7 +117,60 @@ def event_sink() -> EventSink:
     return FanOutSink(LogEventSink(), DatabaseEventSink())
 
 
-async def user_policy(user: CurrentUser) -> PolicySettings:
+async def first_employee(org_id: uuid.UUID | None, role: str) -> User | None:
+    """An active employee of the organization with the job title, the same one
+    each time. By ID, not by name, so the roles' employees don't all start
+    with A."""
+    async with SessionLocal() as session:
+        return await session.scalar(
+            select(User)
+            .where(User.org_id == org_id, User.title == role, User.active)
+            .order_by(User.id)
+            .limit(1)
+        )
+
+
+async def acting_user(
+    user: CurrentUser,
+    x_simulate_role: Annotated[
+        str | None,
+        Header(
+            description="For the attack simulator: a privileged user acts as "
+            "the first employee with this job title."
+        ),
+    ] = None,
+) -> User:
+    """The user the request acts as: the signed-in user, or in the attack
+    simulator, the employee whose account the attacker took over."""
+    if not x_simulate_role or user.clearance_level != PRIVILEGED:
+        return user
+    return await first_employee(user.org_id, x_simulate_role) or user
+
+
+ActingUser = Annotated[User, Depends(acting_user)]
+
+
+def simulated_mode(
+    user: CurrentUser,
+    x_simulate_security: Annotated[
+        str | None,
+        Header(
+            description="For the attack simulator: `off` makes the guards "
+            "only log, for a privileged user."
+        ),
+    ] = None,
+) -> Mode | None:
+    """The OFF mode when a privileged user turns security off in the attack
+    simulator; otherwise the configured mode."""
+    if x_simulate_security == "off" and user.clearance_level == PRIVILEGED:
+        return Mode.OFF
+    return None
+
+
+SimulatedMode = Annotated[Mode | None, Depends(simulated_mode)]
+
+
+async def user_policy(user: ActingUser) -> PolicySettings:
     """The policy of the user's role, read on every request, so a policy
     saved in the admin pages applies to the next one."""
     async with SessionLocal() as session:
@@ -119,6 +178,12 @@ async def user_policy(user: CurrentUser) -> PolicySettings:
 
 
 UserPolicy = Annotated[PolicySettings, Depends(user_policy)]
+
+
+def lockout(policy: PolicySettings, blocked: int) -> LockoutGuard:
+    """Locks the user out after too many blocked attacks, as their role's
+    policy says; blocked is how many of theirs were blocked in the window."""
+    return LockoutGuard(policy.lockout.blocks, policy.lockout.seconds, blocked)
 
 
 def chat_model(policy: PolicySettings) -> str:
@@ -203,6 +268,7 @@ def control_layer(
     inbound: Sequence[Guard] = (),
     outbound: Sequence[Guard] = (),
     response: Sequence[Guard] = (),
+    mode: Mode | None = None,
 ) -> ControlLayer:
     # Built on every request, so a setting changed at runtime applies to the
     # next one. The user's policy sets the injection threshold.
@@ -210,7 +276,7 @@ def control_layer(
         policy.injection_threshold if policy else settings.control_injection_threshold
     )
     return build_layer(
-        settings.control_mode,
+        mode or settings.control_mode,
         threshold,
         EventAuditSink(sink or event_sink()),
         semantic_guard(threshold),
@@ -222,7 +288,10 @@ def control_layer(
 
 
 async def chat_control(
-    user: CurrentUser, policy: UserPolicy, request: ChatCompletionRequest
+    user: ActingUser,
+    policy: UserPolicy,
+    request: ChatCompletionRequest,
+    mode: SimulatedMode,
 ) -> ChatControl:
     """The control layer for one chat completion. For the bank assistant, the
     server runs the conversation and its tools, through the MCP gateway. For
@@ -232,12 +301,14 @@ async def chat_control(
     assistant = request.model == ASSISTANT_MODEL
     model = chat_model(policy) if assistant else request.model
     async with SessionLocal() as session:
-        tokens, usd = await monthly_usage(session, user.id)
+        weekly = await spent_this_week(session, user.id)
         recent = await recent_questions(session, user.id)
+        blocked = await recent_blocks(session, user.id, policy.lockout.seconds)
     guards = [
+        lockout(policy, blocked),
         RateLimitGuard(settings.control_rate_limit_per_minute, recent),
         ModelGuard(model, policy.allowed_models),
-        BudgetGuard(policy.budget, tokens, usd),
+        BudgetGuard(policy.budget, weekly),
         sensitive_data(policy),
     ]
     # The answer is checked too: the model may write PII the policy hides,
@@ -248,9 +319,8 @@ async def chat_control(
     # The assistant's tools run through the MCP gateway, which checks every
     # call and result, so the chat leaves them to it.
     return ChatControl(
-        control_layer(sink, policy, inbound=guards, response=answer),
+        control_layer(sink, policy, inbound=guards, response=answer, mode=mode),
         chat_upstream(model),
-        settings.control_log_payloads,
         sink,
         check_tools=not assistant,
     )
@@ -269,14 +339,51 @@ def mcp_connect() -> Connect:
     return connect_http
 
 
-async def mcp_gateway(user: CurrentUser, policy: UserPolicy) -> McpGateway:
-    sink = UserEventSink(event_sink(), user.id, user.org_id)
+async def mcp_gateway(
+    user: ActingUser, policy: UserPolicy, mode: SimulatedMode = None
+) -> McpGateway:
     async with SessionLocal() as session:
-        catalog = await data_catalog(session)
+        catalog = await data_catalog(session, user.org_id)
         labels, seen = await recent_flows(session, user.id)
         recent = await recent_tool_calls(
             session, user.id, settings.control_loop_window_seconds
         )
+        blocked = await recent_blocks(session, user.id, policy.lockout.seconds)
+        poisoned = await poisoned_tools(
+            session, user.org_id, settings.control_spoiled_tool_window_seconds
+        )
+    sink = UserEventSink(event_sink(), user.id, user.org_id)
+    return gateway(
+        user,
+        policy,
+        catalog,
+        sink,
+        labels,
+        seen,
+        recent,
+        blocked,
+        poisoned,
+        mode=mode,
+    )
+
+
+def gateway(
+    user: User,
+    policy: PolicySettings,
+    catalog: Catalog,
+    sink: EventSink,
+    labels: Iterable[str] = (),
+    seen: Iterable[str] = (),
+    recent: Sequence[Call] = (),
+    blocked: int = 0,
+    poisoned: Mapping[Tool, int] | None = None,
+    connect: Connect | None = None,
+    mode: Mode | None = None,
+) -> McpGateway:
+    """The gateway for one request, with what the guards remember of the
+    user's earlier ones: the data flow guard's labels and hashes, the loop
+    guard's recent calls, the user's blocked attacks, and the poisoned
+    results each of the organization's tools sent."""
     # First, so it counts every call, even one another guard blocks.
     loop = LoopGuard(
         settings.control_loop_repeat_limit, settings.control_loop_call_limit, recent
@@ -292,16 +399,28 @@ async def mcp_gateway(user: CurrentUser, policy: UserPolicy) -> McpGateway:
     # Sees each result first, as the server sent it, and carries what it saw
     # over from the user's earlier requests.
     flow = DataFlowGuard(labels, seen, clearance)
+    spoiled = SpoiledToolGuard(
+        settings.control_spoiled_tool_results,
+        settings.control_spoiled_tool_window_seconds,
+        poisoned or {},
+    )
     return McpGateway(
         control_layer(
             sink,
             policy,
-            [loop, tool_access(policy), patterns, flow],
+            [
+                lockout(policy, blocked),
+                loop,
+                tool_access(policy),
+                spoiled,
+                patterns,
+                flow,
+            ],
             [flow, clearance, patterns],
+            mode=mode,
         ),
-        mcp_connect(),
+        connect or mcp_connect(),
         lambda: enabled_mcp_servers(user.org_id),
-        settings.control_log_payloads,
         sink,
     )
 
@@ -310,5 +429,8 @@ def chat_agent(
     control: Annotated[ChatControl, Depends(chat_control)],
     gateway: Annotated[McpGateway, Depends(mcp_gateway)],
     policy: UserPolicy,
+    mode: SimulatedMode,
 ) -> Agent:
-    return Agent(control, gateway, allows=tool_access(policy).allows)
+    # With security off, the model gets every tool.
+    allows = tool_access(policy).allows if mode is not Mode.OFF else None
+    return Agent(control, gateway, allows=allows or (lambda name: True))
