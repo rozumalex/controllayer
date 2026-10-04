@@ -107,7 +107,7 @@ function content(notice: Notice): {
             <Separator />
             <p>
               Careful: the bank is watching. Every request lands on the live
-              dashboard under the employee's name, and too many blocked requests{" "}
+              dashboard under the employee's name, and too many blocked attacks{" "}
               <b>lock the account</b>.
             </p>
             <p className="text-xs text-muted-foreground">
@@ -145,7 +145,7 @@ function content(notice: Notice): {
       return {
         icon: "🔒",
         title: "Busted. Account locked.",
-        lead: `${notice.blocks} blocked requests in ${notice.minutes} minutes: Portcullis locked the account you stole.`,
+        lead: `${notice.blocks} blocked attacks in ${notice.minutes} minutes: Portcullis locked the account you stole.`,
         body: "No more prompts, no more tools. The security team sees it on the dashboard right now.",
         action: "Fine",
       }

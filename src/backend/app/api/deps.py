@@ -1,5 +1,5 @@
 import uuid
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException
@@ -34,6 +34,7 @@ from app.control.guards.semantic_injection import (
 )
 from app.control.guards.sensitive_data import SensitiveDataGuard
 from app.control.guards.signatures import BUNDLED, Feed, SignatureGuard
+from app.control.guards.spoiled_tool import SpoiledToolGuard, Tool
 from app.control.layer import ControlLayer, build_layer
 from app.control.pipeline import Mode
 from app.control.upstream import ChatUpstream, MockUpstream, OpenAIUpstream
@@ -46,6 +47,7 @@ from app.db.event_sink import DatabaseEventSink
 from app.db.models import McpServer, User
 from app.db.policy import (
     data_catalog,
+    poisoned_tools,
     recent_blocks,
     recent_flows,
     recent_questions,
@@ -179,7 +181,7 @@ UserPolicy = Annotated[PolicySettings, Depends(user_policy)]
 
 
 def lockout(policy: PolicySettings, blocked: int) -> LockoutGuard:
-    """Locks the user out after too many blocked requests, as their role's
+    """Locks the user out after too many blocked attacks, as their role's
     policy says; blocked is how many of theirs were blocked in the window."""
     return LockoutGuard(policy.lockout.blocks, policy.lockout.seconds, blocked)
 
@@ -347,9 +349,21 @@ async def mcp_gateway(
             session, user.id, settings.control_loop_window_seconds
         )
         blocked = await recent_blocks(session, user.id, policy.lockout.seconds)
+        poisoned = await poisoned_tools(
+            session, user.org_id, settings.control_spoiled_tool_window_seconds
+        )
     sink = UserEventSink(event_sink(), user.id, user.org_id)
     return gateway(
-        user, policy, catalog, sink, labels, seen, recent, blocked, mode=mode
+        user,
+        policy,
+        catalog,
+        sink,
+        labels,
+        seen,
+        recent,
+        blocked,
+        poisoned,
+        mode=mode,
     )
 
 
@@ -362,12 +376,14 @@ def gateway(
     seen: Iterable[str] = (),
     recent: Sequence[Call] = (),
     blocked: int = 0,
+    poisoned: Mapping[Tool, int] | None = None,
     connect: Connect | None = None,
     mode: Mode | None = None,
 ) -> McpGateway:
     """The gateway for one request, with what the guards remember of the
-    user's earlier ones: the data flow guard's labels and hashes, and the
-    loop guard's recent calls."""
+    user's earlier ones: the data flow guard's labels and hashes, the loop
+    guard's recent calls, the user's blocked attacks, and the poisoned
+    results each of the organization's tools sent."""
     # First, so it counts every call, even one another guard blocks.
     loop = LoopGuard(
         settings.control_loop_repeat_limit, settings.control_loop_call_limit, recent
@@ -383,11 +399,23 @@ def gateway(
     # Sees each result first, as the server sent it, and carries what it saw
     # over from the user's earlier requests.
     flow = DataFlowGuard(labels, seen, clearance)
+    spoiled = SpoiledToolGuard(
+        settings.control_spoiled_tool_results,
+        settings.control_spoiled_tool_window_seconds,
+        poisoned or {},
+    )
     return McpGateway(
         control_layer(
             sink,
             policy,
-            [lockout(policy, blocked), loop, tool_access(policy), patterns, flow],
+            [
+                lockout(policy, blocked),
+                loop,
+                tool_access(policy),
+                spoiled,
+                patterns,
+                flow,
+            ],
             [flow, clearance, patterns],
             mode=mode,
         ),

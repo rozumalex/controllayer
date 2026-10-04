@@ -5,7 +5,10 @@ from decimal import Decimal
 from sqlalchemy import BigInteger, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.control.envelope import Direction
+from app.control.guards.lockout import ATTACKS, INJECTIONS
 from app.control.guards.loop import Call, LoopGuard
+from app.control.guards.spoiled_tool import Tool
 from app.core.config import settings
 from app.core.schema.policy import (
     Budget,
@@ -180,8 +183,9 @@ async def recent_tool_calls(
 
 
 async def recent_blocks(session: AsyncSession, user_id: uuid.UUID, seconds: int) -> int:
-    """How many of the user's requests the layer blocked in the last seconds,
-    since an admin last unlocked them."""
+    """How many of the user's attacks the layer blocked in the last seconds,
+    since an admin last unlocked them: blocks by an attack guard on what
+    they sent or the answer they drew out, not on a tool's result."""
     start = datetime.now(UTC) - timedelta(seconds=seconds)
     # An admin's unlock wipes the slate.
     unlocked = await session.scalar(
@@ -191,14 +195,40 @@ async def recent_blocks(session: AsyncSession, user_id: uuid.UUID, seconds: int)
     )
     if unlocked and unlocked > start:
         start = unlocked
+    data = ControlEvent.data
     return (
         await session.scalar(
             select(func.count(func.distinct(ControlEvent.trace_id))).where(
                 ControlEvent.user_id == user_id,
                 ControlEvent.event == "decision",
                 ControlEvent.action == "block",
+                data["direction"].astext != Direction.OUTBOUND,
+                data["guard"].astext.in_(ATTACKS),
                 ControlEvent.created_at >= start,
             )
         )
         or 0
     )
+
+
+async def poisoned_tools(
+    session: AsyncSession, org_id: uuid.UUID | None, seconds: int
+) -> dict[Tool, int]:
+    """How many different results each of the organization's tools sent in
+    the last seconds that an injection guard blocked."""
+    start = datetime.now(UTC) - timedelta(seconds=seconds)
+    data = ControlEvent.data
+    server, tool = data["server"].astext, data["tool"].astext
+    rows = await session.execute(
+        select(server, tool, func.count(func.distinct(data["payload_sha256"].astext)))
+        .where(
+            ControlEvent.org_id == org_id,
+            ControlEvent.event == "decision",
+            ControlEvent.action == "block",
+            data["direction"].astext == Direction.OUTBOUND,
+            data["guard"].astext.in_(INJECTIONS),
+            ControlEvent.created_at >= start,
+        )
+        .group_by(server, tool)
+    )
+    return {(server, tool): count for server, tool, count in rows}

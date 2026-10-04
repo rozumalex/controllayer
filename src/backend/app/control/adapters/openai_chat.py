@@ -358,6 +358,7 @@ class ChatControl:
             server=server,
             tool=tool,
             action=decision.action,
+            **decision.blocker(),
         )
         return decision
 
