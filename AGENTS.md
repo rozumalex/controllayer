@@ -29,7 +29,7 @@ FastAPI app managed with uv. Run its commands in Docker with the `./dev` script 
   ./dev migrate
   ```
 
-- If main and your branch both added a migration, pre-commit fails with more than one head. Don't join the heads with a merge migration. Generate your branch's migration again on top of main's: downgrade the dev database below your migration, delete it, run `./dev migrate`, then `./dev makemigrations`. In Claude Code, the `sync` skill does this.
+- If main and your branch both added a migration, pre-commit fails with more than one head. Don't join the heads with a merge migration. Generate your branch's migration again on top of main's: downgrade the dev database below your migration, delete it, run `./dev migrate`, then `./dev makemigrations`.
 - Every migration must come from `./dev makemigrations`. Never write a migration file by hand, and never edit a generated one. To change a migration, change the model and generate it again. If the generated file is wrong, for example a renamed column shows up as a drop and an add, stop and tell the user. Do not fix it by hand.
 
 ## Tests
@@ -109,8 +109,8 @@ pre-commit run --all-files
 
 ## Scope
 
-Keep each branch to one task, so it gets reviewed and merged fast. Stop and check in with the user when the change against `main` grows past about 400 lines or 15 files (lockfiles not counted), when the work drifts from what the user asked for, or when the scope grows, for example with fixes found along the way or features nobody asked for. Claude Code does this with the `break` skill in `.claude/skills/break`. After every edit, a hook in `.claude/settings.json` measures the change and tells Claude to run the skill when it is over the limit.
+Keep each branch to one task, so it gets reviewed and merged fast. Stop and check in with the user when the change against `main` grows past about 400 lines or 15 files (lockfiles not counted), when the work drifts from what the user asked for, or when the scope grows, for example with fixes found along the way or features nobody asked for.
 
 ## Pull requests
 
-Every time you push to a branch with an open pull request, update the PR title and description, so they describe the whole branch as it is after the push. Read it from the commits and the diff against the base branch, not from memory. Keep what still holds, such as screenshots, linked issues and notes from teammates, and rewrite the rest. Don't add a log of updates. In Claude Code, the `ship` skill does this, and a hook in `.claude/settings.json` reminds Claude after every `git push`.
+Every time you push to a branch with an open pull request, update the PR title and description, so they describe the whole branch as it is after the push. Read it from the commits and the diff against the base branch, not from memory. Keep what still holds, such as screenshots, linked issues and notes from teammates, and rewrite the rest. Don't add a log of updates.

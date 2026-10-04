@@ -403,15 +403,6 @@ pre-commit install           # set up the git hook, once per clone
 pre-commit run --all-files   # run all hooks by hand
 ```
 
-## Claude Code skills
-
-`.claude/skills` holds project skills for [Claude Code](https://code.claude.com/docs/en/skills). Claude runs a skill when it fits the task, or you run it with `/<name>`.
-
-- `break`: stops Claude and makes it check in with you when the branch gets too big, drifts from what you asked for, or grows in scope. It reports what was asked, what is done and what is off track, and recommends a plan: split the work, trim it or go on. After every edit, a hook in `.claude/settings.json` runs `.claude/skills/break/diff-size.sh`, which measures the change against `main`, and tells Claude to run the skill when the change passes 400 lines or 15 files. Set other limits with `BREAK_MAX_LINES` and `BREAK_MAX_FILES`, for example in the `env` of `.claude/settings.local.json`.
-- `ship`: takes finished work to an open pull request: checks the size with `break`, runs `./dev lint`, `./dev test` and the frontend build, commits, pushes, opens the PR or updates its description, and watches CI. Run it with `/ship`; Claude never runs it on its own, because it pushes. After every `git push` to a branch with an open PR, a hook runs `.claude/hooks/pr-description.sh`, which tells Claude to update the PR description, so it keeps describing the whole branch.
-- `judge`: checks the work against the hackathon's documents in `local/rules`, such as the rules, the participant guide and the task description, as PDF, Markdown, text or screenshots. It keeps a digest of the facts with their sources in `local/.judge-cache`, and on every run reads again only the files that changed, so it follows changed tasks, times and criteria without reading every document each time. `/judge --fresh` rebuilds the digest. It reports the time left to each deadline and when to stop feature work, a one-line problem statement, how well the work fits the task with MoSCoW, a mock jury score on an anchored rubric with the real weights, a cold read and a pre-mortem of the submission, and the next steps ranked with ICE. It only reports and changes nothing. `local/` is gitignored, so the documents stay out of the repo.
-- `sync`: merges the latest `main` into your branch and fixes what breaks: it resolves conflicts, regenerates lockfiles instead of merging them by hand, generates the branch's migration again on top of main's when both added one, rebuilds the stack or applies migrations when they changed, and runs the checks. It never pushes. `ship` runs it first when the branch is behind `main`.
-
 ## CI
 
 GitHub Actions runs these workflows from `.github/workflows`:
