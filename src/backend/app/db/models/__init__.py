@@ -16,6 +16,7 @@ from app.db.models.directory_group import DirectoryGroup, group_members
 from app.db.models.email_code import EmailCode
 from app.db.models.identity_provider import IdentityProvider, SsoLogin
 from app.db.models.mcp_server import McpServer
+from app.db.models.oauth import OAuthClient, OAuthCode
 from app.db.models.organization import Organization
 from app.db.models.policy import Policy
 from app.db.models.user import User
@@ -36,6 +37,8 @@ __all__ = [
     "EmailCode",
     "IdentityProvider",
     "McpServer",
+    "OAuthClient",
+    "OAuthCode",
     "Organization",
     "Policy",
     "SsoLogin",

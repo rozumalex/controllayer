@@ -161,7 +161,22 @@ The plug button next to the user's name in the header shows this command with th
 - The token is the session token of a [sign-in](#sign-in), the same one `/api/v1` takes. Without a valid one, or for a deactivated user, the server answers 401. Signing out ends it.
 - `tools/list` leaves out every tool the role's policy blocks. `tools/call` runs the call through all the role's guards, as the chat does, and each call is a trace of its own under the user, with the agent id `mcp-client`.
 - The server is stateless: each request signs in with its own token, and nothing is kept between requests.
-- Not built yet: MCP's OAuth 2.1 discovery, so a client can sign the user in by itself. For now the token is pasted in by hand.
+
+##### Claude Desktop and claude.ai
+
+A client that follows the [MCP authorization spec](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization), such as Claude, signs the user in by itself, so no token is pasted in:
+
+1. Claude reaches the API from Anthropic's servers, so the app needs a public HTTPS address: `https://controllayer.net` in production, or in development `./dev ngrok`, whose log shows a URL such as `https://<name>.ngrok-free.app`.
+2. In Claude, open **Settings → Connectors → Add custom connector**, name it Portcullis, and paste `<address>/api/mcp`.
+3. Claude opens the browser at Portcullis. Sign in as on the [sign-in](#sign-in) page, with the demo, Google, an email code or your organization's IdP, and allow Claude on the consent page. Through ngrok, set `APP_URL` to its URL first, as the IdP and the email link come back to `APP_URL`.
+4. Claude lists the tools of your role. Each call it makes is a trace under your name.
+
+How it works, in `app/api/oauth.py`:
+
+- Without a token, `/api/mcp` answers 401 with `WWW-Authenticate: Bearer resource_metadata="<address>/.well-known/oauth-protected-resource/api/mcp"`. That document ([RFC 9728](https://www.rfc-editor.org/rfc/rfc9728)) names the app's address as the authorization server, whose metadata ([RFC 8414](https://www.rfc-editor.org/rfc/rfc8414)) is at `/.well-known/oauth-authorization-server`. The Vite proxy and the DigitalOcean ingress send `/.well-known/` to the API, and every address in them comes from the request, so one API serves localhost, ngrok and production.
+- The client registers itself at `/api/oauth/register` ([RFC 7591](https://www.rfc-editor.org/rfc/rfc7591)) as a public client, with no secret. It sends the user to `/api/oauth/authorize`, which checks the client and its redirect URI and sends the browser to the consent page at `/oauth/authorize`. There the user signs in, and allowing calls `/api/oauth/consent`, which sends the browser back to the client with a code.
+- `/api/oauth/token` trades the code for a session token, the same kind a sign-in gives, valid for `AUTH_SESSION_DAYS`. The code works once, for five minutes, and only with the PKCE verifier (S256) of the request. A code for another resource than `/api/mcp` ([RFC 8707](https://www.rfc-editor.org/rfc/rfc8707)) is refused. The database keeps only the SHA-256 of codes and tokens.
+- There are no refresh tokens: when the session ends, Claude signs the user in again. Signing out in Portcullis does not end Claude's session, which has a token of its own.
 
 #### Bank MCP server
 

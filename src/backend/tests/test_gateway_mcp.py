@@ -121,4 +121,4 @@ def test_needs_a_session_token(db: None, header: str | None) -> None:
 
     # then
     assert response.status_code == 401
-    assert response.headers["WWW-Authenticate"] == "Bearer"
+    assert response.headers["WWW-Authenticate"].startswith("Bearer resource_metadata=")
