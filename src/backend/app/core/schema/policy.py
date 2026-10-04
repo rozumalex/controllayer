@@ -161,6 +161,10 @@ class Employee(BaseModel):
     active: bool = Field(
         default=True, description="False when the IdP deactivated or deleted them."
     )
+    demo: bool = Field(
+        default=False,
+        description="True in a demo sandbox, the only place the attack challenge runs.",
+    )
 
 
 class EmployeeList(BaseModel):

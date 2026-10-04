@@ -66,6 +66,12 @@ def outside_sandboxes() -> ColumnElement[bool]:
     return ~exists().where(Organization.id == User.org_id, Organization.sandbox)
 
 
+async def in_sandbox(session: AsyncSession, org_id: uuid.UUID | None) -> bool:
+    """Whether the organization is a demo sandbox."""
+    query = select(Organization.sandbox).where(Organization.id == org_id)
+    return bool(await session.scalar(query))
+
+
 def remapped(column: Any, org_id: uuid.UUID) -> ColumnElement[Any]:
     """The ID of a row's copy in the sandbox. It follows from the original's,
     so the copies that refer to it get it too, without a lookup."""

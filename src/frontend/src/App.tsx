@@ -1,28 +1,21 @@
 import { Admin } from "@/components/admin"
 import { SignedIn } from "@/components/sign-in"
 import { Simulator } from "@/components/simulator"
-import { isPrivileged, useSession } from "@/lib/session"
+import { isDemo, useSession } from "@/lib/session"
 
 // Two pages, so the path picks one; no router needed. The host serves
 // index.html for every path. The root is the sign-in page, which sends a
-// signed-in user on to the admin pages, or to the challenge when they may
-// not open them.
+// signed-in user on to the admin pages. The challenge is only for demo
+// accounts, so everyone else goes to the admin pages from it too.
 function Page() {
-  const session = useSession()
-  const path = window.location.pathname
-  if (path.startsWith("/simulator"))
-    window.history.replaceState(null, "", "/challenge")
-  else if (!path.startsWith("/admin") && !path.startsWith("/challenge"))
-    window.history.replaceState(
-      null,
-      "",
-      isPrivileged(session?.user) ? "/admin" : "/challenge"
-    )
-  return window.location.pathname.startsWith("/admin") ? (
-    <Admin />
-  ) : (
-    <Simulator />
-  )
+  const demo = isDemo(useSession()?.user)
+  const path = window.location.pathname.replace(/^\/simulator/, "/challenge")
+  const challenge = demo && path.startsWith("/challenge")
+  if (!challenge && !path.startsWith("/admin"))
+    window.history.replaceState(null, "", "/admin")
+  else if (path !== window.location.pathname)
+    window.history.replaceState(null, "", path)
+  return challenge ? <Simulator /> : <Admin />
 }
 
 function App() {

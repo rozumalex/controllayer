@@ -56,6 +56,7 @@ from app.db.policy import (
     role_policy,
     spent_this_week,
 )
+from app.db.sandbox import in_sandbox
 from app.db.session import SessionLocal
 
 
@@ -112,6 +113,23 @@ async def privileged_user(user: CurrentUser) -> User:
     return user
 
 
+async def simulates(user: User) -> bool:
+    """Whether the user may run the attack simulator: a privileged user in a
+    demo sandbox. A real organization's users can't act as their colleagues
+    or turn the guards off."""
+    if user.clearance_level != PRIVILEGED:
+        return False
+    async with SessionLocal() as session:
+        return await in_sandbox(session, user.org_id)
+
+
+async def demo_user(user: CurrentUser) -> User:
+    """The signed-in user, or 403 outside a demo sandbox."""
+    if not await simulates(user):
+        raise HTTPException(403, "The attack challenge runs only in the demo")
+    return user
+
+
 def event_sink() -> EventSink:
     # Every event goes to the logs and to the database, where the dashboard
     # reads it.
@@ -136,14 +154,14 @@ async def acting_user(
     x_simulate_role: Annotated[
         str | None,
         Header(
-            description="For the attack simulator: a privileged user acts as "
-            "the first employee with this job title."
+            description="For the attack simulator: a privileged user in a "
+            "demo sandbox acts as the first employee with this job title."
         ),
     ] = None,
 ) -> User:
     """The user the request acts as: the signed-in user, or in the attack
     simulator, the employee whose account the attacker took over."""
-    if not x_simulate_role or user.clearance_level != PRIVILEGED:
+    if not x_simulate_role or not await simulates(user):
         return user
     return await first_employee(user.org_id, x_simulate_role) or user
 
@@ -151,19 +169,19 @@ async def acting_user(
 ActingUser = Annotated[User, Depends(acting_user)]
 
 
-def simulated_mode(
+async def simulated_mode(
     user: CurrentUser,
     x_simulate_security: Annotated[
         str | None,
         Header(
             description="For the attack simulator: `off` makes the guards "
-            "only log, for a privileged user."
+            "only log, for a privileged user in a demo sandbox."
         ),
     ] = None,
 ) -> Mode | None:
-    """The OFF mode when a privileged user turns security off in the attack
-    simulator; otherwise the configured mode."""
-    if x_simulate_security == "off" and user.clearance_level == PRIVILEGED:
+    """The OFF mode when a privileged user in a demo sandbox turns security
+    off in the attack simulator; otherwise the configured mode."""
+    if x_simulate_security == "off" and await simulates(user):
         return Mode.OFF
     return None
 
