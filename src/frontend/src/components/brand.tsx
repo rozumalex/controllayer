@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react"
-import type { ComponentProps, ReactNode } from "react"
+import { useId, type ComponentProps, type ReactNode } from "react"
 
 // Golden Socks, the fictional bank whose employees use the assistant.
 export const COMPANY = "Golden Socks"
@@ -13,6 +13,33 @@ export function Logo(props: ComponentProps<"svg">) {
       />
       <path d="M9 7.5h10" stroke="var(--primary)" strokeWidth="1.6" />
       <path d="M9 10.5h10" stroke="var(--primary)" strokeWidth="1.6" />
+    </svg>
+  )
+}
+
+// Portcullis, the product: a gate raised halfway in an arch, ready to drop.
+export function PortcullisLogo(props: ComponentProps<"svg">) {
+  // Unique per logo, as two on a page would share a clip path id.
+  const arch = useId()
+  return (
+    <svg viewBox="0 0 32 32" aria-hidden="true" {...props}>
+      <clipPath id={arch}>
+        <path d="M5.8 29V14a10.2 10.2 0 0 1 20.4 0v15Z" />
+      </clipPath>
+      <g clipPath={`url(#${arch})`}>
+        <path
+          d="M10 2v13.5l1 2.5 1-2.5V2ZM15 2v13.5l1 2.5 1-2.5V2ZM20 2v13.5l1 2.5 1-2.5V2Z"
+          fill="var(--gold)"
+        />
+        <path d="M5 7h22M5 12.5h22" stroke="var(--gold)" strokeWidth="1.6" />
+      </g>
+      <path
+        d="M4.5 29V14a11.5 11.5 0 0 1 23 0v15"
+        fill="none"
+        stroke="var(--primary)"
+        strokeWidth="2.6"
+        strokeLinecap="round"
+      />
     </svg>
   )
 }
