@@ -5,7 +5,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-Outcome = Literal["allowed", "flagged", "blocked", "error"]
+Outcome = Literal["allowed", "suspicious", "flagged", "blocked", "error", "unlocked"]
 
 
 class Usage(BaseModel):
@@ -15,7 +15,7 @@ class Usage(BaseModel):
 
 
 class Finding(BaseModel):
-    """A guard's verdict other than allow."""
+    """A guard's verdict other than allow, or an allow it flagged as suspicious."""
 
     guard: str
     action: str
@@ -46,7 +46,9 @@ class TraceSummary(BaseModel):
     outcome: Outcome = Field(
         description=(
             "blocked: the layer stopped something. error: the model failed. "
-            "flagged: a guard said block, but monitor mode let it through."
+            "flagged: a guard said block, but monitor mode let it through. "
+            "suspicious: an injection guard scored it high but let it through. "
+            "unlocked: an admin unlocked a locked-out account."
         )
     )
     findings: list[Finding]
@@ -93,6 +95,7 @@ class Bucket(BaseModel):
 
     start: datetime
     allowed: int = 0
+    suspicious: int = 0
     flagged: int = 0
     blocked: int = 0
     error: int = 0

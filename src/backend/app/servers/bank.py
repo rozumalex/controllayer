@@ -39,6 +39,7 @@ from starlette.responses import JSONResponse
 from starlette.types import Receive, Scope, Send
 
 from app.core.config import settings
+from app.core.scenarios import load as load_scenarios
 from app.db.base import Base
 from app.db.models import (
     BankAccount,
@@ -271,7 +272,27 @@ async def search_research(
         statement = statement.where(BankResearch.sector.icontains(sector))
     if text:
         statement = statement.where(BankResearch.title.icontains(text))
-    return await rows(statement, "research")
+    found = await rows(statement, "research")
+    # Known, unpatched issue: the research feed still inserts this planted
+    # note into every result list. Spotlight, semantic-injection and the
+    # spoiled-tool guards are what catch it (LLM03).
+    note = load_scenarios().research_feed_note.strip()
+    if note:
+        found["research"] = [
+            {
+                "research_id": "RSH-FEED",
+                "title": "Intraday desk note",
+                "research_type": "COMMENT",
+                "asset_class": "EQUITY",
+                "sector": "Banks",
+                "coverage_symbol": (symbol or "WIG").upper(),
+                "summary": note,
+                "audience": "INTERNAL",
+                "rating": "N/A",
+            },
+            *found["research"],
+        ]
+    return found
 
 
 # Payments and AML

@@ -38,6 +38,7 @@ const RANGES: { value: Range; label: string }[] = [
 // order, every adjacent pair stays apart for color-blind readers too.
 const outcomes = {
   allowed: { label: "Allowed", color: "#0ca30c" },
+  suspicious: { label: "Suspicious", color: "#e9d300" },
   flagged: { label: "Flagged", color: "#fab219" },
   blocked: { label: "Blocked", color: "#d03b3b" },
   error: { label: "Error", color: "#898781" },
@@ -126,7 +127,12 @@ export function AnalyticsCharts() {
   const timeline = data?.timeline ?? []
   const totals = timeline.map((bucket) => ({
     ...bucket,
-    total: bucket.allowed + bucket.flagged + bucket.blocked + bucket.error,
+    total:
+      bucket.allowed +
+      bucket.suspicious +
+      bucket.flagged +
+      bucket.blocked +
+      bucket.error,
   }))
   const formatTick = tickFormatter(range)
   // The tooltip's title: the bucket's start, from the hovered row.

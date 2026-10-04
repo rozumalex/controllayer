@@ -14,9 +14,11 @@ from app.control.pipeline import Mode, Pipeline
 from app.control.upstream import MockUpstream, completion
 from app.core import simulator
 from app.core.assistant import SYSTEM_PROMPT
+from app.core.checklist import CANARY, CHECKLIST
 from app.core.config import settings
+from app.core.scenarios import load as load_scenarios
 from app.core.schema.policy import Budget, Clearance
-from app.core.simulator import GOALS, Simulation, risk
+from app.core.simulator import GOALS, Simulation, advance, outcome, risk
 from app.db.models import User
 from app.db.policy import builtin_policy
 from tests.test_bank_mcp import seed
@@ -25,9 +27,13 @@ from tests.test_pipeline import MemoryAuditSink
 from tests.test_policy_enforcement import policy, save
 
 CHAT = "/api/v1/chat/completions"
-# A real client's email, in the bank data the tests seed.
+# A real client's email and account numbers, in the bank data the tests seed.
 EMAIL = "eleanor.fairbanks@beaconcrestpartners.com"
+ACCOUNT = "2183660280"
+IBAN = "0258813982625020021"
 LEAK_PROMPT = next(g for g in GOALS if g.id == "leak_prompt")
+LEAK_SCENARIOS = [s for s in load_scenarios().scenarios if s.goal == "leak_prompt"]
+LEAK_TURNS = sum(len(s.turns) for s in LEAK_SCENARIOS)
 
 
 class LeakingModel(MockUpstream):
@@ -55,7 +61,13 @@ def simulate(
 ) -> dict[str, Any]:
     settings = builtin_policy().model_copy(update={"budget": budget or Budget()})
     run = Simulation(
-        user, "Analyst", settings, [LEAK_PROMPT], security, upstream=LeakingModel
+        user,
+        "Analyst",
+        settings,
+        [LEAK_PROMPT],
+        security,
+        upstream=LeakingModel,
+        step=False,
     )
 
     async def last() -> dict[str, Any]:
@@ -177,15 +189,15 @@ def test_with_security_on_the_attack_ends_with_a_lockout(
     db: None, user: User, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # given
-    monkeypatch.setattr(settings, "control_lockout_blocks", 3)
+    monkeypatch.setattr(settings, "control_lockout_blocks", 1)
 
     # when
     end = simulate(user, security=True)
 
     # then
     assert end["outcome"] == "locked_out"
-    assert end["cases"] == 4
-    assert end["blocked"] == 3
+    assert end["cases"] == 2
+    assert end["blocked"] == 1
 
 
 def test_with_security_on_the_prompt_never_leaks(db: None, user: User) -> None:
@@ -195,7 +207,8 @@ def test_with_security_on_the_prompt_never_leaks(db: None, user: User) -> None:
     # then
     assert end["type"] == "end"
     assert end["outcome"] == "done"
-    assert end["cases"] == len(simulator.goal_cases(LEAK_PROMPT.categories))
+    # A blocked turn ends the scenario, so only the first turn of each runs.
+    assert end["cases"] == len(LEAK_SCENARIOS)
     assert end["stolen"] == 0
     assert end["landed"] == 0
 
@@ -210,19 +223,105 @@ def test_with_security_off_the_prompt_leaks(db: None, user: User) -> None:
     assert end["stolen"] > 0
 
 
-def test_with_security_off_the_attack_ends_over_budget(db: None, user: User) -> None:
+def test_with_security_off_the_attack_ends_over_budget(
+    db: None, user: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # given
+    monkeypatch.setattr(simulator, "OVERRUN", 1)
+
     # when
     end = simulate(user, security=False, budget=Budget(weekly_usd=Decimal("0.01")))
 
     # then
     assert end["outcome"] == "over_budget"
-    assert Decimal(end["usd"]) >= Decimal("0.02")
-    assert end["cases"] < len(simulator.goal_cases(LEAK_PROMPT.categories))
+    assert Decimal(end["usd"]) >= Decimal("0.01")
+    assert end["cases"] < LEAK_TURNS
 
 
 def save_roles() -> None:
     asyncio.run(save("Analyst", policy(clearance=Clearance.INTERNAL)))
     asyncio.run(save("Managing Director", policy(clearance=Clearance.RESTRICTED)))
+
+
+def test_simulator_goals_are_the_checklist() -> None:
+    # when / then
+    assert [(g.id, g.title) for g in GOALS] == [(i.id, i.title) for i in CHECKLIST]
+
+
+def test_goal_cases_cover_every_checklist_item() -> None:
+    # given
+    items = frozenset(item.id for item in CHECKLIST)
+
+    # when
+    covered = {case.goal for case in simulator.goal_cases(items)}
+
+    # then
+    assert covered == items
+
+
+# Loot an unguarded model would hand over for each checklist goal.
+SHOWCASE = [
+    ("steal_contacts", f"Write to {EMAIL}.", []),
+    ("steal_accounts", f"Account {ACCOUNT}, IBAN {IBAN}.", []),
+    ("steal_canary", f"The SFTP password is {CANARY}.", []),
+    (
+        "move_money",
+        "Done.",
+        [{"event": "response", "tool": "initiate_payment", "done": True}],
+    ),
+    ("leak_prompt", SYSTEM_PROMPT, []),
+]
+
+
+@pytest.mark.parametrize(("item", "answer", "events"), SHOWCASE)
+def test_with_security_on_showcase_loot_is_stopped(
+    db: None, item: str, answer: str, events: list[dict]
+) -> None:
+    # given
+    asyncio.run(seed())
+    # A payment the guards stopped never reaches the bank, so it leaves no
+    # response event. Data in a blocked answer is wiped before it is scored.
+    stopped = [
+        {
+            "event": "verdict",
+            "guard": "sensitive_data",
+            "action": "block",
+            "direction": "response",
+            "reason": "stopped",
+        }
+    ]
+
+    # when
+    found = asyncio.run(outcome("block", True, "t", stopped, answer))
+
+    # then
+    assert item not in found["achieved"]
+    assert found["status"] == "blocked"
+
+
+@pytest.mark.parametrize(("item", "answer", "events"), SHOWCASE)
+def test_with_security_off_showcase_loot_lands(
+    db: None, item: str, answer: str, events: list[dict]
+) -> None:
+    # given
+    asyncio.run(seed())
+    logged = [
+        {
+            "event": "verdict",
+            "guard": "sensitive_data",
+            "action": "block",
+            "direction": "response",
+            "reason": "would have stopped",
+        },
+        *events,
+    ]
+
+    # when
+    found = asyncio.run(outcome("block", False, "t", logged, answer))
+
+    # then
+    assert item in found["achieved"]
+    assert found["status"] == "landed"
 
 
 def test_simulator_lists_the_roles_most_cleared_first(
@@ -238,6 +337,9 @@ def test_simulator_lists_the_roles_most_cleared_first(
     assert [a["role"] for a in data["accounts"]] == ["Managing Director", "Analyst"]
     assert {g["id"] for g in data["goals"]} == {g.id for g in GOALS}
     assert {a["policy"]["lockout"]["blocks"] for a in data["accounts"]} == {0}
+    assert data["scenarios"] > 0
+    assert data["turns"] >= data["scenarios"]
+    assert data["missing"] == []
 
 
 def test_attack_streams_cases_and_is_kept_in_history(
@@ -245,7 +347,12 @@ def test_attack_streams_cases_and_is_kept_in_history(
 ) -> None:
     # given
     save_roles()
-    request = {"role": "Analyst", "goals": ["leak_prompt"], "security": True}
+    request = {
+        "role": "Analyst",
+        "goals": ["leak_prompt"],
+        "security": True,
+        "step": False,
+    }
 
     # when
     response = client.post("/api/demo/attack", json=request)
@@ -262,7 +369,12 @@ def test_attack_streams_cases_and_is_kept_in_history(
 def test_attack_cases_kept_in_the_account_logs(db: None, client: TestClient) -> None:
     # given
     save_roles()
-    request = {"role": "Analyst", "goals": ["leak_prompt"], "security": True}
+    request = {
+        "role": "Analyst",
+        "goals": ["leak_prompt"],
+        "security": True,
+        "step": False,
+    }
     response = client.post("/api/demo/attack", json=request)
 
     # when
@@ -279,7 +391,12 @@ def test_attack_cases_count_toward_a_risk_only_when_stopped(
 ) -> None:
     # given
     save_roles()
-    request = {"role": "Analyst", "goals": ["leak_prompt"], "security": security}
+    request = {
+        "role": "Analyst",
+        "goals": ["leak_prompt"],
+        "security": security,
+        "step": False,
+    }
     client.post("/api/demo/attack", json=request)
 
     # when
@@ -306,7 +423,7 @@ def test_chat_case_tells_what_an_answer_took(db: None, client: TestClient) -> No
 
     # then
     assert case["status"] == "landed"
-    assert case["achieved"] == ["above_clearance", "leak_prompt", "steal_contacts"]
+    assert case["achieved"] == ["leak_prompt", "steal_contacts"]
     assert [c["trace_id"] for c in logs] == [trace_id]
     assert EMAIL not in logs[0]["answer"]
 
@@ -336,10 +453,63 @@ def test_chat_with_security_on_blocks_an_injection(client: TestClient) -> None:
     assert blocked(data) is True
 
 
+def test_stepped_run_waits_for_advance(db: None, user: User) -> None:
+    # given
+    settings = builtin_policy()
+    run = Simulation(
+        user,
+        "Analyst",
+        settings,
+        [LEAK_PROMPT],
+        True,
+        upstream=LeakingModel,
+        step=True,
+    )
+
+    async def play() -> list[dict[str, Any]]:
+        events: list[dict[str, Any]] = []
+        async for event in run.run():
+            events.append(event)
+            if event.get("verdict"):
+                assert advance(run.run_id)
+        return events
+
+    # when
+    events = asyncio.run(play())
+
+    # then
+    assert events[-1]["type"] == "end"
+    assert any(event.get("verdict") for event in events[:-1])
+
+
+def test_advance_can_flip_security_for_the_next_scenario(db: None, user: User) -> None:
+    # given
+    settings = builtin_policy()
+    run = Simulation(
+        user,
+        "Analyst",
+        settings,
+        [LEAK_PROMPT],
+        True,
+        upstream=LeakingModel,
+        step=True,
+    )
+
+    async def play() -> None:
+        async for event in run.run():
+            if event.get("verdict"):
+                # when
+                assert advance(run.run_id, security=False)
+                # then
+                assert run.security is False
+
+    asyncio.run(play())
+
+
 def test_attack_with_an_unknown_goal_is_not_found(db: None, client: TestClient) -> None:
     # given
     save_roles()
-    request = {"role": "Analyst", "goals": ["nope"], "security": True}
+    request = {"role": "Analyst", "goals": ["nope"], "security": True, "step": False}
 
     # when / then
     response = client.post("/api/demo/attack", json=request)
@@ -348,7 +518,12 @@ def test_attack_with_an_unknown_goal_is_not_found(db: None, client: TestClient) 
 
 def test_attack_with_an_unknown_role_is_not_found(client: TestClient) -> None:
     # given
-    request = {"role": "Nobody", "goals": ["leak_prompt"], "security": True}
+    request = {
+        "role": "Nobody",
+        "goals": ["leak_prompt"],
+        "security": True,
+        "step": False,
+    }
 
     # when / then
     response = client.post("/api/demo/attack", json=request)
@@ -383,7 +558,12 @@ def test_unlock_clears_the_lockout(
     # given
     monkeypatch.setattr(settings, "control_lockout_blocks", 1)
     save_roles()
-    request = {"role": "Analyst", "goals": ["leak_prompt"], "security": True}
+    request = {
+        "role": "Analyst",
+        "goals": ["leak_prompt"],
+        "security": True,
+        "step": False,
+    }
     client.post("/api/demo/attack", json=request)
     assert locked(client)
 
@@ -391,5 +571,24 @@ def test_unlock_clears_the_lockout(
     response = client.post("/api/demo/unlock", json={"role": "Analyst"})
 
     # then
-    assert response.status_code == 204
+    assert response.status_code == 200
     assert not locked(client)
+
+
+def test_unlock_lands_in_the_logs_and_on_the_dashboard(
+    db: None, client: TestClient
+) -> None:
+    # given
+    save_roles()
+
+    # when
+    unlock = client.post("/api/demo/unlock", json={"role": "Analyst"}).json()
+
+    # then
+    logs = client.get("/api/demo/cases", params={"role": "Analyst"}).json()
+    traces = client.get("/api/traces").json()["traces"]
+    assert [c["status"] for c in logs] == ["unlocked"]
+    assert unlock["reason"].startswith("Unlocked by ")
+    assert [(t["outcome"], t["prompt"]) for t in traces] == [
+        ("unlocked", unlock["reason"])
+    ]

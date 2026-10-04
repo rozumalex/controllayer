@@ -1,4 +1,4 @@
-import type { ReactNode } from "react"
+import { useEffect, useRef, type ReactNode } from "react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -26,7 +26,7 @@ const STEPS = [
   ],
   [
     "Or bring an army.",
-    "Press Attack, and our attack corpus runs live through the real agent and model, Portcullis and the bank's MCP server, in a new order every time.",
+    "Press Run scenarios. After each short multi-turn attack, click Explain for the tale or Next for the next one.",
   ],
   [
     "Turn protection off",
@@ -67,6 +67,13 @@ const STORIES = [
 const STORY = STORIES[Math.floor(Math.random() * STORIES.length)]
 
 // The moments of a run worth stopping for, each with what it means.
+export type ScenarioNotice = {
+  owasp: string
+  title: string
+  verdict: string
+  story: string
+}
+
 export type Notice =
   | { kind: "welcome" }
   | { kind: "breach"; stolen: number; security: boolean }
@@ -74,6 +81,7 @@ export type Notice =
   | { kind: "locked_out"; blocks: number; minutes: number }
   | { kind: "out_of_budget" }
   | { kind: "done"; blocked: number; cases: number; stolen: number }
+  | ({ kind: "scenario" } & ScenarioNotice)
 
 function content(
   notice: Notice,
@@ -101,7 +109,7 @@ function content(
             </p>
             <Separator />
             <p className="font-semibold">Your hacker's checklist</p>
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className="grid gap-2">
               {checklist.map((item) => (
                 <Label key={item.id} className="font-normal">
                   <Checkbox disabled checked={false} />
@@ -126,11 +134,8 @@ function content(
             <Separator />
             <p>
               Careful: the bank is watching. Every request lands on the live
-              dashboard under the employee's name, and too many blocked attacks{" "}
-              <b>lock the account</b>.
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Demo data only: the bank and its clients are made up.
+              dashboard under the employee's name, and too many blocked attacks
+              or suspicious requests <b>lock the account</b>.
             </p>
           </>
         ),
@@ -160,11 +165,32 @@ function content(
         body: "Now turn security on, or switch to a junior account, and see if it still works.",
         action: "Next item",
       }
+    case "scenario": {
+      const icon =
+        notice.verdict === "succeeded"
+          ? "☠️"
+          : notice.verdict === "stopped"
+            ? "🛡️"
+            : "😶"
+      const label =
+        notice.verdict === "succeeded"
+          ? "You got through."
+          : notice.verdict === "stopped"
+            ? "Portcullis held."
+            : "Nothing landed."
+      return {
+        icon,
+        title: `${notice.owasp} · ${notice.title}`,
+        lead: label,
+        body: <p className="leading-relaxed">{notice.story}</p>,
+        action: "Got it",
+      }
+    }
     case "locked_out":
       return {
         icon: "🔒",
         title: "Busted. Account locked.",
-        lead: `${notice.blocks} blocked attacks in ${notice.minutes} minutes: Portcullis locked the account you stole.`,
+        lead: `Too many blocked attacks or suspicious requests in ${notice.minutes} minutes: Portcullis locked the account you stole.`,
         body: "No more prompts, no more tools. The security team sees it on the dashboard right now.",
         action: "Fine",
       }
@@ -204,8 +230,19 @@ export function NoticeDialog({
   onClose: () => void
 }) {
   const shown = notice && content(notice, checklist)
+  // Button click sets open→false via the parent, which also fires
+  // onOpenChange; only the first close should reach the parent.
+  const closed = useRef(false)
+  useEffect(() => {
+    closed.current = false
+  }, [notice])
+  const dismiss = () => {
+    if (closed.current) return
+    closed.current = true
+    onClose()
+  }
   return (
-    <Dialog open={notice !== null} onOpenChange={(open) => !open && onClose()}>
+    <Dialog open={notice !== null} onOpenChange={(open) => !open && dismiss()}>
       {shown && (
         <DialogContent className="max-h-[92svh] overflow-auto sm:max-w-lg">
           <DialogHeader>
@@ -221,7 +258,7 @@ export function NoticeDialog({
             <div className="flex flex-col gap-2 text-sm">{shown.body}</div>
           )}
           <DialogFooter>
-            <Button size="lg" onClick={onClose}>
+            <Button size="lg" type="button" onClick={dismiss}>
               {shown.action}
             </Button>
           </DialogFooter>

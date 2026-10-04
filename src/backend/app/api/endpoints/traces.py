@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import OrgId
 from app.control.adapters.openai_chat import text_of
+from app.control.guards.lockout import suspicious
 from app.core.schema.traces import (
     Analytics,
     Bucket,
@@ -50,12 +51,16 @@ TOP_FINDINGS = 8
 
 def outcome(events: Sequence[ControlEvent]) -> Outcome:
     kinds = {(e.event, e.action) for e in events}
+    if any(event == "unlock" for event, _ in kinds):
+        return "unlocked"
     if ("decision", "block") in kinds:
         return "blocked"
     if any(event == "upstream_error" for event, _ in kinds):
         return "error"
     if ("verdict", "block") in kinds:
         return "flagged"
+    if any(e.event == "verdict" and suspicious(e.data) for e in events):
+        return "suspicious"
     return "allowed"
 
 
@@ -105,18 +110,19 @@ def user(events: Sequence[ControlEvent]) -> TraceUser | None:
 
 def summary(events: Sequence[ControlEvent]) -> TraceSummary:
     request = next((e for e in events if e.event == "request"), None)
+    unlock = next((e for e in events if e.event == "unlock"), None)
     started, ended = events[0].created_at, events[-1].created_at
     return TraceSummary(
         trace_id=events[0].trace_id,
         started_at=started,
         agent_id=request.data.get("agent_id") if request else None,
         user=user(events),
-        prompt=prompt(request),
+        prompt=unlock.data.get("reason") if unlock else prompt(request),
         outcome=outcome(events),
         findings=[
             Finding.model_validate(e.data, extra="ignore")
             for e in events
-            if e.event == "verdict" and e.action != "allow"
+            if e.event == "verdict" and (e.action != "allow" or suspicious(e.data))
         ],
         usage=usage(events),
         usd=spent(events),
@@ -180,9 +186,10 @@ async def list_traces(
     limit: Annotated[int, Query(ge=1, le=500)] = 50,
 ) -> TraceList:
     started = func.min(ControlEvent.created_at).label("started")
+    # A simulator reset only hides cases from the simulator: no request.
     newest = (
         select(ControlEvent.trace_id, started)
-        .where(ControlEvent.org_id == org_id)
+        .where(ControlEvent.org_id == org_id, ControlEvent.event != "reset")
         .group_by(ControlEvent.trace_id)
         .order_by(started.desc())
         .limit(limit)

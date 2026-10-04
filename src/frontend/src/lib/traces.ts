@@ -2,7 +2,8 @@ import { userHeaders } from "@/lib/users"
 
 // The responses of GET /api/traces, see app/core/schema/traces.py.
 
-export type Outcome = "allowed" | "flagged" | "blocked" | "error"
+export type Outcome =
+  "allowed" | "suspicious" | "flagged" | "blocked" | "error" | "unlocked"
 
 export type Usage = {
   prompt_tokens: number
@@ -70,6 +71,7 @@ export type Range = "1h" | "24h" | "7d"
 export type Bucket = {
   start: string
   allowed: number
+  suspicious: number
   flagged: number
   blocked: number
   error: number

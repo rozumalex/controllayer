@@ -60,6 +60,7 @@ import {
   PhoneIcon,
   RefreshCwIcon,
   SquareIcon,
+  TagIcon,
   SquarePenIcon,
   ThumbsDownIcon,
   ThumbsUpIcon,
@@ -67,6 +68,8 @@ import {
 import {
   createContext,
   useContext,
+  useEffect,
+  useState,
   type ComponentType,
   type FC,
   type PropsWithChildren,
@@ -132,6 +135,8 @@ export type ThreadProps = {
   // Why the user can't type: it disables the composer and shows as its
   // placeholder.
   disabled?: string | undefined;
+  // Follows new messages to the bottom, as when an attack plays in the chat.
+  autoScroll?: boolean | undefined;
 };
 
 const EMPTY_COMPONENTS: ThreadComponents = {};
@@ -177,12 +182,18 @@ export const Thread: FC<ThreadProps> = ({
   components = EMPTY_COMPONENTS,
   autoFocus = true,
   disabled,
+  autoScroll = false,
 }) => {
   const isEmpty = useAuiState(isNewChatView);
 
   return (
     <ThreadComponentsContext.Provider value={components}>
-      <ThreadRoot isEmpty={isEmpty} autoFocus={autoFocus} disabled={disabled} />
+      <ThreadRoot
+        isEmpty={isEmpty}
+        autoFocus={autoFocus}
+        disabled={disabled}
+        autoScroll={autoScroll}
+      />
     </ThreadComponentsContext.Provider>
   );
 };
@@ -191,7 +202,8 @@ const ThreadRoot: FC<{
   isEmpty: boolean;
   autoFocus: boolean;
   disabled: string | undefined;
-}> = ({ isEmpty, autoFocus, disabled }) => {
+  autoScroll: boolean;
+}> = ({ isEmpty, autoFocus, disabled, autoScroll }) => {
   const { Welcome = ThreadWelcome } = useContext(ThreadComponentsContext);
 
   return (
@@ -206,7 +218,8 @@ const ThreadRoot: FC<{
       }}
     >
       <ThreadPrimitive.Viewport
-        turnAnchor="top"
+        turnAnchor={autoScroll ? "bottom" : "top"}
+        autoScroll={autoScroll}
         data-slot="aui_thread-viewport"
         className="relative flex flex-1 flex-col overflow-x-auto overflow-y-scroll scroll-smooth"
       >
@@ -590,6 +603,32 @@ const AssistantMessage: FC = () => {
   const blocked = useAuiState(
     (s) => s.message.metadata.custom?.blocked === true,
   );
+  const label = useAuiState((s) => s.message.metadata.custom?.label);
+  // Primitives only: a fresh object from useAuiState loops forever.
+  const story = useAuiState((s) => {
+    const value = s.message.metadata.custom?.story;
+    return typeof value === "string" && value ? value : null;
+  });
+  const owasp = useAuiState((s) =>
+    String(s.message.metadata.custom?.owasp ?? ""),
+  );
+  const title = useAuiState((s) =>
+    String(s.message.metadata.custom?.title ?? ""),
+  );
+  const verdict = useAuiState((s) =>
+    String(s.message.metadata.custom?.verdict ?? ""),
+  );
+  const [awaitingNext, setAwaitingNext] = useState(false);
+  useEffect(() => {
+    const listen = (event: Event) =>
+      setAwaitingNext((event as CustomEvent<boolean>).detail);
+    window.addEventListener("portcullis-waiting", listen);
+    return () => window.removeEventListener("portcullis-waiting", listen);
+  }, []);
+  const isLast = useAuiState((s) => {
+    const messages = s.thread.messages;
+    return messages[messages.length - 1]?.id === s.message.id;
+  });
 
   const ACTION_BAR_PT = "pt-1.5";
   // Keep the action bar inside the contained root's paint box, then cancel its reserved space in flow.
@@ -601,6 +640,38 @@ const AssistantMessage: FC = () => {
       data-role="assistant"
       className="fade-in slide-in-from-bottom-1 animate-in relative -mb-7.5 pb-7.5 duration-150 [contain-intrinsic-size:auto_200px] [content-visibility:auto]"
     >
+      {typeof label === "string" && (
+        <div className="flex flex-wrap items-center gap-2 px-2">
+          <MessageLabel tone={blocked ? "blocked" : "passed"}>{label}</MessageLabel>
+          {verdict && awaitingNext && isLast && (
+            <Button
+              type="button"
+              size="xs"
+              onClick={() =>
+                window.dispatchEvent(new CustomEvent("portcullis-next"))
+              }
+            >
+              Next
+            </Button>
+          )}
+          {story && (
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              onClick={() =>
+                window.dispatchEvent(
+                  new CustomEvent("portcullis-explain", {
+                    detail: { story, owasp, title, verdict },
+                  }),
+                )
+              }
+            >
+              Explain
+            </Button>
+          )}
+        </div>
+      )}
       <div
         data-slot="aui_assistant-message-content"
         className={cn(
@@ -774,7 +845,34 @@ const UserImagePart: ImageMessagePartComponent = (part) => (
   </div>
 );
 
+// A tag above a message, such as the kind of attack a prompt is: a pill, so
+// it reads as a label, not as part of the message.
+const MessageLabel: FC<{
+  tone: "attack" | "normal" | "blocked" | "passed";
+  children: string;
+}> = ({
+  tone,
+  children,
+}) => (
+  <span
+    className={cn(
+      "mb-1 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold",
+      tone === "attack" && "border-amber-400 bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
+      tone === "normal" && "border-border bg-muted text-muted-foreground",
+      tone === "blocked" && "border-destructive/40 bg-destructive/10 text-destructive",
+      tone === "passed" && "border-emerald-400 bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300",
+    )}
+  >
+    <TagIcon className="size-3" />
+    {children}
+  </span>
+);
+
 const UserMessage: FC = () => {
+  const label = useAuiState((s) => s.message.metadata.custom?.label);
+  const normal = useAuiState(
+    (s) => s.message.metadata.custom?.tone === "normal",
+  );
   return (
     <MessagePrimitive.Root
       data-slot="aui_user-message-root"
@@ -783,6 +881,11 @@ const UserMessage: FC = () => {
     >
       <UserMessageAttachments />
 
+      {typeof label === "string" && (
+        <div className="col-start-2 justify-self-end -mb-1">
+          <MessageLabel tone={normal ? "normal" : "attack"}>{label}</MessageLabel>
+        </div>
+      )}
       <div className="aui-user-message-content-wrapper relative col-start-2 min-w-0">
         <div className="aui-user-message-content peer bg-muted text-foreground rounded-(--composer-radius) px-4 py-2 wrap-break-word empty:hidden">
           <MessagePrimitive.Parts

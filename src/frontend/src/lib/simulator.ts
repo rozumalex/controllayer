@@ -9,8 +9,10 @@ export type Account = {
   policy: PolicySettings
   // Whether the layer locked the account out for too many blocked attacks.
   locked: boolean
-  // The ids of the checklist items this account can tick.
-  checklist: string[]
+  // Why, such as "6 blocked attacks in 5 minutes".
+  lock_reason: string | null
+  // Whether the account spent its weekly budget.
+  out_of_budget: boolean
 }
 
 export type AttackGoal = {
@@ -31,6 +33,11 @@ export type Simulator = {
   goals: AttackGoal[]
   checklist: ChecklistItem[]
   risks: Risk[]
+  // How many scenarios the attack runs, and their total turns.
+  scenarios: number
+  turns: number
+  // Ids still holding a <turn N> placeholder.
+  missing: string[]
 }
 
 export type CaseStatus =
@@ -42,6 +49,7 @@ export type CaseStatus =
   | "false_alarm"
   | "out_of_budget"
   | "locked_out"
+  | "unlocked"
 
 export type Verdict = {
   direction: string
@@ -77,6 +85,17 @@ export type CaseEvent = {
   tokens: number
   usd: string
   verdicts: Verdict[]
+  // Set on scenario turns.
+  scenario?: string | null
+  title?: string | null
+  owasp?: string | null
+  turn?: number | null
+  turns?: number | null
+  // Set on a scenario's last turn, after the judge.
+  verdict?: string | null
+  story?: string | null
+  // Stepped runs: POST /attack/next with this to continue.
+  run_id?: string | null
 }
 
 export type RunTotals = {
@@ -103,6 +122,8 @@ export type AttackRequest = {
   role: string
   goals: string[]
   security: boolean
+  // When true (default), the server waits for advanceAttack between scenarios.
+  step?: boolean
 }
 
 async function get<T>(url: string): Promise<T> {
@@ -112,6 +133,18 @@ async function get<T>(url: string): Promise<T> {
 }
 
 export const fetchSimulator = () => get<Simulator>("/api/demo")
+
+// Lets a stepped attack start its next scenario after Next / Explain.
+// security, when passed, applies from the next scenario on.
+export async function advanceAttack(runId: string, security?: boolean) {
+  const response = await fetch("/api/demo/attack/next", {
+    method: "POST",
+    headers: { ...userHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ run_id: runId, security }),
+  })
+  if (!response.ok && response.status !== 404)
+    throw new Error(`Advance failed with ${response.status}.`)
+}
 
 // What came of a chat answer through the taken-over account, from its trace
 // and the answer. The server keeps it in the account's logs.
@@ -129,14 +162,25 @@ export async function chatCase(
   return response.json()
 }
 
-// Unlocks an account the layer locked out.
-export async function unlock(role: string) {
+// Starts the account's hacker's checklist over.
+export async function resetAccount(role: string) {
+  const response = await fetch("/api/demo/reset", {
+    method: "POST",
+    headers: { ...userHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ role }),
+  })
+  if (!response.ok) throw new Error(`Resetting failed with ${response.status}.`)
+}
+
+// Unlocks an account the layer locked out, and returns the log record of it.
+export async function unlock(role: string): Promise<CaseEvent> {
   const response = await fetch("/api/demo/unlock", {
     method: "POST",
     headers: { ...userHeaders(), "Content-Type": "application/json" },
     body: JSON.stringify({ role }),
   })
   if (!response.ok) throw new Error(`Unlocking failed with ${response.status}.`)
+  return response.json()
 }
 
 // The account's logs: its attack cases and chat answers, oldest first.

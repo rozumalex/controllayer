@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.api.deps import PRIVILEGED
+from app.control.upstream import MockUpstream
 from app.core.config import settings
 from app.db.auth import issue_token
 from app.db.base import Base
@@ -20,7 +21,12 @@ from app.main import app
 
 # The tests get their own database, so they leave the dev data alone.
 DEV_URL = make_url(settings.database_url)
-TEST_URL = DEV_URL.set(database=f"{DEV_URL.database}_test")
+# And their own role, whose password is hashed with one SCRAM round instead
+# of 4096: asyncpg computes the rounds in Python at every connect, and with
+# NullPool the tests connect thousands of times.
+TEST_URL = DEV_URL.set(
+    database=f"{DEV_URL.database}_test", username=f"{DEV_URL.username}_test"
+)
 # NullPool: a pooled connection belongs to the event loop that opened it, and
 # TestClient and asyncio.run each start a new one.
 test_engine = create_async_engine(TEST_URL, poolclass=NullPool)
@@ -30,6 +36,20 @@ SessionLocal.configure(bind=test_engine)
 async def create_database() -> None:
     dev = create_async_engine(DEV_URL, poolclass=NullPool, isolation_level="AUTOCOMMIT")
     async with dev.connect() as connection:
+        role = await connection.scalar(
+            text("SELECT 1 FROM pg_roles WHERE rolname = :name"),
+            {"name": TEST_URL.username},
+        )
+        if not role:
+            await connection.execute(
+                text(f'CREATE ROLE "{TEST_URL.username}" LOGIN SUPERUSER')
+            )
+        await connection.execute(text("SET scram_iterations = 1"))
+        # DDL takes no bind parameters, so the password goes in as a literal.
+        password = str(TEST_URL.password).replace("'", "''")
+        await connection.execute(
+            text(f"ALTER ROLE \"{TEST_URL.username}\" PASSWORD '{password}'")
+        )
         exists = await connection.scalar(
             text("SELECT 1 FROM pg_database WHERE datname = :name"),
             {"name": TEST_URL.database},
@@ -95,6 +115,13 @@ def no_sandbox_pool(monkeypatch: pytest.MonkeyPatch) -> None:
     in the background while a test empties the tables. The pool's own tests
     turn it back on."""
     monkeypatch.setattr(settings, "demo_sandbox_pool", 0)
+
+
+@pytest.fixture(autouse=True)
+def instant_mock_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Streams the mock model's reply with no pause between words, so the
+    tests don't wait out the pacing meant for the demo."""
+    monkeypatch.setattr(MockUpstream.__init__, "__defaults__", (0,))
 
 
 @pytest.fixture
