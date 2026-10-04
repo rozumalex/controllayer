@@ -59,8 +59,6 @@ class Agent:
         # Whether the user's policy lets them call a tool. The model never
         # sees the others; the gateway blocks them too, in case it asks.
         self.allows = allows
-        # Whom the agent works for, so the guards can decide what they may
-        # see. Everyone is anonymous until the app has users.
         self.agent_id = agent_id
 
     async def tools(self) -> list[dict[str, Any]]:

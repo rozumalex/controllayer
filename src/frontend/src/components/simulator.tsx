@@ -159,8 +159,7 @@ function usePoll<T>(fn: () => Promise<T>, ms: number) {
 }
 
 // The session as a running count of each outcome, and of the dollars
-// spent, from zero, at most POINTS
-// points.
+// spent, from zero, at most POINTS points.
 function timeline(feed: CaseEvent[]) {
   const totals = { blocked: 0, allowed: 0, missed: 0, usd: 0 }
   const points = [{ n: 0, ...totals }]
@@ -573,7 +572,6 @@ function StolenChat({
     )
     viewport?.scrollTo({ top: viewport.scrollHeight })
   }
-  // The employee's own chat history.
   const history = useChatHistory(runtime, { "X-Simulate-Role": role })
   // The cases already there when the chat opens, as when you switch
   // accounts, aren't played again.
@@ -729,7 +727,6 @@ export function Simulator() {
     setWaiting(true)
   }
   const goNext = () => {
-    // Only an explicit Next click should land here.
     if (!gate.current) return
     gate.current.done()
     gate.current = null

@@ -5,8 +5,7 @@ through it: the chat calls it, and outside agents reach it at /api/mcp
 (app/api/mcp.py). Each tool is listed as
 `<server>__<tool>`. A call is checked before it reaches the server (inbound,
 agent -> tool), and its result before the agent sees it (outbound, tool ->
-agent). The agent id says whom the agent works for, so the guards can decide
-what that user may see.
+agent).
 """
 
 import logging

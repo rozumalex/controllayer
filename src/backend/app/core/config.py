@@ -40,8 +40,6 @@ class Settings(BaseSettings):
     # balancer can send /api/* to the backend without rewriting the path.
     api_prefix: str = "/api"
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/app"
-    # Celery sends the tasks through this Redis.
-    redis_url: str = "redis://localhost:6379/0"
     # Sentry is off while the DSN is empty.
     sentry_dsn: str = ""
     sentry_environment: str = "development"
@@ -115,7 +113,6 @@ class Settings(BaseSettings):
     # set the key so every API process makes the same ones.
     control_flow_window_minutes: int = 30
     control_flow_hash_key: str = ""
-    # How long a sign-in lasts.
     auth_session_days: int = 30
     # The OAuth client ID of Sign in with Google, from the Google Cloud
     # console. Empty turns Google sign-in off.
@@ -173,16 +170,6 @@ class Settings(BaseSettings):
             self.smtp_username = "resend"
             self.smtp_password = self.resend_api_key
         return self
-
-    @field_validator("redis_url")
-    @classmethod
-    def require_tls_certificate(cls, value: str) -> str:
-        """Celery refuses a rediss:// URL without ssl_cert_reqs, and hosts
-        such as DigitalOcean give it without one."""
-        if value.startswith("rediss://") and "ssl_cert_reqs=" not in value:
-            separator = "&" if "?" in value else "?"
-            value = f"{value}{separator}ssl_cert_reqs=required"
-        return value
 
     def endpoint(self, model: str) -> Endpoint | None:
         """Where the provider that serves the model takes requests, or None

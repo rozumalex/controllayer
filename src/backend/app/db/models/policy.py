@@ -27,7 +27,6 @@ class Policy(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
-    # The user who saved it last.
     updated_by_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", name="role_policies_updated_by_id_fkey")
     )

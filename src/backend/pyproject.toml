@@ -6,15 +6,13 @@ requires-python = ">=3.14"
 dependencies = [
     "alembic>=1.20.0",
     "asyncpg>=0.31.0",
-    "celery[redis]>=5.6.3",
     "fastapi[standard]>=0.142.2",
     "httpx>=0.28.1",
     "mcp>=2.3.0",
-    "newrelic>=13.6.1",
     "pydantic-settings>=2.15.0",
     "pyjwt[crypto]>=2.10",
     "pyyaml>=6.0.3",
-    "sentry-sdk[celery,fastapi]>=2.71.0",
+    "sentry-sdk[fastapi]>=2.71.0",
     "sqlalchemy[asyncio]>=2.1.2",
 ]
 
