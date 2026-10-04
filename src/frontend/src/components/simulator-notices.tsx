@@ -43,7 +43,7 @@ const STEPS = [
 // with why nobody has noticed yet.
 const STORIES = [
   {
-    lead: "An email went out to Golden Socks staff: “Your Microsoft 365 password expires today, keep it here.” One employee clicked, and typed their password into your look-alike page.",
+    lead: "An email went out to Golden Socks staff: “Your Microsoft 365 password expires today, keep it here.” One employee clicked and typed their password into your look-alike page.",
     quiet:
       "The employee is proud they changed their password on time. IT is busy fixing the printer again.",
   },
