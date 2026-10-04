@@ -49,7 +49,7 @@ export function SignedIn({ children }: { children: ReactNode }) {
   const signedIn = (user: Employee) => {
     const path = window.location.pathname
     const stays = ["/admin", "/simulator", "/oauth"].some((p) =>
-      path.startsWith(p),
+      path.startsWith(p)
     )
     if (isPrivileged(user) && !stays)
       window.history.replaceState(null, "", "/admin")
