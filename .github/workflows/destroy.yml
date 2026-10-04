@@ -33,5 +33,5 @@ jobs:
       - name: Delete the database clusters
         run: |
           doctl databases list --format ID,Name --no-header \
-            | awk -v app="$APP_NAME" '$2 == app "-db" || $2 == app "-valkey" { print $1 }' \
+            | awk -v app="$APP_NAME" '$2 == app "-db" { print $1 }' \
             | xargs -r -n 1 doctl databases delete --force

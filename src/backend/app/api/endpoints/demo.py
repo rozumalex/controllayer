@@ -1,5 +1,5 @@
 """The attack simulator: pick an employee's account an attacker has taken
-over, and watch the corpus run through it, live. The chat acts as them through
+over, and watch the scenarios run through it, live. The chat acts as them through
 the X-Simulate-* headers of /api/v1, see app/api/deps.py.
 See app/core/simulator.py."""
 
@@ -23,18 +23,14 @@ from app.core.schema.demo import (
     AttackGoal,
     AttackNextRequest,
     AttackRequest,
-    AttackRun,
     Case,
     ChatCaseRequest,
     ChecklistItem,
-    HistoryEntry,
-    HistoryVerdict,
     Risk,
     Simulator,
     UnlockRequest,
 )
 from app.core.simulator import (
-    ENDINGS,
     GOALS,
     RISKS,
     Simulation,
@@ -49,8 +45,6 @@ from app.db.policy import recent_blocks, recent_flags, role_policy, spent_this_w
 from app.db.session import SessionLocal
 
 router = APIRouter(prefix="/demo", tags=["demo"])
-
-RUNS = 20
 
 
 async def account(user: User, role: str) -> tuple[User, Account]:
@@ -120,7 +114,7 @@ async def simulator(user: CurrentUser) -> Simulator:
     "/attack",
     summary="Run an attack through a taken-over account",
     description=(
-        "Streams one JSON line per corpus case, as it runs through the agent, "
+        "Streams one JSON line per scenario turn, as it runs through the agent, "
         "the control layer and the MCP gateway, then a line with the run's "
         "totals. Close the stream to stop the run."
     ),
@@ -297,88 +291,4 @@ async def cases(
                 **({"achieved": []} if e.id <= (reset or 0) else {}),
             }
             for e in reversed(list(found))
-        ]
-
-
-def entry(events: list[ControlEvent]) -> HistoryEntry:
-    """One request of the history, from its verdicts and decisions."""
-    verdicts = [e for e in events if e.event == "verdict"]
-    blocked = any(e.event == "decision" and e.action == "block" for e in events)
-    # The guard that caught it comes first, ahead of the budget or lockout.
-    stops = sorted(
-        (v for v in verdicts if v.action == "block"),
-        key=lambda v: v.data.get("guard") in ENDINGS,
-    )
-    changed = any(
-        v.action == "modify" and v.data.get("guard") != "spotlight" for v in verdicts
-    )
-    status = (
-        "blocked"
-        if blocked
-        else "passed"
-        if stops
-        else "contained"
-        if changed
-        else "allowed"
-    )
-    user = next((e.user.name for e in events if e.user), None)
-    return HistoryEntry(
-        trace_id=events[0].trace_id,
-        created_at=events[0].created_at,
-        user=user,
-        status=status,
-        guard=stops[0].data.get("guard") if stops else None,
-        reason=stops[0].data.get("reason") if stops else None,
-        verdicts=[
-            HistoryVerdict.model_validate(v.data, extra="ignore") for v in verdicts
-        ],
-    )
-
-
-@router.get(
-    "/history",
-    response_model=list[HistoryEntry],
-    summary="List the organization's last requests with their verdicts",
-)
-async def history(
-    org_id: OrgId, limit: Annotated[int, Query(ge=1, le=500)] = 200
-) -> list[HistoryEntry]:
-    async with SessionLocal() as session:
-        first = func.min(ControlEvent.id)
-        traces = (
-            select(ControlEvent.trace_id)
-            .where(ControlEvent.org_id == org_id, ControlEvent.event == "verdict")
-            .group_by(ControlEvent.trace_id)
-            .order_by(first.desc())
-            .limit(limit)
-        )
-        events = await session.scalars(
-            select(ControlEvent)
-            .where(
-                ControlEvent.trace_id.in_(traces),
-                ControlEvent.event.in_(["verdict", "decision"]),
-            )
-            .order_by(ControlEvent.id)
-        )
-        by_trace: dict[str, list[ControlEvent]] = {}
-        for event in events:
-            by_trace.setdefault(event.trace_id, []).append(event)
-    # Oldest first, as the page draws its timeline.
-    return [entry(group) for group in by_trace.values()]
-
-
-@router.get("/runs", response_model=list[AttackRun], summary="List the last runs")
-async def runs(org_id: OrgId) -> list[AttackRun]:
-    async with SessionLocal() as session:
-        events = await session.scalars(
-            select(ControlEvent)
-            .where(ControlEvent.org_id == org_id, ControlEvent.event == "attack")
-            .order_by(ControlEvent.id.desc())
-            .limit(RUNS)
-        )
-        return [
-            AttackRun.model_validate(
-                {**e.data, "trace_id": e.trace_id, "created_at": e.created_at}
-            )
-            for e in events
         ]

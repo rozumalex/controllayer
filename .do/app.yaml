@@ -1,11 +1,10 @@
 # DigitalOcean App Platform spec for the production stack. The deploy job in
 # .github/workflows/main.yml creates the app from this file on the first run
 # and updates it on every later one. The deploy action fills in ${APP_NAME},
-# ${GITHUB_REPOSITORY}, the Sentry DSNs, the New Relic license key, the OpenAI
-# key and the bank MCP token from the workflow environment.
+# ${GITHUB_REPOSITORY}, the Sentry DSNs, the OpenAI key and the bank MCP
+# token from the workflow environment.
 # Quote them, so an unset one becomes an empty string.
-# ${db.DATABASE_URL} and ${redis.DATABASE_URL} are App Platform variables and
-# stay as they are.
+# ${db.DATABASE_URL} is an App Platform variable and stays as it is.
 name: ${APP_NAME}
 region: fra
 
@@ -46,24 +45,17 @@ services:
     instance_count: 1
     health_check:
       http_path: /api/health
-    envs: &backend-envs
+    envs:
       - key: DATABASE_URL
         value: ${db.DATABASE_URL}
-      - key: REDIS_URL
-        value: ${redis.DATABASE_URL}
       - key: SENTRY_DSN
         value: "${SENTRY_DSN}"
       - key: SENTRY_ENVIRONMENT
         value: production
-      - key: NEW_RELIC_LICENSE_KEY
-        value: "${NEW_RELIC_LICENSE_KEY}"
-        type: SECRET
       # Unset, it stays empty, and the bank MCP server refuses every request.
       - key: BANK_MCP_TOKEN
         value: "${BANK_MCP_TOKEN}"
         type: SECRET
-      - key: NEW_RELIC_APP_NAME
-        value: "${APP_NAME}"
       # The chat model and the semantic injection guard. Without it the app
       # answers with the mock model and runs only the heuristic guard.
       - key: OPENAI_API_KEY
@@ -80,26 +72,6 @@ services:
       # The sign-in link in the email opens the app here.
       - key: APP_URL
         value: https://controllayer.net
-
-workers:
-  # Worker and beat in one process. Keep one instance, or beat sends every
-  # scheduled task once per instance. The app user cannot write to /app, so
-  # the beat schedule file goes to /tmp. Celery starts one process per CPU of
-  # the host, not of the instance, and 8 of them run out of its 512 MB, so
-  # run one.
-  - name: worker
-    github: *github
-    source_dir: src/backend
-    dockerfile_path: src/backend/Dockerfile
-    run_command: newrelic-admin run-program celery -A app.worker worker --beat --schedule /tmp/celerybeat-schedule --concurrency 1 --loglevel INFO
-    instance_size_slug: apps-s-1vcpu-0.5gb
-    instance_count: 1
-    # On a deploy or restart, App Platform sends TERM. Celery then takes no new
-    # tasks and waits for the running ones to finish. This is how long App
-    # Platform waits before it kills the worker.
-    termination:
-      grace_period_seconds: 60
-    envs: *backend-envs
 
 jobs:
   - name: migrate
@@ -136,7 +108,7 @@ static_sites:
         scope: BUILD_TIME
 
 databases:
-  # Managed clusters that the deploy job creates once, so the data stays when
+  # A managed cluster that the deploy job creates once, so the data stays when
   # the app redeploys or restarts.
   #
   # Postgres. Without db_user and db_name the app connects as the cluster's
@@ -146,10 +118,3 @@ databases:
     engine: PG
     production: true
     cluster_name: ${APP_NAME}-db
-  # Valkey, a Redis fork, as the Celery broker. The deploy job turns on RDB
-  # persistence, so the queue survives a restart of the cluster, minus at most
-  # the last 10 minutes.
-  - name: redis
-    engine: VALKEY
-    production: true
-    cluster_name: ${APP_NAME}-valkey

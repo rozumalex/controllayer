@@ -21,7 +21,6 @@ FastAPI app managed with uv. Run its commands in Docker with the `./dev` script 
 - Settings come from environment variables (or `src/backend/.env`) through `app/core/config.py`.
 - Get a database session with the `get_session` dependency from `app/db/session.py`.
 - Put SQLAlchemy models in `app/db/models/<name>.py`, and import each one in `app/db/models/__init__.py` so Alembic can see it.
-- Put Celery tasks in `app/tasks/<name>.py` with `@celery_app.task` from `app.worker`, and add the module to `include` in `app/worker.py`. Schedule them in `beat_schedule` there with `crontab(...)`, not a fixed interval, because the beat state is lost when the container is recreated. Tasks are sync functions; to reach the database from one, run async code with `asyncio.run`.
 - After you change a model, create a migration, check the generated file, then apply it:
 
   ```sh
@@ -83,7 +82,7 @@ pnpm dlx shadcn@latest add card # add a shadcn component
 
 ## Docker
 
-`docker-compose.yml` in the repo root is the development stack: `db` (Postgres), `redis` (the Celery broker), `migrate` (applies the migrations, then exits), `api` (backend), `worker` (Celery worker and beat in one process) and `app` (frontend). `api`, `worker` and `app` mount the source code from `src/` and reload on every change, so do not rebuild the images after a code change. Rebuild only after you change the dependencies.
+`docker-compose.yml` in the repo root is the development stack: `db` (Postgres), `migrate` (applies the migrations, then exits), `api` (backend), `app` (frontend) and `mailpit` (catches the email the api sends). `api` and `app` mount the source code from `src/` and reload on every change, so do not rebuild the images after a code change. Rebuild only after you change the dependencies.
 
 Manage it with the `./dev` script in the repo root. Every command except `lint` runs in the containers, so use it instead of running uv, pnpm or pytest on the host. `lint` runs pre-commit on the host, the same hooks as the git commit hook and CI. Run `./dev help` for the full list.
 

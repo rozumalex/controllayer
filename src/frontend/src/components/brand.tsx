@@ -2,7 +2,7 @@ import type { LucideIcon } from "lucide-react"
 import { useId, type ComponentProps, type ReactNode } from "react"
 
 // Golden Socks, the fictional bank whose employees use the assistant.
-export const COMPANY = "Golden Socks"
+const COMPANY = "Golden Socks"
 
 export function Logo(props: ComponentProps<"svg">) {
   return (

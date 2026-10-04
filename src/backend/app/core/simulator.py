@@ -20,7 +20,6 @@ import logging
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from decimal import Decimal
-from functools import cache
 from typing import Any
 from uuid import uuid4
 
@@ -57,12 +56,11 @@ from app.core.schema.policy import Clearance, PolicySettings
 from app.db.models import Policy, User
 from app.db.policy import DEFAULT_ROLE, cost, data_catalog, spent_this_week
 from app.db.session import SessionLocal
-from scripts.attacks import Case, expand, load
 
 logger = logging.getLogger("app.simulator")
 
-# Each attack goal is one item of the hacker's checklist: the corpus cases
-# tagged with that id go after it.
+# Each attack goal is one item of the hacker's checklist: the scenarios with
+# that goal go after it.
 Goal = Item
 GOALS = list(CHECKLIST)
 
@@ -117,14 +115,6 @@ def advance(run_id: str, security: bool | None = None) -> bool:
         sim.security = security
     sim._advance.set()
     return True
-
-
-@cache
-def goal_cases(goals: frozenset[str]) -> list[Case]:
-    """The prompt cases, seeds and variants, that go after the checklist
-    goals. Cases planted in a tool call or result can't be sent as a chat
-    message, so the simulator leaves them out."""
-    return [c for c in expand(load()) if c.source == "user_prompt" and c.goal in goals]
 
 
 class Recorder:

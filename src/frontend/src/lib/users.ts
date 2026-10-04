@@ -12,7 +12,7 @@ export function storedToken(): string | null {
   }
 }
 
-export function storeToken(token: string | null) {
+function storeToken(token: string | null) {
   try {
     if (token) localStorage.setItem(KEY, token)
     else localStorage.removeItem(KEY)
