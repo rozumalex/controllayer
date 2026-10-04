@@ -97,7 +97,7 @@ levels:
 
 # Groups of bank tools, merged into each role's `tools`. The tool names are
 # the ones the gateway serves when the bank MCP server is registered as
-# `bank`, as the README shows.
+# `bank`.
 tool_groups:
   # Look up clients, accounts, trades and research.
   read: &read

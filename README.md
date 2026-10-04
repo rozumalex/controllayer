@@ -1,427 +1,74 @@
-# AI control layer
+# Portcullis
 
-A control layer between AI agents and their tools: a pipeline of guards that inspects every tool call and result.
+The control layer for your AI agents. Portcullis sits between an agent, its model and its tools, and runs every prompt, tool call and tool result through a pipeline of guards: role policies, model and budget limits, PII and secret redaction, an injection heuristic, an LLM injection classifier, attack signatures and lockouts. Every request lands in a trace that admins can read.
 
-## Architecture
+Live at [controllayer.net](https://controllayer.net).
 
-```mermaid
-flowchart LR
-    user(["Bank employee"]) --> app["Frontend<br/>chat, /admin"]
-    client(["Any OpenAI client"]) -- "/api/v1" --> api
-    app -- "/api" --> api
+## The demo
 
-    subgraph api ["API (FastAPI)"]
-        chat["/api/v1/chat/completions<br/>OpenAI-compatible, agent loop"]
-        subgraph chatpipe ["Chat pipeline"]
-            direction TB
-            cin["Prompt in:<br/>model, budget, PII and secrets,<br/>injection heuristic, injection classifier"]
-        end
-        subgraph gateway ["MCP gateway"]
-            direction TB
-            gin["Tool call in:<br/>tool access, PII and secrets,<br/>injection heuristic, injection classifier"]
-            gout["Tool result out:<br/>clearance, PII and secrets,<br/>injection heuristic, injection classifier,<br/>spotlight"]
-        end
-        bank["Bank MCP server<br/>/api/bank/mcp"]
-        chat --> cin
-        chat -- "tool calls" --> gin
-        gout -- "tool results" --> chat
-    end
+The demo runs at Golden Socks, a made-up investment bank, with a full bank behind it: clients, accounts, trades, payments and research, served to the agent as an MCP server.
 
-    cin --> openai["Model pool<br/>OpenAI, Ollama"]
-    gin --> bank
-    gin --> other["Other MCP servers"]
-    bank --> gout
-    other --> gout
+- **Challenge** (`/challenge`): you have stolen a bank employee's account. Pick it, run the attack scenarios one by one, and watch which ones Portcullis stops. Turn the protection off to see what the same attacks get without it.
+- **Admin** (`/admin`): the dashboard of every request and verdict, the MCP servers, the policy of each role, and the directory synced from the identity provider.
 
-    policy[("Role policies")] -. "build the guards<br/>on every request" .-> api
-    api -- "every verdict" --> events[("control_events")]
-    events --> app
+"Watch a live attack" and "Look inside" on the sign-in page give each visitor a sandbox of their own: a copy of the bank that no one else sees.
 
-    subgraph db ["Postgres"]
-        policy
-        events
-        bankdata[("bank_ tables")]
-    end
-    bank --> bankdata
-```
+On the bundled attack corpus, 1,057 cases including encoded, translated and reworded variants, the guards block 98.9% of the attacks with 0.7% false alarms.
 
-The chat sends the user's prompt through the chat pipeline before the model sees it. When the model asks for a tool, the call goes through the MCP gateway: its guards check the call before the server sees it, and the result before the model does. Each guard returns allow, modify or block, and in `enforce` mode the first block stops the message. The guards are built on every request from the signed-in user's role policy, and every verdict is saved with labels, scores and hashes only, never the message text. The admin pages read those events back as traces.
+## Run it
 
-- **Policy guards** run first, because they are cheap: allowed models, the monthly budget, tool access, and the data clearance, which hides fields above the user's level using the bank's data catalog.
-- **PII and secrets** finds them in free text by pattern. The policy says whether each kind of PII is allowed, redacted or blocked; a secret is always blocked.
-- **Injection** is a regex heuristic that blocks the obvious attacks first, then an LLM classifier for the rest. It runs on OpenAI or on a local model, see [Model pool](#model-pool). With neither, the classifier is off and the chat uses a mock model.
-- **Spotlight** wraps every tool result that passes as untrusted data, so the model treats it as data, not instructions.
-- **Attack signatures** block the patterns of known exploits, such as pickle payloads or a reverse shell, from a feed outside the code. See [Attack signatures](#attack-signatures).
-- **Rate limit** caps a user's questions a minute, and **loop** blocks an agent that repeats the same tool call or makes too many calls a minute.
-- **Data flow** remembers what the session's tool results carried, and blocks a call that sends data to an account no earlier result named, once the session has read sensitive data.
-- **The answer** is checked too: for PII and secrets, and by **prompt leak**, for the assistant's own instructions.
-- **Lockout** blocks whatever caused the attacks. When a user's prompts and tool calls keep getting blocked as attacks, **lockout** locks the user out for the window their role's policy sets. Blocks for budget, rate limit, a pasted secret or a loop don't count. When one tool keeps sending different results that the injection guards block, **spoiled tool** blocks that tool for the whole organization, and the user who called it isn't counted. The same poisoned record read again counts only once.
-
-[OWASP Top 10 for LLM applications](#owasp-top-10-for-llm-applications) maps the guards to each risk.
-
-## Backend
-
-FastAPI app in `src/backend`, managed with [uv](https://docs.astral.sh/uv/).
-
-The backend uses Postgres through async SQLAlchemy and asyncpg, with [Alembic](https://alembic.sqlalchemy.org/) for migrations. It reads `DATABASE_URL` from the environment or from `src/backend/.env`, and connects to the Compose database on `localhost:5432` by default.
-
-The usual way to run it is in Docker, see [Docker](#docker). To run it on the host instead:
+You need Docker. An OpenAI key is optional: without it, the model calls and the injection classifier are off.
 
 ```sh
-docker compose up -d db          # from the repo root: start Postgres
-cd src/backend
-uv sync
-uv run alembic upgrade head      # apply the migrations
-uv run fastapi dev app/main.py   # http://localhost:8000/api/health, docs at /api/docs
-uv run alembic revision --autogenerate -m "describe the change"   # after you change a model
-uv run pytest
-uv run ruff check . && uv run ruff format .
-uv run ty check
+echo "OPENAI_API_KEY=sk-..." > .env   # optional
+./dev up                              # build and start everything
+./dev seed                            # load the Golden Socks bank
 ```
 
-### Organizations
-
-Every user belongs to an organization, and so do its role policies, its MCP servers and the control layer's events. A user sees and manages only their own organization's: the admin pages, the dashboard, the traces and the audit export filter by it, and another organization's MCP server or trace is not found. The Golden Socks bank is the `demo` organization, which `./dev seed` creates. The seed also moves every row that has no organization yet into `demo`, so a database from before organizations keeps working.
-
-### Sign-in
-
-There are no passwords and no sign-up form. A user signs in with Google or with a one-time code sent to their email, and gets a session token that every API call sends as `Authorization: Bearer <token>`. A user's first sign-in creates their account and an organization of their own, which they administer: one named after their company's email domain, such as `acme.com`, or "Eve's organization" for a public mail service such as Gmail. Others join an organization only by invitation. The database keeps only the SHA-256 of tokens and codes. A sign-in lasts `AUTH_SESSION_DAYS`, 30 by default, or until the user signs out.
-
-- **Continue with Google** shows when `GOOGLE_CLIENT_ID` is set. The browser gets an ID token from Google, and the backend checks its signature against Google's public keys, that it was issued for this client ID, and that Google verified the email. No client secret is involved.
-- **Email me a code** (`POST /api/auth/email`) sends an email with a sign-in link and a six-digit code, "Welcome to Portcullis" to a new user and "Sign in to Portcullis" to one with an account. The link opens `APP_URL` and signs in at once; the code is for typing in on another device. Either one goes to `POST /api/auth/email/verify`. A code works for 10 minutes and once, five wrong tries void it, and a new one can be sent every 30 seconds. The answer is the same whether or not the email has an account. It goes out through [Resend](https://resend.com/) when `RESEND_API_KEY` is set, as in production, and in Compose without the key to [Mailpit](https://mailpit.axllent.org/), whose inbox is at http://localhost:8025, so development never emails anyone by mistake.
-- **Single sign-on through the organization's own IAM**, such as Okta, Entra ID, Google Workspace, Keycloak, Auth0 or Zitadel: any OpenID Connect provider. An organization's provider (`identity_providers`) has its issuer, client ID, an optional client secret, the email domains that sign in through it, and role rules. Admins connect it through `/api/identity-provider`; the admin pages don't show its form for now, as the demo signs in with Google, an email code or Try the demo. The roles the IdP gives, by its rules or as its default role, are listed on the Policy page too, marked IdP, so each can get its policy before anyone with it signs in; a rule whose role has no policy links to it. On the sign-in screen, an email at one of its domains goes to the provider instead of getting a code. `POST /api/auth/sso` finds the provider by the email's domain, or by the organization's slug, and sends the browser there with the authorization code flow and PKCE. The provider sends it back to `/auth/callback`, and `POST /api/auth/sso/callback` trades the code for tokens, checks the ID token's signature against the provider's published keys, its issuer, audience, expiry and nonce, and reads userinfo. The first role rule whose claim has the value, such as `groups` holding `sg-ai-compliance`, sets the user's role and whether they administer the organization; the default role applies when none matches, and without one the sign-in is refused. A user the provider signs in joins its organization without an invitation, and takes their role again on every sign-in, so the provider stays the source of truth.
-- **Directory sync with SCIM 2.0.** The IdP, such as Okta or Entra ID, pushes the organization's users and groups to `/api/scim/v2` and keeps them in sync, so everyone and their role are there before anyone signs in. An admin makes the SCIM token with `POST /api/identity-provider/scim-token`; it is shown once with the base URL, and stored as a hash. A user's groups set their role through the same role rules as a sign-in, with `groups` matching the group's name, as soon as the IdP changes them. A user the IdP deactivates or deletes can't sign in, and their sessions end at once; deleted users are kept, deactivated, as the audit log refers to them. The groups SCIM synced also count at sign-in, as some IdPs leave groups out of their tokens. The **Directory** tab of `/admin` shows whether SCIM is connected and when it last synced, makes or replaces the token, lists the synced groups with the role each gives and its policy (`GET /api/identity-provider/groups`), and shows the provisioning log (`GET /api/identity-provider/log`, the `directory_events` table): who was added, joined or left a group, changed role, or was deactivated and how many sessions ended. People there marks deactivated users Inactive. `./dev seed` makes the demo's directory look synced: a `gs-<role>` group for each role with its staff in it, the rules that give each group its role, a SCIM token no one knows (replace it to connect a real IdP), and a short provisioning log. Supported: Users and Groups (create, read, `eq` filters on `userName` and `displayName`, replace, patch, delete), and `ServiceProviderConfig` and `ResourceTypes`.
-- **The demo's single sign-on** goes through [Duende's public demo IdentityServer](https://demo.duendesoftware.com), which `./dev seed` connects to the `demo` organization: `alice`/`alice` becomes a Managing Director who administers the demo, and `bob`/`bob` an Engineer. The sign-in screen doesn't offer it for now; `POST /api/auth/sso` with `{"organization": "demo"}` starts it.
-- **Try the demo** (`POST /api/auth/demo`) gives every visitor a sandbox of their own: a copy of the `demo` organization, with its staff, policies, directory, MCP servers and bank, but none of its history. So what one visitor does, such as an attack that locks an account out, a changed policy or a payment, no one else sees. The browser makes a random key and keeps it in `localStorage`; the first sign-in with it gets a sandbox, and later ones find the same sandbox again. It signs in as the sandbox's copy of the demo account, `demo@controllayer.net`. The demo's staff are the challenge's three accounts, a Managing Director, an Operations Specialist and an Engineer, each under its role's policy, and the demo account is the Managing Director, under that employee's name. Entering that email on the sign-in screen does the same, as no one can read its mail. The database copies a sandbox (`app/db/sandbox.py`) with one `INSERT ... SELECT` a table, some 200,000 rows in a second or two, so `DEMO_SANDBOX_POOL` copies wait ready: a first sign-in claims one in milliseconds, and a new copy takes its place after the answer. A sandbox's users are copies, emails and all, so emails are unique within an organization, and sign-in by email, SSO and SCIM look past the sandboxes. Sandboxes are kept; nothing deletes them yet.
-
-### OpenAI-compatible API
-
-The control layer speaks OpenAI's chat completions API, so any OpenAI client, SDK or agent framework goes through it by changing two settings: the base URL, and the API key, which is a session token from a [sign-in](#sign-in) for now. The chat in the frontend uses the same API.
-
-```python
-from openai import OpenAI
-
-client = OpenAI(base_url="http://localhost:8000/api/v1", api_key="<session token>")
-client.models.list()  # the bank assistant and the models the user's policy allows
-client.chat.completions.create(
-    model="golden-socks-assistant",
-    messages=[{"role": "user", "content": "Which accounts does client CLT-1 have?"}],
-)
-```
-
-- `GET /api/v1/models` lists `golden-socks-assistant` and the models from the [model pool](#model-pool) that the user's policy allows.
-- `POST /api/v1/chat/completions` takes `stream: true` too. The `model` decides what runs:
-  - `golden-socks-assistant`: the bank assistant. The server adds the bank's instructions, drops the client's own `system` and `developer` messages so they can't replace them, and runs the tools of the MCP servers through the [gateway](#mcp-gateway).
-  - A model from the pool: the layer passes the client's messages and tools on, and checks the tool calls the model asks for and the tool results the client sends back. A request that carries only tool results still counts as a question, so the model, budget and rate limit guards apply to it.
-- Either way, the layer checks the new prompts before the model sees them, and the answer before the client does. A blocked request or answer comes back as an assistant message with `finish_reason` `"content_filter"`, and the verdicts go to the logs under the `X-Trace-Id` response header.
-- The caller signs in with `Authorization: Bearer <token>`, the session token of a [sign-in](#sign-in), which an OpenAI client sends as its API key.
-
-### Model pool
-
-Every LLM the control layer may call is in one pool, in `MODELS`, with its provider and its price per million prompt and completion tokens. OpenAI serves the OpenAI models when `OPENAI_API_KEY` is set, and [Ollama](https://ollama.com/) serves the local ones when `OLLAMA_URL` is set. Both speak the same OpenAI chat completions API, so the guards, the tools and the streaming work the same on either. A role's policy names the models from the pool it may use. The chat uses one that a provider serves, in the order of `CHAT_MODELS` first, and the semantic guard uses the first model in `CONTROL_SEMANTIC_MODELS` that a provider serves. So without an OpenAI key, both run on the local model, and with no provider at all, the chat answers with a mock model and only the heuristic guard runs.
-
-A local model has an estimated price for the compute it uses, so the monthly budgets count it like any other.
-
-To run a local model:
-
-- **On a Mac,** install Ollama on the host, which uses the GPU, run `ollama pull qwen2.5:7b`, and set `OLLAMA_URL=http://host.docker.internal:11434/v1` in `.env`.
-- **On Linux,** or anywhere without a GPU to spare, run `./dev ollama pull qwen2.5:7b`. It starts the `ollama` service in Compose and downloads the model, about 5 GB. Set `OLLAMA_URL=http://ollama:11434/v1` in `.env`. Docker on a Mac has no GPU, so there it is slow.
-
-Then `./dev restart api`. To add a model, pull it, and add it to `MODELS` and to the policies that may use it.
-
-### MCP gateway
-
-The control layer gives agents the tools of every registered MCP server, and runs each call and result through its guards. The gateway runs inside the API. The chat calls it for the signed-in user, and [outside agents](#connect-your-own-agent) reach it at `/api/mcp`. Either way, the user's role policy decides what the guards let through.
-
-- **Servers** are managed on the Configuration page at `/config`, or at `/api/mcp-servers`. Whoever manages them decides which tools every agent gets, and for now that is anyone: access control comes with the users.
-- **Keep the servers behind it internal.** An agent that can reach an MCP server directly goes around the guards. Run each one without a public port in Compose and without a public route on DigitalOcean, so only the API reaches it.
-
-#### Connect your own agent
-
-`/api/mcp` serves the gateway as an MCP server over Streamable HTTP, so Claude Code, Cursor or any MCP client can plug in and get only the tools the user's role allows:
-
-```sh
-claude mcp add --transport http portcullis http://localhost:8000/api/mcp \
-  --header "Authorization: Bearer <session token>"
-```
-
-The plug button next to the user's name in the header shows this command with the user's own token, ready to copy.
-
-- The token is the session token of a [sign-in](#sign-in), the same one `/api/v1` takes. Without a valid one, or for a deactivated user, the server answers 401. Signing out ends it.
-- `tools/list` leaves out every tool the role's policy blocks. `tools/call` runs the call through all the role's guards, as the chat does, and each call is a trace of its own under the user, with the agent id `mcp-client`.
-- The server is stateless: each request signs in with its own token, and nothing is kept between requests.
-- Not built yet: MCP's OAuth 2.1 discovery, so a client can sign the user in by itself. For now the token is pasted in by hand.
-
-#### Bank MCP server
-
-`app/servers/bank.py` is an example tool set to put behind the gateway: the Golden Socks core banking system over the data that `./dev seed` loads. It has no guards of its own. It checks the business rules a bank would, such as no payments from a frozen account, and returns whole rows, restricted fields included. Everything else is left to the control layer once the server is registered.
-
-| Tool                                   | Does                                                                |
-| -------------------------------------- | ------------------------------------------------------------------- |
-| `search_clients`, `get_client`         | Find clients; one client's profile with their accounts              |
-| `get_account`                          | An account and its balance available for payments                   |
-| `list_transactions`, `list_trades`     | A client's or an account's transactions or trades, newest first     |
-| `search_research`                      | Research reports by symbol, sector or title                         |
-| `initiate_payment`                     | Send money out of an account; it waits as `PENDING` for payment ops |
-| `flag_transaction`                     | Raise an AML alert; a pending payment is held                       |
-| `restrict_account`, `lift_restriction` | Freeze an account for a risk review or legal hold, or open it again |
-| `book_trade`, `cancel_trade`           | Book a client trade; cancel one that has not settled                |
-| `update_client_contact`                | Change a client's named contact, email or phone                     |
-| `add_client_note`                      | Add a dated note to a client's relationship notes                   |
-
-Research, the data catalog, the identity profiles and the staff are read only. The tools carry MCP annotations: read only, write, or destructive for the ones that move money or freeze an account.
-
-The API serves it at `/api/bank/mcp` and takes `Authorization: Bearer $BANK_MCP_TOKEN`; in Compose, the token is `dev-bank`. Every organization has its own copy of the bank, keyed by `org_id`: `/api/bank/mcp?org=<id>` serves that organization's, as a demo sandbox's server does, and without `org` it serves the `demo` organization's. Only the gateway holds the token, so agents reach the tools only through the guards. Register it on the Configuration page, with the URL `http://localhost:8000/api/bank/mcp` and the authorization header `Bearer dev-bank`, or:
-
-```sh
-curl -X POST localhost:8000/api/mcp-servers -H "Content-Type: application/json" \
-  -d '{"name": "bank", "url": "http://localhost:8000/api/bank/mcp", "auth_header": "Bearer dev-bank"}'
-```
-
-Its tools then reach agents as `bank__search_clients` and so on.
-
-### Attack signatures
-
-The `attack_signatures` guard blocks the patterns of known exploits on AI systems in every prompt, tool call and tool result: code execution, unsafe deserialization such as pickle and PyYAML tags, model files and code from untrusted repositories, template injection, cloud metadata SSRF and path traversal. Each signature cites the CVEs or write-ups it comes from.
-
-The signatures live outside the code, in a JSON feed that a security team can maintain: `src/backend/app/control/signatures.json` by default, or any file or URL in `CONTROL_SIGNATURE_FEED`. The guard reads a file again when it changes, and a URL every `CONTROL_SIGNATURE_REFRESH` seconds, so an edit applies to the next message without a restart. If a new version is broken, the last good one stays, and a signature with a broken pattern is left out on its own.
-
-```json
-{
-  "version": "2026-10-03.1",
-  "signatures": [
-    {
-      "id": "CL-DESER-004",
-      "name": "PyYAML tag that builds Python objects",
-      "category": "deserialization",
-      "severity": 0.95,
-      "pattern": "!!python/(?:object|name|module)",
-      "references": ["CVE-2017-18342", "CVE-2020-1747"],
-      "enabled": true
-    }
-  ]
-}
-```
-
-A match blocks when its `severity` reaches `CONTROL_SIGNATURE_THRESHOLD`, `0.7` by default. A lower match is only logged, as `CL-SUPPLY-002` is for a pickle model file from a model hub. Set `enabled` to `false` to turn one signature off. The audit log holds the IDs of the signatures matched, never the text.
-
-### OWASP Top 10 for LLM applications
-
-How the guards cover the [OWASP Top 10 for LLM Applications 2025](https://genai.owasp.org/llm-top-10/). The tests are in `src/backend/tests`, and the corpus categories are in the report of `./dev attacks`.
-
-| Risk                                   | Guards                                                                                                                                                                                                                                                                                                                                                                                           | Tests                                                                                                                                                                  |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| LLM01 Prompt injection                 | `prompt_injection` is a regex heuristic. It first undoes encodings, look-alike letters and hidden characters. `semantic_injection`, an LLM classifier, catches reworded attacks. Both check the prompt, every tool call and every tool result, so instructions hidden in bank data count too. `spotlight` marks each tool result that passes as untrusted data.                                    | `test_prompt_injection.py`, `test_semantic_injection.py`; corpus: `instruction_override`, `jailbreak`, `obfuscation`, `paraphrased`, `indirect_injection`             |
-| LLM02 Sensitive information disclosure | `sensitive_data` finds PII and secrets in prompts, tool calls, tool results and the model's answer. The policy allows, redacts or blocks each kind of PII, and a secret is always blocked. `policy_clearance` masks the fields above the role's clearance. `data_flow` blocks a call that sends data to an account no earlier result named, once the session has read sensitive data.             | `test_sensitive_data.py`, `test_answer_checks.py`, `test_policy_guards.py`, `test_data_flow.py`; corpus: `exfiltration`, `secret_leak`                                 |
-| LLM03 Supply chain                     | `attack_signatures` blocks model code run from a repository (`trust_remote_code`) and packages installed over plain HTTP, and logs pickle model files from a public hub. A security team keeps the signatures in a feed outside the code.                                                                                                                                                        | `test_signatures.py`                                                                                                                                                   |
-| LLM04 Data and model poisoning          | In part. The layer trains no model. Poisoned data reaches the model through tool results, and those pass the injection guards and `spotlight`. `spoiled_tool` blocks a tool that keeps sending poisoned results. `data_flow` ignores free text, so a note planted in a record can't make an account look seen.                                                                                                                                                       | `test_data_flow.py`, `test_spoiled_tool.py`; corpus: `indirect_injection`                                                                                                                    |
-| LLM05 Improper output handling         | `attack_signatures` checks the tool call arguments the model writes before a tool gets them: code execution, pickle and YAML deserialization, template injection, cloud metadata SSRF and path traversal. `sensitive_data` and `prompt_leak` check the answer before the user gets it.                                                                                                             | `test_signatures.py`, `test_answer_checks.py`                                                                                                                          |
-| LLM06 Excessive agency                 | `policy_tools` allows, redacts or blocks each tool for each role, and the model never sees a blocked tool. Only the gateway holds the MCP servers' tokens, so agents reach tools only through the guards. `loop` blocks the same call repeated and too many calls a minute. `data_flow` blocks payments to accounts the session hasn't seen. Outside agents at `/api/mcp` see the same tools.     | `test_policy_guards.py`, `test_policy_enforcement.py`, `test_gateway_mcp.py`, `test_bank_mcp.py`, `test_loop_guard.py`, `test_data_flow.py`                            |
-| LLM07 System prompt leakage            | `prompt_leak` blocks an answer that quotes 8 words of the instructions in a row, also in a stream. The injection guards block requests to show them.                                                                                                                                                                                                                                              | `test_answer_checks.py`; corpus: `prompt_leak`                                                                                                                         |
-| LLM08 Vector and embedding weaknesses  | Not covered: the demo has no vector store. Search results, such as `search_research`, pass the same guards as any tool result.                                                                                                                                                                                                                                                                   |                                                                                                                                                                        |
-| LLM09 Misinformation                   | Not covered: the guards check what goes in and out, not whether an answer is true.                                                                                                                                                                                                                                                                                                               |                                                                                                                                                                        |
-| LLM10 Unbounded consumption            | `policy_budget` stops the chat once a user has used the role's monthly tokens or dollars. `policy_model` allows only the role's models. `rate_limit` caps questions a minute, `loop` caps tool calls, and `CHAT_MAX_TOKENS` caps each answer.                                                                                                                                                     | `test_policy_guards.py`, `test_policy_enforcement.py`, `test_rate_limit.py`, `test_loop_guard.py`                                                                      |
-
-## Frontend
-
-React app in `src/frontend`, built with [Vite](https://vite.dev/), [Tailwind CSS](https://tailwindcss.com/) and [shadcn/ui](https://ui.shadcn.com/), managed with [pnpm](https://pnpm.io/).
-
-The usual way to run it is in Docker, see [Docker](#docker). To run it on the host instead:
-
-```sh
-cd src/frontend
-pnpm install
-pnpm dev     # http://localhost:5173
-pnpm build
-pnpm typecheck
-pnpm lint
-pnpm format
-```
-
-## Docker
-
-`docker-compose.yml` runs the whole stack for development. The backend and frontend containers run from the source code in `src/`, so every change you save applies at once: the backend reloads and the frontend updates in the browser.
-
-| Service   | What it runs                                                   | URL                   |
-| --------- | -------------------------------------------------------------- | --------------------- |
-| `app`     | Frontend: the Vite dev server with hot reload                  | http://localhost:3000 |
-| `api`     | Backend: `fastapi dev`, which reloads on every change          | http://localhost:8000 |
-| `migrate` | Applies the migrations, then exits. `api` starts after it ends |                       |
-| `db`      | Postgres 18                                                    | `localhost:5432`      |
-
-Manage the stack with the `./dev` script in the repo root. Every command except `lint` runs in the Docker containers. A command uses the running container when the stack is up, and a temporary one when it is down. Run `./dev help` for the full list.
-
-| Command                          | What it does                                                                                                  |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `./dev up [service...]`          | Build and start the stack, or only the given services                                                         |
-| `./dev down`                     | Stop the stack; the database data stays                                                                       |
-| `./dev restart [service...]`     | Rebuild and restart the stack, or only the given services                                                     |
-| `./dev logs [service...]`        | Follow the logs                                                                                               |
-| `./dev ps`                       | Show the status of every service                                                                              |
-| `./dev destroy [-y]`             | Stop the stack and delete the database data and built images; asks first unless `-y`                          |
-| `./dev shell [service]`          | Open a bash shell in a service, `api` by default                                                              |
-| `./dev python`                   | Open a Python shell in the backend; `await` works at the prompt                                               |
-| `./dev ngrok`                    | Share the app on a public HTTPS URL through ngrok; needs `NGROK_AUTHTOKEN`                                    |
-| `./dev ollama [args...]`         | Start the local Ollama service and run `ollama` in it, such as `./dev ollama pull qwen2.5:7b`                 |
-| `./dev psql`                     | Open psql in the database                                                                                     |
-| `./dev migrate [revision]`       | Apply the migrations, up to `head` by default                                                                 |
-| `./dev makemigrations <message>` | Create a migration from the model changes                                                                     |
-| `./dev checkmigrations`          | Check that the migrations apply to a fresh database and cover every model change                              |
-| `./dev seed [--url URL] [-y]`    | Load the Golden Socks bank data; asks first unless `-y` when the URL is not local                             |
-| `./dev lint [hook]`              | Run every pre-commit hook on the host, or only the given one. Needs the [pre-commit setup](#pre-commit-hooks) |
-| `./dev test [pytest args...]`    | Run the backend tests; paths are relative to `src/backend`                                                    |
-| `./dev attacks [args...]`        | Run the attack corpus through the control layer and report the pass rate                                      |
-
-Extra arguments go straight to the tool:
-
-```sh
-./dev test tests/test_health.py::test_health   # one test
-./dev test -k health -x                        # tests that match "health"; stop at the first failure
-./dev logs api                                 # only the backend logs
-./dev makemigrations "add posts table"
-```
-
-`./dev seed` replaces the `demo` organization's rows of the `bank_` tables, and the bank's staff in `users` (emails at `goldensocks.com`), with the Golden Socks bank data in `src/backend/scripts/bank_data`: clients, accounts, trades, payments, research and staff, made up but consistent with each other, and the sensitivity of every field. `scripts/generate_bank_data.py` writes the files; change it and run `uv run python -m scripts.generate_bank_data` in `src/backend` to regenerate them. It leaves other users and tables alone, so you can run it again. Apply the migrations first. Every deploy to DigitalOcean seeds production too, right after the migrations, so it starts from the same rows. To seed it by hand, pass its URL: `./dev seed --url "postgresql://..."`.
-
-`./dev attacks` sends every case in `src/backend/scripts/attack_corpus.json` through the control layer, built as the chat and the gateway build it for the default role, and prints the pass rate for each category, source and mutation. The corpus holds attacks the layer should block, such as instruction overrides in English and Polish, prompt leaks, jailbreaks, encoded and hidden text, injections in tool results, exfiltration and secrets. It also holds benign prompts, tool calls and results that it should let through, so the report counts false alarms too. The report shows case IDs and scores, never the text of a case. It runs the semantic guard when `OPENAI_API_KEY` is set. Pass `--heuristic` to run without it, `--role <title>` to use another role's policy, `--json /app/report.json` to save the report to `src/backend`, and `--fail-under 0.9` to fail below a pass rate. To add a case, add it to the JSON file with the `block` or `allow` it should get.
-
-The 58 cases in the JSON file are seeds. `src/backend/scripts/mutations.py` turns each one into variants, the way red-team tools do, for 1,057 cases in all: Base64, hex, ROT13, URL encoding and reversed text with an instruction to decode and follow it; leetspeak, look-alike letters, zero-width characters, mixed case, spaced letters, capitals, typos and a payload split in two; Markdown, code block and JSON wrapping; role-play, story, polite, meeting and email framings; and translations into Polish, German, Spanish and English, written by hand in `scripts/attack_translations.json`. A benign seed gets only the mutations that keep it benign, so the false alarms are counted at scale too. The mutations are deterministic, so every run checks the same cases. Pass `--seeds-only` to skip them, and `--markdown /app/report.md` to save the tables for a slide.
-
-Results on 3 October 2026, default role:
-
-| Guards                                   | Cases | Attacks blocked | False alarms |
-| ---------------------------------------- | ----: | --------------: | -----------: |
-| Heuristic only (`--heuristic`, offline)  |  1057 | 526/907 (58.0%) | 0/150 (0.0%) |
-| Heuristic and semantic (`OPENAI_API_KEY`) |  1057 | 897/907 (98.9%) | 1/150 (0.7%) |
-
-The heuristic alone misses ROT13 and reversed text (2/42 blocked each), German and Spanish (0/19 each), leetspeak, spaced letters and typos (about a third), and reworded attacks; the semantic guard catches most of them. The semantic run calls the model once per case, so its numbers vary a little between runs.
-
-The database data lives in the `db-data` volume, so it stays between `down` and `up`. Only `./dev destroy` deletes it.
-
-Every backend route lives under `/api`, for example `/api/health` and the docs at `/api/docs`. The frontend passes requests under `/api/` to the backend unchanged, so the frontend can call `fetch("/api/health")`.
-
-After you add a dependency, rebuild the images with `./dev up`. After you add a migration, apply it with `./dev migrate`.
-
-To change the ports or the database credentials, see [Environment variables](#environment-variables).
-
-### Production images
-
-Both Dockerfiles use multi-stage builds. A `dev` stage is for Compose, and the last stage, the default one, is for production:
-
-- Backend: a small image with Python, the virtual environment without dev dependencies, and the app code. It runs `fastapi run` as a non-root user. Run `alembic upgrade head` in the same image to apply the migrations, and `python -m scripts.seed -y` to load the bank data.
-- Frontend: no image. The frontend deploys as static HTML, JS and CSS files. The last stage holds only the built files, so Docker can copy them out to `src/frontend/dist`. Running `pnpm build` locally gives the same files.
-
-```sh
-docker build -t api src/backend
-docker build --output src/frontend/dist src/frontend
-```
-
-Vite puts `VITE_*` variables into the built files, so pass the frontend's Sentry DSN at build time: `docker build --build-arg VITE_SENTRY_DSN=https://... --output src/frontend/dist src/frontend`.
-
-The static host must send requests under `/api/` to the backend unchanged, the way the Vite dev server does. See [Deploy](#deploy) for how this repo does it.
-
-## Environment variables
-
-Every variable has a default, so the project runs without any setup.
-
-| Variable                      | Read by                    | Default                                                     | What it sets                                                                                       |
-| ----------------------------- | -------------------------- | ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `APP_PORT`                    | Compose                    | `3000`                                                      | Host port for the frontend                                                                         |
-| `API_PORT`                    | Compose                    | `8000`                                                      | Host port for the backend                                                                          |
-| `DB_PORT`                     | Compose                    | `5432`                                                      | Host port for Postgres                                                                             |
-| `NGROK_AUTHTOKEN`             | Compose                    |                                                             | ngrok authtoken for `./dev ngrok`, from https://dashboard.ngrok.com                                |
-| `POSTGRES_USER`               | Compose                    | `postgres`                                                  | Database user                                                                                      |
-| `POSTGRES_PASSWORD`           | Compose                    | `postgres`                                                  | Database password                                                                                  |
-| `POSTGRES_DB`                 | Compose                    | `app`                                                       | Database name                                                                                      |
-| `DATABASE_URL`                | Backend                    | `postgresql+asyncpg://postgres:postgres@localhost:5432/app` | Database connection. It must use the `postgresql+asyncpg://` driver                                |
-| `API_PREFIX`                  | Backend                    | `/api`                                                      | Path prefix for every backend route                                                                |
-| `API_URL`                     | Frontend (Vite dev server) | `http://localhost:8000`                                     | Backend that the dev server sends `/api/` requests to                                              |
-| `SENTRY_DSN`                  | Backend, Compose           | empty, Sentry off                                           | [Sentry](https://sentry.io/) project that the API sends errors and traces to                        |
-| `SENTRY_ENVIRONMENT`          | Backend                    | `development`                                               | Environment name on the Sentry events                                                              |
-| `SENTRY_TRACES_SAMPLE_RATE`   | Backend                    | `1.0`                                                       | Share of the requests that send a trace, from `0.0` to `1.0`                                       |
-| `VITE_SENTRY_DSN`             | Frontend (build), Compose  | empty, Sentry off                                           | Sentry project that the browser sends errors and traces to                                         |
-| `VITE_SENTRY_ENVIRONMENT`     | Frontend (build)           | the Vite mode, `production` in the Docker build             | Environment name on the browser's Sentry events                                                    |
-| `OPENAI_API_KEY` | Backend, Compose | empty, OpenAI models off | OpenAI key for the OpenAI models in the [model pool](#model-pool) |
-| `OLLAMA_URL` | Backend, Compose | empty, local models off | Base URL of an Ollama server's OpenAI-compatible API, such as `http://host.docker.internal:11434/v1` |
-| `MODELS` | Backend | four OpenAI models and `qwen2.5:7b` | The model pool, as JSON: `{"<name>": {"provider": "openai" or "ollama", "price": [prompt, completion]}}`, in dollars per million tokens |
-| `CHAT_MODELS` | Backend | `["gpt-4.1-mini", "qwen2.5:7b"]` | Models the chat tries first, as JSON; the default policy allows these |
-| `CONTROL_SEMANTIC_MODELS` | Backend | `["gpt-4.1-mini", "qwen2.5:7b"]` | Models the semantic guard may use, as JSON; it uses the first one a provider serves |
-| `GOOGLE_CLIENT_ID` | Backend, Compose, the frontend build as `VITE_GOOGLE_CLIENT_ID` | empty, Google sign-in off | OAuth client ID of Sign in with Google. In the Google Cloud console: an External consent screen, and a Web application client whose JavaScript origins are the app's URLs, such as `http://localhost:3000`. Not a secret: the deploy reads it from a repository variable |
-| `AUTH_SESSION_DAYS` | Backend | `30` | Days a sign-in lasts |
-| `DEMO_EMAIL` | Backend | `demo@controllayer.net` | Email of the demo account that `./dev seed` creates and "Try the demo" signs in as a copy of |
-| `DEMO_SANDBOX_POOL` | Backend | `3` | Demo sandboxes copied ahead, so a first "Try the demo" claims one at once; `0` copies at sign-in |
-| `RESEND_API_KEY` | Backend, Compose | empty | Sends the sign-in codes through Resend, in place of the `SMTP_*` settings. A repository secret in production. Resend sends only from a verified domain: verify `controllayer.net`, or set `SMTP_FROM=onboarding@resend.dev` to send to your own Resend account's email |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_TLS` | Backend, Compose | Mailpit in Compose, else empty: email sign-in off | Any other SMTP server for the sign-in codes; `SMTP_TLS` is `starttls`, `ssl` or `none` |
-| `SMTP_USERNAME`, `SMTP_PASSWORD` | Backend, Compose | empty | That server's login |
-| `SMTP_FROM` | Backend, Compose | `Portcullis <hello@controllayer.net>` | Sender of the sign-in codes; its domain must be verified with the provider |
-| `APP_URL` | Backend, Compose | `http://localhost:3000` | Where people open the app, for the sign-in link in the email. `https://controllayer.net` in production |
-| `MAIL_UI_PORT` | Compose | `8025` | Host port for Mailpit's inbox |
-| `BANK_MCP_TOKEN`              | Backend, Compose           | `dev-bank` in Compose, else empty: server closed            | Bearer token for the bank MCP server at `/api/bank/mcp`. A repository secret in production         |
-| `CONTROL_SIGNATURE_FEED`      | Backend                    | empty, the bundled `app/control/signatures.json`            | File path or http(s) URL of the attack signature feed, see [Attack signatures](#attack-signatures) |
-| `CONTROL_SIGNATURE_REFRESH`   | Backend                    | `30`                                                        | Seconds between two fetches of a feed URL. A file is read again when it changes                    |
-| `CONTROL_SIGNATURE_THRESHOLD` | Backend                    | `0.7`                                                       | Severity from which a signature match blocks; a lower one is only logged                           |
-| `CONTROL_SPOILED_TOOL_RESULTS` | Backend | `3` | Different poisoned results of one tool that block it for the organization; 0 turns it off |
-| `CONTROL_SPOILED_TOOL_WINDOW_SECONDS` | Backend | `1800` | The window those results are counted in; the block lifts when it passes with no more |
-
-Where to set them:
-
-- **Compose:** in your shell, or in a `.env` file next to `docker-compose.yml`, for example `API_PORT=8010 docker compose up --build`. Compose builds `DATABASE_URL` from the `POSTGRES_*` variables, and sets `API_URL` to the `api` service, so you do not set those two yourself.
-- **Backend outside Docker:** in your shell, or in `src/backend/.env`.
-- **Frontend outside Docker:** in your shell, for example `API_URL=http://localhost:8010 pnpm dev`.
-
-## Pre-commit hooks
-
-[pre-commit](https://pre-commit.com/) runs these checks on every commit:
-
-- Backend: ruff (lint and format) and ty (types).
-- Migrations: the migrations must have a single head, and every model change must have a migration. The second check applies the migrations to a throwaway database on the Postgres in `DATABASE_URL`, so start the Compose database first (`./dev up db`) or point `DATABASE_URL` at your own Postgres. In CI, the job runs Postgres as a service container.
-- Frontend: tsc (types), oxlint (lint) and Prettier (format).
-- Whole repo: basic file checks from [pre-commit-hooks](https://github.com/pre-commit/pre-commit-hooks), such as trailing whitespace, valid YAML, JSON and TOML, merge-conflict markers, large files and private keys. GitHub workflow files are checked against their schema.
-
-The backend and frontend hooks use the tools installed in each project, so install the backend and frontend dependencies first. Then set up the hooks once:
-
-```sh
-uv tool install pre-commit   # install the pre-commit command, once per machine
-pre-commit install           # set up the git hook, once per clone
-pre-commit run --all-files   # run all hooks by hand
-```
-
-## CI
-
-GitHub Actions runs these workflows from `.github/workflows`:
-
-- `pr.yml`: runs on every pull request. A new push to the PR cancels the run for the older commit.
-- `main.yml`: runs on every push to `main`, and by hand from the Actions tab. Runs wait in a queue and never overlap. When several pushes wait, only the newest one runs. After the checks pass, it [deploys](#deploy).
-- `destroy.yml`: runs by hand only, and deletes the deployed app and its databases.
-
-`pr.yml` and `main.yml` call `checks.yml`, which runs all pre-commit hooks, the backend tests and the frontend build. Add steps that only one event needs to that event's workflow.
-
-## Deploy
-
-`main` deploys to [DigitalOcean App Platform](https://docs.digitalocean.com/products/app-platform/). The whole stack lives in one DigitalOcean app, described in `.do/app.yaml`:
-
-| Component | What it runs                                                         | Monthly price, billed per second |
-| --------- | -------------------------------------------------------------------- | -------------------------------- |
-| `web`     | The frontend's static files, built with `pnpm build`                 | free                             |
-| `api`     | The backend image, at `/api`                                         | $5                               |
-| `migrate` | `alembic upgrade head`, before every deploy                          | per run                          |
-| `db`      | A managed Postgres cluster, `<app name>-db`, created on first deploy | $15                              |
-
-That is about $20 a month, or about $0.70 a day. The app gets a URL like `https://<app name>-xxxxx.ondigitalocean.app`, where `/` serves the frontend and `/api/*` goes to the backend unchanged.
-
-Set it up once:
-
-1. In DigitalOcean, create a [personal access token](https://cloud.digitalocean.com/account/api/tokens) with full access.
-2. Give DigitalOcean access to the repository: install the [DigitalOcean GitHub app](https://github.com/apps/digitalocean) on it.
-3. In the repository settings on GitHub, under **Secrets and variables → Actions**, add the secret `DIGITALOCEAN_ACCESS_TOKEN` with the token, and the variable `DIGITALOCEAN_APP_NAME` with a name for the app: lowercase letters, digits and dashes, at most 29 characters.
-4. Push to `main`, or run the Main workflow from the Actions tab. The first run creates the database cluster, which takes about five minutes, and then the app. The URL is in the deploy job's log and in the DigitalOcean console.
-
-Without the `DIGITALOCEAN_APP_NAME` variable, `main.yml` skips the deploy.
-
-For the [bank MCP server](#bank-mcp-server), also add the secret `BANK_MCP_TOKEN` there. Without it, the server refuses every request.
-
-To send errors to [Sentry](https://sentry.io/), also add the variables `SENTRY_DSN` and `VITE_SENTRY_DSN` there. The deploy passes them to the backend and to the frontend build, with the environment `production`. Without them, Sentry stays off.
-
-When you are done, run the Destroy workflow from the Actions tab and type the app name. It deletes the app and the database clusters with all their data, so they stop costing money. The next deploy creates them again, with an empty database.
-
-To change the stack, edit `.do/app.yaml`, for example the instance sizes or an environment variable, and push. Each deploy applies the whole file. Changes you make in the DigitalOcean console are lost on the next deploy.
+Then open http://localhost:3000. The API is at http://localhost:8000/api, with its docs at `/api/docs`. Sign-in codes go to Mailpit at http://localhost:8025.
+
+The containers run the code from `src/` and reload on every change. Rebuild with `./dev up` only after you change the dependencies.
+
+## Settings
+
+Every setting has a default, so the stack runs without any. Set them in `.env` next to `docker-compose.yml`; `src/backend/app/core/config.py` lists them all.
+
+| Variable                          | What it sets                                                          |
+| --------------------------------- | --------------------------------------------------------------------- |
+| `OPENAI_API_KEY`                  | The OpenAI models, for the agent and the injection classifier         |
+| `OLLAMA_URL`                      | A local Ollama server, such as `http://host.docker.internal:11434/v1` |
+| `GOOGLE_CLIENT_ID`                | Sign in with Google                                                   |
+| `RESEND_API_KEY`                  | Sends the sign-in codes through Resend, in place of Mailpit           |
+| `NGROK_AUTHTOKEN`                 | `./dev ngrok`, to share the app on a public URL                       |
+| `APP_PORT`, `API_PORT`, `DB_PORT` | Host ports, `3000`, `8000` and `5432` by default                      |
+
+## Commands
+
+| Command                          | What it does                                                             |
+| -------------------------------- | ------------------------------------------------------------------------ |
+| `./dev up [service...]`          | Build and start the stack, or only the given services                    |
+| `./dev down`                     | Stop the stack; the database data stays                                  |
+| `./dev restart [service...]`     | Rebuild and restart the stack, or only the given services                |
+| `./dev logs [service...]`        | Follow the logs                                                          |
+| `./dev ps`                       | Show the status of every service                                         |
+| `./dev destroy [-y]`             | Stop the stack and delete the database data and built images             |
+| `./dev shell [service]`          | Open a bash shell in a service, `api` by default                         |
+| `./dev python`                   | Open a Python shell in the backend; `await` works at the prompt          |
+| `./dev ngrok`                    | Share the app on a public HTTPS URL through ngrok                        |
+| `./dev ollama [args...]`         | Start the local Ollama service and run `ollama` in it                    |
+| `./dev psql`                     | Open psql in the database                                                |
+| `./dev migrate [revision]`       | Apply the migrations, up to `head` by default                            |
+| `./dev makemigrations <message>` | Create a migration from the model changes                                |
+| `./dev checkmigrations`          | Check that the migrations apply and cover every model change             |
+| `./dev seed [--url URL] [-y]`    | Load the Golden Socks bank data                                          |
+| `./dev lint [hook]`              | Run every pre-commit hook on the host, or only the given one             |
+| `./dev test [pytest args...]`    | Run the backend tests; paths are relative to `src/backend`               |
+| `./dev attacks [args...]`        | Run the attack corpus through the control layer and report the pass rate |
+
+`./dev lint` needs pre-commit: `uv tool install pre-commit && pre-commit install`.
+
+## Layout
+
+- `src/backend`: the API, in FastAPI with Postgres. The guards are in `app/control`, the bank MCP server in `app/servers/bank.py`, the demo data and policies in `scripts`.
+- `src/frontend`: the app, in React with Vite, Tailwind and shadcn/ui.
+- `AGENTS.md`: how to work in the repo, for people and coding agents alike.
