@@ -1,17 +1,10 @@
+import { LockOpen } from "lucide-react"
 import { useState, type ReactNode } from "react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import {
   Sheet,
   SheetContent,
@@ -21,7 +14,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet"
 import { Slider } from "@/components/ui/slider"
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   CLEARANCES,
   PII,
@@ -29,6 +22,7 @@ import {
   piiAction,
   resetPolicy,
   savePolicy,
+  type Clearance,
   type GatewayTool,
   type PolicyRead,
   type PolicySettings,
@@ -40,42 +34,81 @@ import { cn } from "@/lib/utils"
 export type Editing = { role: string | null; policy: PolicyRead }
 
 const ACTION_COLORS: Record<ToolAction, string> = {
-  allow: "data-[state=on]:bg-emerald-100 data-[state=on]:text-emerald-800",
-  redact: "data-[state=on]:bg-amber-100 data-[state=on]:text-amber-800",
-  block: "data-[state=on]:bg-destructive/15 data-[state=on]:text-destructive",
+  allow:
+    "data-[state=active]:bg-emerald-100 data-[state=active]:text-emerald-800",
+  redact: "data-[state=active]:bg-amber-100 data-[state=active]:text-amber-800",
+  block:
+    "data-[state=active]:bg-destructive/15 data-[state=active]:text-destructive",
 }
 
+// Picks one of the actions, as tabs.
 function ActionPicker({
   value,
   onChange,
   actions = TOOL_ACTIONS,
+  names = {},
   label,
 }: {
   value: ToolAction
   onChange: (action: ToolAction) => void
   actions?: readonly ToolAction[]
+  // What each action is called here, when its name alone isn't clear.
+  names?: Partial<Record<ToolAction, string>>
   label: string
 }) {
   return (
-    <ToggleGroup
-      type="single"
-      variant="outline"
-      size="sm"
-      aria-label={label}
+    <Tabs
       value={value}
-      // Radix sends "" when the chosen item is clicked again; keep the value.
-      onValueChange={(action) => action && onChange(action as ToolAction)}
+      onValueChange={(action) => onChange(action as ToolAction)}
+      className="shrink-0"
     >
-      {actions.map((action) => (
-        <ToggleGroupItem
-          key={action}
-          value={action}
-          className={cn("px-2.5 capitalize", ACTION_COLORS[action])}
-        >
-          {action}
-        </ToggleGroupItem>
-      ))}
-    </ToggleGroup>
+      <TabsList aria-label={label} className="h-8">
+        {actions.map((action) => (
+          <TabsTrigger
+            key={action}
+            value={action}
+            className={cn("px-2.5 text-xs capitalize", ACTION_COLORS[action])}
+          >
+            {names[action] ?? action}
+          </TabsTrigger>
+        ))}
+      </TabsList>
+    </Tabs>
+  )
+}
+
+// Four stops, from public to restricted.
+function ClearanceSlider({
+  value,
+  onChange,
+}: {
+  value: Clearance
+  onChange: (clearance: Clearance) => void
+}) {
+  const index = CLEARANCES.indexOf(value)
+  return (
+    <div className="flex w-64 flex-col gap-2">
+      <div>
+        <Slider
+          aria-label="Data clearance"
+          min={0}
+          max={CLEARANCES.length - 1}
+          step={1}
+          value={[index]}
+          onValueChange={([i]) => onChange(CLEARANCES[i])}
+        />
+      </div>
+      <div className="flex justify-between text-xs text-muted-foreground">
+        {CLEARANCES.map((c) => (
+          <span
+            key={c}
+            className={cn(c === value && "font-medium text-foreground")}
+          >
+            {c.toLowerCase()}
+          </span>
+        ))}
+      </div>
+    </div>
   )
 }
 
@@ -98,20 +131,20 @@ function Field({
 }
 
 // An empty input is no limit.
-const toNumber = (value: string) => (value === "" ? null : Number(value))
 
 export function PolicySheet({
   editing,
-  models,
   tools,
   onClose,
   onSaved,
+  onUnlock,
 }: {
   editing: Editing | null
-  models: string[]
   tools: GatewayTool[] | null
   onClose: () => void
   onSaved: () => void
+  // Shown when the account is locked out, as in the attack simulator.
+  onUnlock?: () => Promise<void>
 }) {
   // The page remounts the sheet for each policy it opens, so the draft
   // starts from that policy.
@@ -153,11 +186,23 @@ export function PolicySheet({
     <Sheet open={editing !== null} onOpenChange={(open) => !open && onClose()}>
       <SheetContent className="w-full gap-0 sm:max-w-xl">
         <SheetHeader className="border-b">
-          <SheetTitle>{role ?? "Default policy"}</SheetTitle>
+          <div className="flex items-center gap-2">
+            <SheetTitle>{role ?? "Default policy"}</SheetTitle>
+            {onUnlock && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy}
+                onClick={() => run(onUnlock)}
+              >
+                <LockOpen /> Unblock
+              </Button>
+            )}
+          </div>
           <SheetDescription>
             {role
               ? editing?.policy.customized
-                ? "This role has its own policy."
+                ? "Role Policy"
                 : "This role follows the default policy. Saving gives it its own."
               : "Every role without a policy of its own follows this one."}
           </SheetDescription>
@@ -171,46 +216,42 @@ export function PolicySheet({
                 label="Data clearance"
                 hint="The most sensitive fields of the bank's data catalog the role sees as they are."
               >
-                <div className="flex flex-wrap items-center gap-3">
-                  <Select
-                    value={draft.clearance}
-                    onValueChange={(clearance) =>
-                      update({ clearance: clearance as typeof draft.clearance })
-                    }
-                  >
-                    <SelectTrigger className="w-40">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {CLEARANCES.map((c) => (
-                        <SelectItem key={c} value={c}>
-                          {c}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <span className="text-sm text-muted-foreground">
-                    more sensitive:
-                  </span>
-                  <ActionPicker
-                    label="Data above the clearance"
-                    actions={["redact", "block"]}
-                    value={draft.above_clearance}
-                    onChange={(above_clearance) => update({ above_clearance })}
-                  />
-                </div>
+                <ClearanceSlider
+                  value={draft.clearance}
+                  onChange={(clearance) => update({ clearance })}
+                />
+              </Field>
+              <Field
+                label="Data above the clearance"
+                hint={
+                  draft.above_clearance === "redact"
+                    ? "The answer comes back with those fields masked."
+                    : "The whole request is refused."
+                }
+              >
+                <ActionPicker
+                  label="Data above the clearance"
+                  actions={["redact", "block"]}
+                  names={{
+                    redact: "Mask the fields",
+                    block: "Refuse the request",
+                  }}
+                  value={draft.above_clearance}
+                  onChange={(above_clearance) => update({ above_clearance })}
+                />
               </Field>
               <Field
                 label="PII in free text"
-                hint="Found by pattern in prompts, notes and tool results, before the model sees them. Until you pick an action, a kind follows the clearance. Secrets are always blocked."
+                hint="Found by pattern in prompts, notes and tool results, before the model sees them. Each kind has a sensitivity; until you pick an action, it follows the clearance like catalog data. Secrets are always blocked."
               >
                 <div className="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2">
                   {PII.map(({ kind, label, level }) => (
                     <div key={kind} className="contents">
-                      <span className="text-sm">
+                      <span className="flex flex-col text-sm">
                         {label}
-                        <span className="text-muted-foreground">
-                          {draft.pii[kind] ? "" : ` · ${level.toLowerCase()}`}
+                        <span className="text-xs text-muted-foreground">
+                          {level.toLowerCase()} data
+                          {draft.pii[kind] ? "" : ", follows the clearance"}
                         </span>
                       </span>
                       <ActionPicker
@@ -241,68 +282,66 @@ export function PolicySheet({
             </section>
 
             <section className="flex flex-col gap-4">
-              <h3 className="font-medium">Models and budget</h3>
-              <Field label="Allowed models">
-                <div className="grid grid-cols-2 gap-2">
-                  {models.map((model) => (
-                    <label
-                      key={model}
-                      className="flex items-center gap-2 text-sm"
-                    >
-                      <Checkbox
-                        checked={draft.allowed_models.includes(model)}
-                        onCheckedChange={(checked) =>
-                          update({
-                            allowed_models: checked
-                              ? [...draft.allowed_models, model]
-                              : draft.allowed_models.filter((m) => m !== model),
-                          })
-                        }
-                      />
-                      <span className="font-mono text-xs">{model}</span>
-                    </label>
-                  ))}
-                </div>
-              </Field>
+              <h3 className="font-medium">Budget and lockout</h3>
               <div className="grid grid-cols-2 gap-4">
-                <Field
-                  label="Tokens a month"
-                  hint="Per employee; empty is none"
-                >
-                  <Input
-                    type="number"
-                    min={0}
-                    step={1000}
-                    placeholder="Unlimited"
-                    value={draft.budget.monthly_tokens ?? ""}
-                    onChange={(e) =>
-                      update({
-                        budget: {
-                          ...draft.budget,
-                          monthly_tokens: toNumber(e.target.value),
-                        },
-                      })
-                    }
-                  />
-                </Field>
-                <Field label="USD a month" hint="Per employee; empty is none">
+                <Field label="USD a week">
                   <Input
                     type="number"
                     min={0}
                     step="0.01"
                     placeholder="Unlimited"
-                    value={draft.budget.monthly_usd ?? ""}
+                    value={draft.budget.weekly_usd ?? ""}
                     onChange={(e) =>
                       update({
                         budget: {
                           ...draft.budget,
-                          monthly_usd: e.target.value || null,
+                          weekly_usd: e.target.value || null,
                         },
                       })
                     }
                   />
                 </Field>
               </div>
+              <Field
+                label="Lockout"
+                hint="Too many blocked requests in a short time is someone probing the guards, often with a stolen account. 0 turns it off."
+              >
+                <div className="flex flex-wrap items-center gap-2 text-sm">
+                  Lock after
+                  <Input
+                    type="number"
+                    min={0}
+                    className="w-20"
+                    aria-label="Blocked requests"
+                    value={draft.lockout.blocks}
+                    onChange={(e) =>
+                      update({
+                        lockout: {
+                          ...draft.lockout,
+                          blocks: Number(e.target.value),
+                        },
+                      })
+                    }
+                  />
+                  blocked requests in
+                  <Input
+                    type="number"
+                    min={1}
+                    className="w-20"
+                    aria-label="Minutes"
+                    value={draft.lockout.minutes}
+                    onChange={(e) =>
+                      update({
+                        lockout: {
+                          ...draft.lockout,
+                          minutes: Number(e.target.value),
+                        },
+                      })
+                    }
+                  />
+                  minutes
+                </div>
+              </Field>
             </section>
 
             <section className="flex flex-col gap-3">

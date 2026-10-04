@@ -75,6 +75,13 @@ def no_loop_limit(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "control_loop_call_limit", 0)
 
 
+@pytest.fixture(autouse=True)
+def no_lockout(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Turns the account lockout off, so tests that block many requests don't
+    lock the test user out. Its own tests turn it on."""
+    monkeypatch.setattr(settings, "control_lockout_blocks", 0)
+
+
 @pytest.fixture
 def db() -> None:
     """Starts the test with empty tables."""

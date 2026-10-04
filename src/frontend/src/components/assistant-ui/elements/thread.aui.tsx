@@ -42,6 +42,7 @@ import {
   type ImageMessagePartComponent,
   type TextMessagePartComponent,
   type ToolCallMessagePartComponent,
+  useAui,
   useAuiState,
 } from "@assistant-ui/react";
 import {
@@ -59,6 +60,7 @@ import {
   PhoneIcon,
   RefreshCwIcon,
   SquareIcon,
+  SquarePenIcon,
   ThumbsDownIcon,
   ThumbsUpIcon,
 } from "lucide-react";
@@ -127,6 +129,9 @@ const taskAwareGroupBy = (
 export type ThreadProps = {
   components?: ThreadComponents | undefined;
   autoFocus?: boolean | undefined;
+  // Why the user can't type: it disables the composer and shows as its
+  // placeholder.
+  disabled?: string | undefined;
 };
 
 const EMPTY_COMPONENTS: ThreadComponents = {};
@@ -171,20 +176,22 @@ const ThreadHistorySkeleton: FC = () => (
 export const Thread: FC<ThreadProps> = ({
   components = EMPTY_COMPONENTS,
   autoFocus = true,
+  disabled,
 }) => {
   const isEmpty = useAuiState(isNewChatView);
 
   return (
     <ThreadComponentsContext.Provider value={components}>
-      <ThreadRoot isEmpty={isEmpty} autoFocus={autoFocus} />
+      <ThreadRoot isEmpty={isEmpty} autoFocus={autoFocus} disabled={disabled} />
     </ThreadComponentsContext.Provider>
   );
 };
 
-const ThreadRoot: FC<{ isEmpty: boolean; autoFocus: boolean }> = ({
-  isEmpty,
-  autoFocus,
-}) => {
+const ThreadRoot: FC<{
+  isEmpty: boolean;
+  autoFocus: boolean;
+  disabled: string | undefined;
+}> = ({ isEmpty, autoFocus, disabled }) => {
   const { Welcome = ThreadWelcome } = useContext(ThreadComponentsContext);
 
   return (
@@ -233,10 +240,10 @@ const ThreadRoot: FC<{ isEmpty: boolean; autoFocus: boolean }> = ({
             )}
           >
             <ThreadScrollToBottom />
-            <ThreadFollowupSuggestions />
-            <Composer autoFocus={autoFocus} />
-            <AuiIf condition={(s) => isNewChatView(s) && s.composer.isEmpty}>
-              <ThreadSuggestions />
+            {disabled === undefined && <ThreadFollowupSuggestions />}
+            <Composer autoFocus={autoFocus} disabled={disabled} />
+            <AuiIf condition={isNewChatView}>
+              <ThreadSuggestions hidden={disabled !== undefined} />
             </AuiIf>
           </ThreadPrimitive.ViewportFooter>
         </div>
@@ -383,9 +390,18 @@ const ThreadWelcome: FC = () => {
   );
 };
 
-const ThreadSuggestions: FC = () => {
+// The suggestions stay in place while the user types, faded out, so the
+// welcome doesn't jump when the first key empties the space they took. Hidden
+// ones, as when the user can't type, keep their space too.
+const ThreadSuggestions: FC<{ hidden: boolean }> = ({ hidden }) => {
+  const typing = !useAuiState((s) => s.composer.isEmpty) || hidden;
   return (
-    <div className="aui-thread-welcome-suggestions flex w-full flex-col">
+    <div
+      className={cn(
+        "aui-thread-welcome-suggestions flex w-full flex-col transition-opacity duration-300 ease-out motion-reduce:transition-none",
+        typing && "pointer-events-none opacity-0",
+      )}
+    >
       <ThreadPrimitive.Suggestions>
         {() => <ThreadSuggestionItem />}
       </ThreadPrimitive.Suggestions>
@@ -417,18 +433,22 @@ const ThreadSuggestionItem: FC = () => {
   );
 };
 
-const Composer: FC<{ autoFocus: boolean }> = ({ autoFocus }) => {
+const Composer: FC<{ autoFocus: boolean; disabled: string | undefined }> = ({
+  autoFocus,
+  disabled,
+}) => {
   return (
     <ComposerPrimitive.Root className="aui-composer-root relative flex w-full flex-col">
       <ComposerPrimitive.AttachmentDropzone asChild>
         <div
           data-slot="aui_composer-shell"
-          className="border-foreground/10 focus-within:border-foreground/25 data-[dragging=true]:border-ring flex w-full cursor-text flex-col gap-2 rounded-(--composer-radius) border bg-(--composer-bg) p-(--composer-padding) transition-[border-color] data-[dragging=true]:border-dashed data-[dragging=true]:bg-[color-mix(in_oklab,var(--color-accent)_50%,var(--color-background))]"
+          className="border-foreground/10 focus-within:border-foreground/25 data-[dragging=true]:border-ring flex w-full cursor-text has-[textarea:disabled]:cursor-not-allowed flex-col gap-2 rounded-(--composer-radius) border bg-(--composer-bg) p-(--composer-padding) transition-[border-color] data-[dragging=true]:border-dashed data-[dragging=true]:bg-[color-mix(in_oklab,var(--color-accent)_50%,var(--color-background))]"
         >
           <ComposerAttachments />
           <ComposerPrimitive.Input
-            placeholder="Send a message..."
-            className="aui-composer-input caret-primary placeholder:text-muted-foreground/60 max-h-48 min-h-10 w-full resize-none bg-transparent px-2.5 py-1 text-base leading-6 outline-none"
+            placeholder={disabled ?? "Send a message..."}
+            disabled={disabled !== undefined}
+            className="aui-composer-input caret-primary disabled:cursor-not-allowed placeholder:text-muted-foreground/60 max-h-48 min-h-10 w-full resize-none bg-transparent px-2.5 py-1 text-base leading-6 outline-none"
             rows={1}
             autoFocus={autoFocus}
             enterKeyHint="send"
@@ -442,6 +462,7 @@ const Composer: FC<{ autoFocus: boolean }> = ({ autoFocus }) => {
 };
 
 const ComposerAction: FC = () => {
+  const aui = useAui();
   // The stop control only cancels the send while no run it could stop is going.
   const isSending = useAuiState(
     (s) =>
@@ -455,6 +476,20 @@ const ComposerAction: FC = () => {
         <ComposerAddAttachment />
       </AuiIf>
       <div className="ml-auto flex items-center gap-1.5">
+        <AuiIf condition={(s) => s.thread.messages.length > 0}>
+          <TooltipIconButton
+            tooltip="New conversation"
+            side="bottom"
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="aui-composer-new text-muted-foreground hover:text-foreground size-7 rounded-full"
+            aria-label="New conversation"
+            onClick={() => aui.thread().reset()}
+          >
+            <SquarePenIcon className="size-4" />
+          </TooltipIconButton>
+        </AuiIf>
         <AuiIf condition={(s) => s.thread.capabilities.dictation}>
           <AuiIf condition={(s) => s.composer.dictation == null}>
             <ComposerPrimitive.Dictate asChild>
@@ -551,6 +586,11 @@ const AssistantMessage: FC = () => {
   } = useContext(ThreadComponentsContext);
   const groupBy = TaskGroupComponent ? taskAwareGroupBy : messageGroupBy;
 
+  // An answer the control layer blocked or withheld.
+  const blocked = useAuiState(
+    (s) => s.message.metadata.custom?.blocked === true,
+  );
+
   const ACTION_BAR_PT = "pt-1.5";
   // Keep the action bar inside the contained root's paint box, then cancel its reserved space in flow.
   const ACTION_BAR_HEIGHT = `min-h-7.5 ${ACTION_BAR_PT}`;
@@ -563,7 +603,10 @@ const AssistantMessage: FC = () => {
     >
       <div
         data-slot="aui_assistant-message-content"
-        className="text-foreground px-2 leading-relaxed wrap-break-word"
+        className={cn(
+          "px-2 leading-relaxed wrap-break-word",
+          blocked ? "text-destructive font-medium" : "text-foreground",
+        )}
       >
         <MessagePrimitive.GroupedParts groupBy={groupBy}>
           {({ part, children }) => {

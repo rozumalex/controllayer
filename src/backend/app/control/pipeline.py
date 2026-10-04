@@ -11,6 +11,7 @@ from app.control.guard import Guard
 class Mode(StrEnum):
     ENFORCE = "enforce"  # a BLOCK verdict stops the message
     MONITOR = "monitor"  # every verdict is logged, nothing is blocked
+    OFF = "off"  # every verdict is logged, nothing is blocked or changed
 
 
 @dataclass(frozen=True)
@@ -44,6 +45,8 @@ class Pipeline:
             await self.audit.record(envelope, verdict, latency_ms)
             if verdict.action is Action.BLOCK and self.mode is Mode.ENFORCE:
                 return Decision(Action.BLOCK, envelope, verdicts)
+            if self.mode is Mode.OFF:
+                continue
             if verdict.action is Action.MODIFY and verdict.payload is not None:
                 envelope = replace(envelope, payload=verdict.payload)
                 modified = True

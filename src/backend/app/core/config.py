@@ -49,9 +49,6 @@ class Settings(BaseSettings):
     # The control layer blocks in "enforce" mode and only logs in "monitor".
     control_mode: Mode = Mode.ENFORCE
     control_injection_threshold: float = 0.7
-    # Log message contents at each stage of a chat completion. Prompts and
-    # tool results may hold secrets, so turn it on only for a demo.
-    control_log_payloads: bool = False
     # OpenAI serves the pool's OpenAI models. Without a key, they are off.
     openai_api_key: str = ""
     openai_url: str = "https://api.openai.com/v1"
@@ -85,6 +82,11 @@ class Settings(BaseSettings):
     control_loop_window_seconds: int = 60
     control_loop_repeat_limit: int = 3
     control_loop_call_limit: int = 30
+    # Account lockout: once this many of a user's requests were blocked in
+    # the window, every request of theirs is blocked until the window has
+    # passed with no more blocks. 0 turns it off.
+    control_lockout_blocks: int = 5
+    control_lockout_window_seconds: int = 300
     # The semantic injection guard asks the first of these models that a
     # provider serves whether a message is an attack; with none served, it
     # is off. It needs a model that takes temperature and structured outputs,

@@ -45,30 +45,30 @@ class ModelGuard:
 
 
 class BudgetGuard:
-    """Blocks a prompt once the user has used their monthly budget. The
-    score is the share of the budget used."""
+    """Blocks a prompt once the user has spent their weekly budget. The score
+    is the share of it spent."""
 
     name = "policy_budget"
 
-    def __init__(self, budget: Budget, tokens: int, usd: Decimal) -> None:
+    def __init__(self, budget: Budget, weekly: Decimal) -> None:
         self.budget = budget
-        self.tokens = tokens
-        self.usd = usd
+        self.weekly = weekly
+
+    @property
+    def used(self) -> float:
+        if self.budget.weekly_usd is None:
+            return 0.0
+        return share(self.weekly, self.budget.weekly_usd)
 
     async def inspect(self, envelope: Envelope) -> Verdict:
         if envelope.tool != "user_prompt":
             return Verdict(Action.ALLOW, self.name)
-        shares = {}
-        if self.budget.monthly_tokens is not None:
-            shares["tokens"] = share(self.tokens, self.budget.monthly_tokens)
-        if self.budget.monthly_usd is not None:
-            shares["usd"] = share(self.usd, self.budget.monthly_usd)
-        used = max(shares.values(), default=0.0)
+        used = self.used
         if used < 1:
             return Verdict(Action.ALLOW, self.name, score=used)
-        over = ", ".join(kind for kind, value in shares.items() if value >= 1)
-        reason = f"monthly budget used: {over}"
-        return Verdict(Action.BLOCK, self.name, score=used, reason=reason)
+        return Verdict(
+            Action.BLOCK, self.name, score=used, reason="weekly budget spent"
+        )
 
 
 def result_clearance(

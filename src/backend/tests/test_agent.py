@@ -68,9 +68,7 @@ class ListSink:
 
 
 def agent(upstream: MockUpstream, sink: ListSink | None = None) -> Agent:
-    control = ChatControl(
-        control_layer(), upstream, log_payloads=True, sink=sink, check_tools=False
-    )
+    control = ChatControl(control_layer(), upstream, sink=sink, check_tools=False)
     return Agent(control, gateway("bank", sink=sink))
 
 

@@ -26,10 +26,10 @@ logger = logging.getLogger("app.control.chat")
 
 # The messages don't say why: the matched patterns would show an attacker what
 # to reword. The reasons are in the logs, under the trace id.
-WITHHELD = "[control layer] This tool result was withheld."
+WITHHELD = "This tool result was withheld."
 BLOCKED_PROMPT = "The request was blocked."
 BLOCKED_CALL = "A call to {tool} was blocked."
-WITHHELD_ANSWER = "[control layer] The answer was withheld."
+WITHHELD_ANSWER = "The answer was withheld."
 # A streamed answer is checked in pieces of at least PIECE characters, cut at
 # a line break, or at a space TAIL characters before the end, so a card
 # number or an email being written is not cut in two.
@@ -62,13 +62,11 @@ class ChatControl:
         self,
         layer: ControlLayer,
         upstream: ChatUpstream,
-        log_payloads: bool,
         sink: EventSink | None = None,
         check_tools: bool = True,
     ) -> None:
         self.layer = layer
         self.upstream = upstream
-        self.log_payloads = log_payloads
         self.sink = sink or LogEventSink(logger)
         # Off when the tools run through the MCP gateway, which checks every
         # call and result itself: checking them here too would wrap each
@@ -370,9 +368,7 @@ class ChatControl:
 
     async def log(self, trace: Trace, stage: str, **data: Any) -> None:
         payloads = ("messages", "body")
-        if not self.log_payloads:
-            data = {k: v for k, v in data.items() if k not in payloads}
-        # PII and secrets never reach the logs, even with the payloads.
+        # The messages are logged, but PII and secrets never reach the logs.
         data = {k: scrub(v) if k in payloads else v for k, v in data.items()}
         await self.sink.write({"event": stage, "trace_id": trace.trace_id, **data})
 

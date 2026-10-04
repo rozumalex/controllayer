@@ -20,7 +20,7 @@ POLICY: dict[str, Any] = {
     "clearance": "CONFIDENTIAL",
     "above_clearance": "block",
     "allowed_models": ["gpt-4.1", "gpt-4.1-mini"],
-    "budget": {"monthly_tokens": 100000, "monthly_usd": "25.00"},
+    "budget": {"weekly_usd": "8.00"},
     "default_tool_action": "block",
     "tools": {"bank__get_client": "redact"},
 }
@@ -93,7 +93,7 @@ def test_role_policy_overrides_default(staff: TestClient) -> None:
     analyst, engineer = roles(staff.get(URL).json()).values()
     assert analyst["customized"] is True
     assert analyst["settings"]["clearance"] == "CONFIDENTIAL"
-    assert analyst["settings"]["budget"]["monthly_tokens"] == 100000
+    assert analyst["settings"]["budget"]["weekly_usd"] == "8.00"
     assert engineer["customized"] is False
     assert engineer["settings"]["clearance"] == "INTERNAL"
 
@@ -142,7 +142,7 @@ def test_unknown_role_is_not_found(staff: TestClient) -> None:
         {"above_clearance": "allow"},
         {"clearance": "SECRET"},
         {"tools": {"bank__get_client": "maybe"}},
-        {"budget": {"monthly_tokens": -1}},
+        {"budget": {"weekly_usd": -1}},
     ],
 )
 def test_invalid_policy_is_refused(staff: TestClient, change: dict[str, Any]) -> None:

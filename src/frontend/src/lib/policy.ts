@@ -42,11 +42,13 @@ export function piiAction(
   return settings.pii[kind] ?? fallback
 }
 
-export type Budget = {
-  monthly_tokens: number | null
-  // A decimal string, so cents stay exact.
-  monthly_usd: string | null
-}
+// US dollars a week, from Monday (UTC). A decimal string, so cents stay
+// exact; null is unlimited.
+export type Budget = { weekly_usd: string | null }
+
+// The budget in a few words, such as "$2 / week".
+export const budgetLabel = (budget: Budget) =>
+  budget.weekly_usd != null ? `$${budget.weekly_usd} / week` : "Unlimited"
 
 export type PolicySettings = {
   injection_threshold: number
@@ -55,6 +57,8 @@ export type PolicySettings = {
   pii: Partial<Record<PiiKind, ToolAction>>
   allowed_models: string[]
   budget: Budget
+  // Blocked requests in a window of minutes that lock an employee out.
+  lockout: { blocks: number; minutes: number }
   default_tool_action: ToolAction
   tools: Record<string, ToolAction>
 }

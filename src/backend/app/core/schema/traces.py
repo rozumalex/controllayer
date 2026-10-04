@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal
 from typing import Any, Literal
 from uuid import UUID
 
@@ -38,8 +39,8 @@ class TraceSummary(BaseModel):
     )
     prompt: str | None = Field(
         description=(
-            "The user's message, or the tool an MCP call went to. The message "
-            "and the call's arguments are empty unless CONTROL_LOG_PAYLOADS is on."
+            "The user's message, or the tool an MCP call went to with its "
+            "arguments. PII and secrets in them are masked."
         )
     )
     outcome: Outcome = Field(
@@ -50,6 +51,7 @@ class TraceSummary(BaseModel):
     )
     findings: list[Finding]
     usage: Usage = Field(description="The model's tokens; zero if it wasn't called.")
+    usd: Decimal = Field(description="What the model's tokens cost, in US dollars.")
     duration_ms: float
 
 
