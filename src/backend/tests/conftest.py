@@ -82,6 +82,13 @@ def no_lockout(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "control_lockout_blocks", 0)
 
 
+@pytest.fixture(autouse=True)
+def no_spoiled_tools(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Turns the spoiled tool block off, so tests that send many poisoned
+    results don't block the tool for the next. Its own tests turn it on."""
+    monkeypatch.setattr(settings, "control_spoiled_tool_results", 0)
+
+
 @pytest.fixture
 def db() -> None:
     """Starts the test with empty tables."""

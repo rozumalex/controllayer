@@ -304,7 +304,7 @@ export function PolicySheet({
               </div>
               <Field
                 label="Lockout"
-                hint="Too many blocked requests in a short time is someone probing the guards, often with a stolen account. 0 turns it off."
+                hint="Too many blocked attacks in a short time is someone probing the guards, often with a stolen account. Budget, rate limit and loop blocks don't count, nor do poisoned tool results, which block the tool instead. 0 turns it off."
               >
                 <div className="flex flex-wrap items-center gap-2 text-sm">
                   Lock after
@@ -312,7 +312,7 @@ export function PolicySheet({
                     type="number"
                     min={0}
                     className="w-20"
-                    aria-label="Blocked requests"
+                    aria-label="Blocked attacks"
                     value={draft.lockout.blocks}
                     onChange={(e) =>
                       update({
@@ -323,7 +323,7 @@ export function PolicySheet({
                       })
                     }
                   />
-                  blocked requests in
+                  blocked attacks in
                   <Input
                     type="number"
                     min={1}
