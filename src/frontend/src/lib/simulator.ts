@@ -20,10 +20,15 @@ export type AttackGoal = {
 
 export type ChecklistItem = { id: string; title: string; description: string }
 
+// An OWASP Top 10 risk for LLM applications, with the guards whose stops
+// count toward it. A risk with no guards isn't covered.
+export type Risk = { id: string; title: string; guards: string[] }
+
 export type Simulator = {
   accounts: Account[]
   goals: AttackGoal[]
   checklist: ChecklistItem[]
+  risks: Risk[]
 }
 
 export type CaseStatus =
@@ -64,6 +69,8 @@ export type CaseEvent = {
   stolen: number
   // The goals of the hacker's checklist it achieved.
   achieved: string[]
+  // The OWASP risk of the attack the layer stopped, or null if it stopped none.
+  risk: string | null
   // The case's tokens, and what they cost in dollars.
   tokens: number
   usd: string
@@ -182,34 +189,3 @@ export async function runAttack(
     }
   }
 }
-
-// The OWASP Top 10 for LLM applications, and the guards that cover each, as
-// the README maps them. A risk with no guards isn't covered.
-export const OWASP = [
-  {
-    id: "LLM01",
-    title: "Prompt injection",
-    guards: ["prompt_injection", "semantic_injection", "spotlight"],
-  },
-  {
-    id: "LLM02",
-    title: "Sensitive data",
-    guards: ["sensitive_data", "policy_clearance", "data_flow"],
-  },
-  { id: "LLM03", title: "Supply chain", guards: ["attack_signatures"] },
-  { id: "LLM04", title: "Data poisoning", guards: ["spotlight", "data_flow"] },
-  { id: "LLM05", title: "Output handling", guards: ["attack_signatures"] },
-  {
-    id: "LLM06",
-    title: "Excessive agency",
-    guards: ["policy_tools", "data_flow", "loop"],
-  },
-  { id: "LLM07", title: "Prompt leakage", guards: ["prompt_leak"] },
-  { id: "LLM08", title: "Vectors", guards: [] },
-  { id: "LLM09", title: "Misinformation", guards: [] },
-  {
-    id: "LLM10",
-    title: "Unbounded use",
-    guards: ["policy_budget", "rate_limit", "loop", "lockout", "policy_model"],
-  },
-] as const
