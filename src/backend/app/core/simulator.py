@@ -486,6 +486,20 @@ class Simulation:
                         ended = True
                         break
                     last_trace = uuid4().hex
+                    # The prompt goes out first, so the chat shows it while
+                    # the guards and the model work on the answer.
+                    yield {
+                        "type": "prompt",
+                        "run_id": self.run_id,
+                        "trace_id": last_trace,
+                        "id": f"{scenario.id}-{index}",
+                        "prompt": prompt[:SHOWN],
+                        "scenario": scenario.id,
+                        "title": scenario.title,
+                        "owasp": scenario.owasp,
+                        "turn": index,
+                        "turns": len(scenario.turns),
+                    }
                     result = await self.attempt(
                         prompt, history, scenario, index, last_trace
                     )

@@ -360,7 +360,7 @@ def test_attack_streams_cases_and_is_kept_in_history(
 
     # then
     lines = [json.loads(line) for line in response.text.splitlines()]
-    assert {line["type"] for line in lines[:-1]} == {"case"}
+    assert {line["type"] for line in lines[:-1]} == {"prompt", "case"}
     assert lines[-1]["type"] == "end"
     assert runs[0]["goal"] == "Leak the system prompt"
     assert runs[0]["cases"] == lines[-1]["cases"]
@@ -381,8 +381,9 @@ def test_attack_cases_kept_in_the_account_logs(db: None, client: TestClient) -> 
     logs = client.get("/api/demo/cases", params={"role": "Analyst"}).json()
 
     # then
-    sent = [json.loads(line) for line in response.text.splitlines()][:-1]
-    assert [c["trace_id"] for c in logs] == [c["trace_id"] for c in sent]
+    sent = [json.loads(line) for line in response.text.splitlines()]
+    cases = [line for line in sent if line["type"] == "case"]
+    assert [c["trace_id"] for c in logs] == [c["trace_id"] for c in cases]
 
 
 @pytest.mark.parametrize("security", [True, False])
@@ -480,6 +481,32 @@ def test_stepped_run_waits_for_advance(db: None, user: User) -> None:
     # then
     assert events[-1]["type"] == "end"
     assert any(event.get("verdict") for event in events[:-1])
+
+
+def test_each_turn_sends_its_prompt_before_its_answer(db: None, user: User) -> None:
+    # given
+    settings = builtin_policy()
+    run = Simulation(
+        user,
+        "Analyst",
+        settings,
+        [LEAK_PROMPT],
+        True,
+        upstream=LeakingModel,
+        step=False,
+    )
+
+    async def play() -> list[dict[str, Any]]:
+        return [event async for event in run.run()]
+
+    # when
+    events = asyncio.run(play())
+
+    # then
+    kinds = [(e["type"], e.get("trace_id")) for e in events[:-1]]
+    prompts = [trace for kind, trace in kinds if kind == "prompt"]
+    assert prompts
+    assert kinds == [(kind, trace) for trace in prompts for kind in ("prompt", "case")]
 
 
 def test_advance_can_flip_security_for_the_next_scenario(db: None, user: User) -> None:

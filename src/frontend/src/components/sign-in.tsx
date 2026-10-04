@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/input-otp"
 import { Label } from "@/components/ui/label"
 import type { Employee } from "@/lib/policy"
-import { SessionContext, isPrivileged, useSession } from "@/lib/session"
+import { SessionContext, useSession } from "@/lib/session"
 import {
   fetchMe,
   finishSso,
@@ -42,19 +42,6 @@ export function SignedIn({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<Employee | null | undefined>(undefined)
   const [linkFailed, setLinkFailed] = useState(false)
 
-  // A fresh sign-in lands on the admin pages, for those who may open them,
-  // and the demo on the simulator. A reload stays where it was.
-  const signedIn = (user: Employee) => {
-    const path = window.location.pathname
-    if (
-      isPrivileged(user) &&
-      !path.startsWith("/admin") &&
-      !path.startsWith("/simulator")
-    )
-      window.history.replaceState(null, "", "/admin")
-    setUser(user)
-  }
-
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     // An identity provider sends the browser back here after its sign-in.
@@ -64,7 +51,7 @@ export function SignedIn({ children }: { children: ReactNode }) {
       window.history.replaceState(null, "", "/")
       if (code && state) {
         finishSso(code, state)
-          .then(signedIn)
+          .then(setUser)
           .catch(() => {
             setLinkFailed(true)
             setUser(null)
@@ -79,7 +66,7 @@ export function SignedIn({ children }: { children: ReactNode }) {
       // Out of the address bar and the history, as the code is a secret.
       window.history.replaceState(null, "", window.location.pathname)
       signInWithCode(email, code)
-        .then(signedIn)
+        .then(setUser)
         .catch(() => {
           setLinkFailed(true)
           setUser(null)
@@ -95,7 +82,7 @@ export function SignedIn({ children }: { children: ReactNode }) {
   if (user === null)
     return (
       <SignIn
-        onSignedIn={signedIn}
+        onSignedIn={setUser}
         initialError={
           linkFailed ? "That sign-in expired or was used. Try again." : null
         }
@@ -240,7 +227,7 @@ function SignIn({
             onClick={() =>
               run(async () => {
                 const user = await signInToDemo()
-                window.history.replaceState(null, "", "/simulator")
+                window.history.replaceState(null, "", "/challenge")
                 return user
               })
             }
@@ -250,6 +237,23 @@ function SignIn({
           <p className="text-center text-xs text-muted-foreground">
             An attacker takes over an AI assistant at a demo bank. See which
             attacks Portcullis blocks.
+          </p>
+          <Button
+            variant="outline"
+            disabled={busy}
+            onClick={() =>
+              run(async () => {
+                const user = await signInToDemo()
+                window.history.replaceState(null, "", "/admin")
+                return user
+              })
+            }
+          >
+            Look inside
+          </Button>
+          <p className="text-center text-xs text-muted-foreground">
+            See the Golden Socks admin side: its dashboard, MCPs, policy and
+            directory.
           </p>
         </div>
 
@@ -369,7 +373,7 @@ const HEADER_BUTTON =
 export function UserMenu() {
   const session = useSession()
   if (!session) return null
-  const { user, signOut } = session
+  const { user } = session
   return (
     <div className="flex items-center gap-2">
       <Avatar size="sm">
@@ -379,15 +383,23 @@ export function UserMenu() {
       </Avatar>
       <span className="hidden text-sm md:inline">{user.name}</span>
       <ConnectAgent className={HEADER_BUTTON} />
-      <Button
-        variant="ghost"
-        size="icon"
-        className={HEADER_BUTTON}
-        title="Sign out"
-        onClick={signOut}
-      >
-        <LogOut className="size-4" />
-      </Button>
+      <SignOutButton />
     </div>
+  )
+}
+
+export function SignOutButton() {
+  const session = useSession()
+  if (!session) return null
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className={HEADER_BUTTON}
+      title="Sign out"
+      onClick={session.signOut}
+    >
+      <LogOut className="size-4" />
+    </Button>
   )
 }

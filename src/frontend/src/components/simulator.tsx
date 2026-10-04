@@ -4,10 +4,10 @@ import {
   type ChatModelAdapter,
 } from "@assistant-ui/react"
 import {
+  Shield,
   ShieldBan,
   Lock,
   LockOpen,
-  Pause,
   Play,
   RotateCcw,
   ShieldCheck,
@@ -26,7 +26,8 @@ import {
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts"
 
 import { Thread } from "@/components/assistant-ui/elements/thread.aui"
-import { Header } from "@/components/brand"
+import { Header, HeaderLink } from "@/components/brand"
+import { SignOutButton } from "@/components/sign-in"
 import { Greeting } from "@/components/chat"
 import { ChatHistory } from "@/components/chat-history"
 import { PolicySheet, type Editing } from "@/components/policy-sheet"
@@ -83,6 +84,7 @@ import {
   type CaseEvent,
   type CaseStatus,
   type EndEvent,
+  type PromptEvent,
 } from "@/lib/simulator"
 import { initials } from "@/lib/users"
 import { config, controlLayer } from "@/lib/assistant"
@@ -318,7 +320,23 @@ type ReplayAnswer = {
     }
   }
 }
-const replayAnswer: { current: ReplayAnswer | null } = { current: null }
+// The answer the next run of the chat streams, once it has come back.
+type Replay = { answer: Promise<ReplayAnswer>; streamed: () => void }
+const replayAnswer: { current: Replay | null } = { current: null }
+
+// The answers of prompts already in the chat, by trace, until they come back.
+type Pending = {
+  resolve: (answer: ReplayAnswer) => void
+  reject: (reason: Error) => void
+  streamed: Promise<void>
+}
+const pending = new Map<string, Pending>()
+
+// Ends the answers still waiting, as when the run is stopped.
+function dropPending() {
+  for (const p of pending.values()) p.reject(new Error("Stopped."))
+  pending.clear()
+}
 
 const liveChat = controlLayer({
   headers: () => ({
@@ -336,19 +354,13 @@ const stolenChat: ChatModelAdapter = {
     const replay = replayAnswer.current
     replayAnswer.current = null
     if (replay) {
-      const { text, metadata } = replay
-      // Paint in a few frames so the answer arrives like a live stream, in
-      // step with the case that just hit the logs.
-      const step = Math.max(1, Math.ceil(text.length / 48))
-      for (let end = step; end < text.length; end += step) {
-        if (options.abortSignal.aborted) return
-        yield {
-          content: [{ type: "text" as const, text: text.slice(0, end) }],
-          metadata,
-        }
-        await new Promise((resolve) => setTimeout(resolve, 20))
+      try {
+        yield* streamReplay(await replay.answer, options.abortSignal)
+      } catch {
+        yield { content: [{ type: "text" as const, text: "Stopped." }] }
+      } finally {
+        replay.streamed()
       }
-      yield { content: [{ type: "text" as const, text }], metadata }
       return
     }
     const result = liveChat.run!(options)
@@ -360,7 +372,25 @@ const stolenChat: ChatModelAdapter = {
   },
 }
 
-const caseKey = (event: CaseEvent) => `${event.trace_id}:${event.id}`
+// Paints an answer in a few frames, so it arrives like a live stream.
+async function* streamReplay(
+  { text, metadata }: ReplayAnswer,
+  signal: AbortSignal
+) {
+  const step = Math.max(1, Math.ceil(text.length / 48))
+  for (let end = step; end < text.length; end += step) {
+    if (signal.aborted) return
+    yield {
+      content: [{ type: "text" as const, text: text.slice(0, end) }],
+      metadata,
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  }
+  yield { content: [{ type: "text" as const, text }], metadata }
+}
+
+const caseKey = (event: CaseEvent | PromptEvent) =>
+  `${event.type}:${event.trace_id}:${event.id}`
 
 type ChatThread = ReturnType<typeof useLocalRuntime>["thread"]
 
@@ -406,7 +436,12 @@ const MUTATIONS: Record<string, string> = {
 }
 
 // What the case is, shown above its prompt.
-function caseLabel(event: CaseEvent) {
+function caseLabel(
+  event: Pick<
+    CaseEvent,
+    "scenario" | "owasp" | "title" | "turn" | "turns" | "mutation" | "category"
+  >
+) {
   if (event.scenario && event.owasp && event.title && event.turn && event.turns)
     return `Attack: ${event.owasp} · ${event.title} · ${event.turn} of ${event.turns}`
   const trick = MUTATIONS[event.mutation]
@@ -443,12 +478,11 @@ function answerLabel(event: CaseEvent) {
   return `Portcullis: ${STATUS[event.status]?.label ?? event.status} by ${event.guard}`
 }
 
-// Shows the case's prompt, then streams the answer that already came back
-// from the attack run (no second model call).
-async function replay(thread: ChatThread, event: CaseEvent) {
-  const text = event.answer || event.reason || "No answer."
-  replayAnswer.current = {
-    text,
+// What the chat streams for a case: the answer that already came back from
+// the attack run (no second model call).
+function answerOf(event: CaseEvent): ReplayAnswer {
+  return {
+    text: event.answer || event.reason || "No answer.",
     metadata: {
       custom: {
         blocked: BLOCKED.includes(event.status),
@@ -464,18 +498,45 @@ async function replay(thread: ChatThread, event: CaseEvent) {
       },
     },
   }
+}
+
+// Shows a prompt in the chat at once. Its answer waits in pending until the
+// case comes back.
+async function ask(thread: ChatThread, event: CaseEvent | PromptEvent) {
+  const kind =
+    event.type === "prompt"
+      ? { ...event, category: "scenario", mutation: "none" }
+      : event
+  let streamed = () => {}
+  const done = new Promise<void>((resolve) => (streamed = resolve))
+  const answer = new Promise<ReplayAnswer>((resolve, reject) =>
+    pending.set(event.trace_id, { resolve, reject, streamed: done })
+  )
+  // Shown as rejected only when the stolenChat run awaits it.
+  answer.catch(() => {})
+  replayAnswer.current = { answer, streamed }
   await thread.append({
     role: "user",
     content: [{ type: "text", text: event.prompt }],
     metadata: {
       custom: {
-        label: caseLabel(event),
-        tone: event.category === "benign" ? "normal" : "attack",
+        label: caseLabel(kind),
+        tone: kind.category === "benign" ? "normal" : "attack",
       },
     },
-    // Runs stolenChat, which streams replayAnswer into the assistant turn.
+    // Runs stolenChat, which streams the answer into the assistant turn.
     startRun: true,
   })
+}
+
+// Streams a case's answer under its prompt, which ask put in the chat, and
+// waits until it's painted.
+async function answer(event: CaseEvent) {
+  const waiting = pending.get(event.trace_id)
+  if (!waiting) return
+  pending.delete(event.trace_id)
+  waiting.resolve(answerOf(event))
+  await waiting.streamed
 }
 
 // The bank's chat as the employee whose account was stolen, just as on the
@@ -491,7 +552,7 @@ function StolenChat({
   locked,
 }: {
   role: string
-  cases: CaseEvent[]
+  cases: (CaseEvent | PromptEvent)[]
   wait: () => Promise<void>
   // After a scenario's last turn: show Next and wait for a click.
   pauseForNext: (event: CaseEvent) => Promise<void>
@@ -526,13 +587,20 @@ function StolenChat({
       if (shown.has(key)) continue
       shown.add(key)
       playing.current = playing.current.then(async () => {
-        await wait()
-        // A new scenario starts a fresh thread, once earlier ones have already
-        // put messages in it.
-        if (event.turn === 1 && runtime.thread.getState().messages.length > 0)
-          await runtime.thread.reset()
+        // The prompt shows as soon as it's sent, and a case without one
+        // shows its own.
+        if (event.type === "prompt" || !pending.has(event.trace_id)) {
+          await wait()
+          // A new scenario starts a fresh thread, once earlier ones have
+          // already put messages in it.
+          if (event.turn === 1 && runtime.thread.getState().messages.length > 0)
+            await runtime.thread.reset()
+          await ask(runtime.thread, event)
+          requestAnimationFrame(follow)
+        }
+        if (event.type === "prompt") return
         await ensureLog(event.trace_id)
-        await replay(runtime.thread, event)
+        await answer(event)
         requestAnimationFrame(follow)
         played(event)
         // Hold here (not before the next case): a click during streaming
@@ -636,7 +704,7 @@ export function Simulator() {
   // Every case of the session, chat answers too, oldest first.
   const [feed, setFeed] = useState<CaseEvent[]>([])
   // The cases of the current or last run.
-  const [run, setRun] = useState<CaseEvent[]>([])
+  const [run, setRun] = useState<(CaseEvent | PromptEvent)[]>([])
   const [notices, setNotices] = useState<Notice[]>([{ kind: "welcome" }])
   // After Start hacking: hide traces from before this moment.
   const [since, setSince] = useState<string | null>(null)
@@ -649,6 +717,8 @@ export function Simulator() {
   // one plays. Keeps the run controls up until the user advances.
   const gate = useRef<{ promise: Promise<void>; done: () => void } | null>(null)
   const [waiting, setWaiting] = useState(false)
+  // The scenarios of this run that have played to their last turn.
+  const [finished, setFinished] = useState(0)
   const running = abort !== null || waiting
   const runId = useRef<string | null>(null)
   const waitNext = () => {
@@ -689,26 +759,11 @@ export function Simulator() {
       resume.current = null
     }
   }, [notices.length])
-  // The attacker's own pause, with the Pause button, which only Resume ends.
-  const hold = useRef<{ promise: Promise<void>; done: () => void } | null>(null)
-  const [held, setHeld] = useState(false)
-  const toggleHold = () => {
-    if (hold.current) {
-      hold.current.done()
-      hold.current = null
-      setHeld(false)
-      return
-    }
-    let done = () => {}
-    const promise = new Promise<void>((resolve) => (done = resolve))
-    hold.current = { promise, done }
-    setHeld(true)
-  }
   const chatPaused = useCallback(async () => {
-    // Notices, the Pause button, and the scenario Next gate all hold both
-    // the chat and the stream, so charts and logs stay with the message.
-    while (resume.current || hold.current || gate.current)
-      await (resume.current ?? hold.current ?? gate.current)?.promise
+    // Notices and the scenario Next gate both hold the chat and the stream,
+    // so charts and logs stay with the message.
+    while (resume.current || gate.current)
+      await (resume.current ?? gate.current)?.promise
   }, [])
   // After a scenario's last turn has streamed: show Next and don't start the
   // next case until it's clicked.
@@ -720,6 +775,7 @@ export function Simulator() {
           event.turns != null &&
           event.turn === event.turns)
       if (!last) return
+      setFinished((n) => n + 1)
       waitNext()
       await chatPaused()
     },
@@ -908,11 +964,9 @@ export function Simulator() {
   // for them, so each notice shows with the prompt that caused it.
   const unplayed = useRef(0)
   const end = useRef<EndEvent | null>(null)
-  const [progress, setProgress] = useState(0)
   const onPlayed = useRef<(event: CaseEvent) => void>(() => {})
   useEffect(() => {
     onPlayed.current = (event) => {
-      setProgress((n) => n + 1)
       setFeed((feed) => [...feed, event])
       took(event, false)
       unplayed.current -= 1
@@ -929,6 +983,7 @@ export function Simulator() {
     if (!role || !setup) return
     const controller = new AbortController()
     setAbort(controller)
+    dropPending()
     setRun([])
     setError(null)
     shown.current = new Set()
@@ -938,7 +993,7 @@ export function Simulator() {
     gate.current = null
     setWaiting(false)
     runId.current = null
-    setProgress(0)
+    setFinished(0)
     try {
       await runAttack(
         { role, goals: setup.goals.map((g) => g.id), security },
@@ -957,7 +1012,7 @@ export function Simulator() {
             })
             return
           }
-          unplayed.current += 1
+          if (event.type === "case") unplayed.current += 1
           setRun((run) => [...run, event])
         },
         controller.signal,
@@ -967,12 +1022,12 @@ export function Simulator() {
       if (!controller.signal.aborted) setError((error as Error).message)
     } finally {
       setAbort(null)
-      hold.current?.done()
-      hold.current = null
-      setHeld(false)
       // Only release on abort: a finished stream still waits for Next on the
       // last scenario before the done notice.
-      if (controller.signal.aborted) goNext()
+      if (controller.signal.aborted) {
+        dropPending()
+        goNext()
+      }
     }
   }
 
@@ -994,7 +1049,6 @@ export function Simulator() {
 
   const points = timeline(feed)
   const spent = points[points.length - 1]
-  const turns = setup?.turns ?? 0
   const scenarios = setup?.scenarios ?? 0
   const missing = setup?.missing ?? []
 
@@ -1086,6 +1140,8 @@ export function Simulator() {
           >
             <SlidersHorizontal /> Manage
           </Button>
+          <HeaderLink href="/admin" label="Admin" icon={Shield} />
+          <SignOutButton />
         </Header>
         <PolicySheet
           key={editing ? (editing.role ?? "default") : "closed"}
@@ -1142,20 +1198,20 @@ export function Simulator() {
                     ))}
                   </div>
 
-                  {waiting ? (
-                    <Button size="lg" onClick={goNext}>
-                      Next ·{" "}
-                      <span className="tabular-nums">
-                        {formatNumber(progress)} / {formatNumber(turns)} turns
-                      </span>
-                    </Button>
-                  ) : running ? (
-                    <Button size="lg" variant="outline" onClick={toggleHold}>
-                      {held ? <Play /> : <Pause />}
-                      {held ? "Resume" : "Pause"} ·{" "}
-                      <span className="tabular-nums">
-                        {formatNumber(progress)} / {formatNumber(turns)} turns
-                      </span>
+                  {running ? (
+                    // Waits for the attack playing now to finish.
+                    <Button size="lg" disabled={!waiting} onClick={goNext}>
+                      {finished < scenarios ? (
+                        <>
+                          <Play /> Next attack ·{" "}
+                          <span className="tabular-nums">
+                            {formatNumber(finished + 1)} /{" "}
+                            {formatNumber(scenarios)}
+                          </span>
+                        </>
+                      ) : (
+                        "See the results"
+                      )}
                     </Button>
                   ) : (
                     <>
@@ -1167,9 +1223,9 @@ export function Simulator() {
                         }
                         onClick={() => void attack()}
                       >
-                        <Play /> Run {formatNumber(scenarios)} scenarios
-                        <span className="font-normal opacity-80">
-                          · {formatNumber(turns)} turns
+                        <Play /> Run attack scenario
+                        <span className="font-normal tabular-nums opacity-80">
+                          · 1 / {formatNumber(scenarios)}
                         </span>
                       </Button>
                       {missing.length > 0 && (
