@@ -1,7 +1,7 @@
 import {
   KeyRound,
   LayoutDashboard,
-  MessageSquare,
+  Swords,
   Plug,
   ShieldAlert,
   SlidersHorizontal,
@@ -84,7 +84,7 @@ export function Admin() {
   return (
     <div className="flex min-h-svh flex-col bg-muted/40">
       <Header product="Admin">
-        <HeaderLink href="/" label="Assistant" icon={MessageSquare} />
+        <HeaderLink href="/challenge" label="Challenge" icon={Swords} />
         <UserMenu />
       </Header>
 

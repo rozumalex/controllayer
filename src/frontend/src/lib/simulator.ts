@@ -116,6 +116,20 @@ type RunTotals = {
 
 export type EndEvent = { type: "end" } & RunTotals
 
+// A scenario turn's prompt, sent before its answer, so the chat shows it
+// while the guards and the model work.
+export type PromptEvent = {
+  type: "prompt"
+  trace_id: string
+  id: string
+  prompt: string
+  scenario: string
+  title: string
+  owasp: string
+  turn: number
+  turns: number
+}
+
 export type AttackRequest = {
   role: string
   goals: string[]
@@ -190,7 +204,7 @@ export const fetchCases = (role: string) =>
 // attack: it stops reading, so the server stops once its buffers fill.
 export async function runAttack(
   request: AttackRequest,
-  onEvent: (event: CaseEvent | EndEvent) => void,
+  onEvent: (event: CaseEvent | PromptEvent | EndEvent) => void,
   signal: AbortSignal,
   wait: () => Promise<void> = async () => {}
 ) {
