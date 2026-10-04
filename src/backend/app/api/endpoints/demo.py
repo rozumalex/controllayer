@@ -25,6 +25,7 @@ from app.core.schema.demo import (
     ChecklistItem,
     HistoryEntry,
     HistoryVerdict,
+    Risk,
     Simulator,
     UnlockRequest,
 )
@@ -32,9 +33,11 @@ from app.core.simulator import (
     CHECKLIST,
     ENDINGS,
     GOALS,
+    RISKS,
     Simulation,
     goal_cases,
     outcome,
+    risk,
     roles,
     stored,
 )
@@ -81,7 +84,8 @@ async def simulator(user: CurrentUser) -> Simulator:
         for g in GOALS
     ]
     checklist = [ChecklistItem(**vars(item)) for item in CHECKLIST]
-    return Simulator(accounts=accounts, goals=goals, checklist=checklist)
+    risks = [Risk(id=r.id, title=r.title, guards=list(r.guards)) for r in RISKS]
+    return Simulator(accounts=accounts, goals=goals, checklist=checklist, risks=risks)
 
 
 @router.post(
@@ -192,7 +196,9 @@ async def cases(
             .order_by(ControlEvent.id.desc())
             .limit(limit)
         )
-        return [e.data for e in reversed(list(found))]
+        # Again for each case, so cases logged before the risk was kept
+        # count too.
+        return [{**e.data, "risk": risk(e.data)} for e in reversed(list(found))]
 
 
 def entry(events: list[ControlEvent]) -> HistoryEntry:

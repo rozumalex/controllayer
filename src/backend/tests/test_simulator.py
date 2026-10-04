@@ -15,7 +15,7 @@ from app.core import simulator
 from app.core.assistant import SYSTEM_PROMPT
 from app.core.config import settings
 from app.core.schema.policy import Budget, Clearance
-from app.core.simulator import GOALS, Simulation, loot, stolen
+from app.core.simulator import GOALS, Simulation, loot, risk, stolen
 from app.db.models import User
 from app.db.policy import builtin_policy
 from tests.test_chat import ask, blocked
@@ -42,6 +42,79 @@ def simulate(
         return events[-1]
 
     return asyncio.run(last())
+
+
+SUPPLY = "matched: CL-SUPPLY-001"
+EXEC = "matched: CL-EXEC-001"
+
+
+def verdict(guard: str, action: str = "block", **fields: str) -> dict[str, str]:
+    return {"guard": guard, "action": action, "direction": "inbound", **fields}
+
+
+def case(status: str, *verdicts: dict[str, str], security: bool = True) -> dict:
+    return {"security": security, "status": status, "verdicts": list(verdicts)}
+
+
+@pytest.mark.parametrize(
+    ("found", "expected"),
+    [
+        (case("blocked", verdict("prompt_injection")), "LLM01"),
+        (
+            case("blocked", verdict("semantic_injection", direction="outbound")),
+            "LLM04",
+        ),
+        (
+            case("blocked", verdict("attack_signatures", reason=SUPPLY)),
+            "LLM03",
+        ),
+        (
+            case("blocked", verdict("attack_signatures", reason=EXEC)),
+            "LLM05",
+        ),
+        (case("blocked", verdict("prompt_leak", direction="response")), "LLM07"),
+        (case("blocked", verdict("policy_tools")), "LLM06"),
+        (case("locked_out", verdict("lockout")), "LLM10"),
+        (case("out_of_budget", verdict("policy_budget")), "LLM10"),
+    ],
+)
+def test_risk_is_the_risk_of_the_guard_that_blocked(found: dict, expected: str) -> None:
+    # when / then
+    assert risk(found) == expected
+
+
+def test_risk_of_a_contained_case_skips_spotlight() -> None:
+    # given
+    found = case(
+        "contained",
+        verdict("spotlight", "modify", direction="outbound"),
+        verdict("sensitive_data", "modify", direction="response"),
+    )
+
+    # when / then
+    assert risk(found) == "LLM02"
+
+
+def test_risk_counts_the_attack_ahead_of_the_lockout() -> None:
+    # given
+    found = case("blocked", verdict("lockout"), verdict("prompt_injection"))
+
+    # when / then
+    assert risk(found) == "LLM01"
+
+
+@pytest.mark.parametrize(
+    "found",
+    [
+        case("landed", verdict("prompt_injection"), security=False),
+        case("false_alarm", verdict("prompt_injection")),
+        case("allowed", verdict("spotlight", "modify", direction="outbound")),
+        case("passed"),
+    ],
+)
+def test_risk_is_none_when_the_layer_stopped_no_attack(found: dict) -> None:
+    # when / then
+    assert risk(found) is None
 
 
 def test_off_mode_logs_but_changes_nothing() -> None:
@@ -206,6 +279,25 @@ def test_attack_cases_kept_in_the_account_logs(db: None, client: TestClient) -> 
     # then
     sent = [json.loads(line) for line in response.text.splitlines()][:-1]
     assert [c["trace_id"] for c in logs] == [c["trace_id"] for c in sent]
+
+
+@pytest.mark.parametrize("security", [True, False])
+def test_attack_cases_count_toward_a_risk_only_when_stopped(
+    db: None, client: TestClient, security: bool
+) -> None:
+    # given
+    save_roles()
+    request = {"role": "Analyst", "goals": ["leak_prompt"], "security": security}
+    client.post("/api/demo/attack", json=request)
+
+    # when
+    logs = client.get("/api/demo/cases", params={"role": "Analyst"}).json()
+
+    # then
+    stopped = {"blocked", "contained", "out_of_budget", "locked_out"}
+    assert logs
+    for found in logs:
+        assert (found["risk"] is not None) == (security and found["status"] in stopped)
 
 
 def test_chat_case_tells_what_an_answer_took(db: None, client: TestClient) -> None:
