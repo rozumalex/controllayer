@@ -86,6 +86,10 @@ jobs:
     envs:
       - key: DATABASE_URL
         value: ${db.DATABASE_URL}
+      # The seed registers the bank MCP server with it.
+      - key: BANK_MCP_TOKEN
+        value: "${BANK_MCP_TOKEN}"
+        type: SECRET
 
 static_sites:
   - name: web

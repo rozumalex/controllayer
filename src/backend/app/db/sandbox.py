@@ -42,6 +42,7 @@ from app.db.models import (
     BankResearch,
     BankTrade,
     BankTransaction,
+    ControlEvent,
     DirectoryEvent,
     DirectoryGroup,
     IdentityProvider,
@@ -104,8 +105,8 @@ async def copy(
 
 
 async def copy_demo(session: AsyncSession, demo: uuid.UUID, org_id: uuid.UUID) -> None:
-    """Copies everything of the demo organization into the sandbox but its
-    history: the control events and conversations start empty."""
+    """Copies everything of the demo organization into the sandbox, its
+    control events too, but its conversations: they start empty."""
 
     def remap(model: type[Base], *names: str) -> dict[str, ColumnElement[Any]]:
         return {name: remapped(table_of(model).c[name], org_id) for name in names}
@@ -139,6 +140,12 @@ async def copy_demo(session: AsyncSession, demo: uuid.UUID, org_id: uuid.UUID) -
         url=case((url.like("%/bank/mcp"), url + f"?org={org_id}"), else_=url),
         **remap(McpServer, "created_by_id", "updated_by_id"),
     )
+    # The staff's recorded chats, so the dashboard and budgets show use.
+    user = remapped(ControlEvent.user_id, org_id)
+    data = ControlEvent.data.op("||")(
+        func.jsonb_build_object("user_id", cast(user, String), "org_id", str(org_id))
+    )
+    await copy(session, ControlEvent, demo, org_id, id=None, user_id=user, data=data)
     bank: dict[type[Base], list[str]] = {
         BankClient: ["primary_rm_id"],
         BankAccount: [],
