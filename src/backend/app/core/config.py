@@ -123,6 +123,9 @@ class Settings(BaseSettings):
     # The demo account the seed creates in the demo organization. "Try the
     # demo", or this email on the sign-in screen, signs in as it at once.
     demo_email: str = "demo@controllayer.net"
+    # Demo sandboxes copied ahead, so a visitor's first sign-in claims one at
+    # once instead of waiting for the copy. 0 copies at sign-in.
+    demo_sandbox_pool: int = 3
     # The SMTP server that sends the sign-in codes: Mailpit in Compose,
     # Resend or another provider in production. Empty turns email sign-in
     # off. smtp_tls is "starttls", "ssl" or "none".

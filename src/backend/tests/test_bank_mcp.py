@@ -25,6 +25,7 @@ from app.db.models import (
 )
 from app.db.session import SessionLocal
 from app.servers.bank import DESTRUCTIVE, READ, WRITE, bank, settlement_date
+from tests.conftest import demo_org_id
 from tests.test_mcp_gateway import INJECTION, Upstream
 
 URL = "/api/bank/mcp"
@@ -74,6 +75,7 @@ def account(account_id: str, **fields: Any) -> BankAccount:
 
 
 async def seed() -> None:
+    org_id = await demo_org_id()
     trader = User(
         id=uuid.uuid4(),
         email=TRADER,
@@ -152,6 +154,8 @@ async def seed() -> None:
     steps = [[trader], [client], [account("ACC-0000001"), frozen], [settled, research]]
     async with SessionLocal.begin() as session:
         for rows in steps:
+            for row in rows:
+                row.org_id = org_id
             session.add_all(rows)
             await session.flush()
 
@@ -181,8 +185,10 @@ def message(result: types.CallToolResult) -> str:
 
 
 async def fetch[T](model: type[T], key: str) -> T | None:
+    """A row of the demo organization's bank."""
+    org_id = await demo_org_id()
     async with SessionLocal() as session:
-        return await session.get(model, key)
+        return await session.get(model, (org_id, key))
 
 
 def test_tools_say_whether_they_change_data() -> None:

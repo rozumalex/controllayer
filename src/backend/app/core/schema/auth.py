@@ -4,9 +4,25 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.core.schema.policy import Employee
 
+# The key the browser makes for its demo sandbox and keeps: it signs in to
+# the same sandbox again.
+DEMO_KEY = r"^[A-Za-z0-9_-]{32,128}$"
+
+
+class DemoSignIn(BaseModel):
+    key: str = Field(
+        pattern=DEMO_KEY,
+        description="A random key the browser keeps, such as 32 random bytes in hex.",
+    )
+
 
 class EmailSignIn(BaseModel):
     email: str = Field(max_length=320, examples=["eve@acme.com"])
+    demo_key: str | None = Field(
+        default=None,
+        pattern=DEMO_KEY,
+        description="For the demo account's email: the browser's demo key.",
+    )
 
     @field_validator("email")
     @classmethod

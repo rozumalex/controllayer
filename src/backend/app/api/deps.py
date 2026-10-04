@@ -343,7 +343,7 @@ async def mcp_gateway(
     user: ActingUser, policy: UserPolicy, mode: SimulatedMode = None
 ) -> McpGateway:
     async with SessionLocal() as session:
-        catalog = await data_catalog(session)
+        catalog = await data_catalog(session, user.org_id)
         labels, seen = await recent_flows(session, user.id)
         recent = await recent_tool_calls(
             session, user.id, settings.control_loop_window_seconds

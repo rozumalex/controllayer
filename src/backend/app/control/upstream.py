@@ -68,6 +68,38 @@ def unreachable(error: httpx.HTTPError) -> UpstreamError:
 
 
 OPENAI_URL = "https://api.openai.com/v1/chat/completions"
+# How often a request the provider turned away for a moment, for a rate
+# limit or an outage, is sent again. The waits double from BACKOFF seconds,
+# unless the provider says how long to wait.
+RETRIES = 3
+BACKOFF = 1.0
+
+
+def busy(response: httpx.Response) -> bool:
+    return response.status_code == 429 or response.status_code >= 500
+
+
+def wait(response: httpx.Response, attempt: int) -> float:
+    try:
+        return float(response.headers["retry-after"])
+    except KeyError, ValueError:
+        return BACKOFF * 2**attempt
+
+
+async def chunks(response: httpx.Response) -> AsyncIterator[dict[str, Any]]:
+    """The chunks of a streamed completion. Server-sent events: one
+    "data: {chunk}" line per chunk, and "data: [DONE]" at the end."""
+    async for line in response.aiter_lines():
+        if not line.startswith("data:"):
+            continue
+        data = line.removeprefix("data:").strip()
+        if data == "[DONE]":
+            return
+        try:
+            yield json.loads(data)
+        except ValueError as error:
+            message = f"upstream sent a chunk that is not JSON: {data}"
+            raise UpstreamError(502, {"error": {"message": message}}) from error
 
 
 class OpenAIUpstream:
@@ -101,7 +133,13 @@ class OpenAIUpstream:
         headers = {"Authorization": f"Bearer {self.api_key}"}
         try:
             async with httpx.AsyncClient(timeout=120) as client:
-                response = await client.post(self.url, json=request, headers=headers)
+                for attempt in range(RETRIES + 1):
+                    response = await client.post(
+                        self.url, json=request, headers=headers
+                    )
+                    if not busy(response) or attempt == RETRIES:
+                        break
+                    await asyncio.sleep(wait(response, attempt))
         except httpx.HTTPError as error:
             raise unreachable(error) from error
         if response.is_error:
@@ -121,29 +159,21 @@ class OpenAIUpstream:
         }
         headers = {"Authorization": f"Bearer {self.api_key}"}
         try:
-            async with (
-                httpx.AsyncClient(timeout=120) as client,
-                client.stream(
-                    "POST", self.url, json=request, headers=headers
-                ) as response,
-            ):
-                if response.is_error:
-                    await response.aread()
-                    raise UpstreamError(response.status_code, error_body(response))
-                # Server-sent events: one "data: {chunk}" line per chunk, and
-                # "data: [DONE]" at the end.
-                async for line in response.aiter_lines():
-                    if not line.startswith("data:"):
-                        continue
-                    data = line.removeprefix("data:").strip()
-                    if data == "[DONE]":
+            async with httpx.AsyncClient(timeout=120) as client:
+                for attempt in range(RETRIES + 1):
+                    async with client.stream(
+                        "POST", self.url, json=request, headers=headers
+                    ) as response:
+                        if busy(response) and attempt < RETRIES:
+                            await asyncio.sleep(wait(response, attempt))
+                            continue
+                        if response.is_error:
+                            await response.aread()
+                            body = error_body(response)
+                            raise UpstreamError(response.status_code, body)
+                        async for part in chunks(response):
+                            yield part
                         return
-                    try:
-                        yield json.loads(data)
-                    except ValueError as error:
-                        message = f"upstream sent a chunk that is not JSON: {data}"
-                        body = {"error": {"message": message}}
-                        raise UpstreamError(502, body) from error
         except httpx.HTTPError as error:
             raise unreachable(error) from error
 
