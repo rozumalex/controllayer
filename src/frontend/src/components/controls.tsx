@@ -21,7 +21,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { formatNumber } from "@/lib/format"
 import {
   fetchEmployees,
   fetchPolicy,
@@ -30,18 +29,14 @@ import {
   type GatewayTool,
   type PolicyOverview,
   type PolicySettings,
+  budgetLabel,
 } from "@/lib/policy"
 
 const PAGE = 25
 const ALL_ROLES = "__all__"
 
 function budget({ budget }: PolicySettings) {
-  const parts = [
-    budget.monthly_tokens != null &&
-      `${formatNumber(budget.monthly_tokens)} tokens`,
-    budget.monthly_usd != null && `$${budget.monthly_usd}`,
-  ].filter(Boolean)
-  return parts.length ? `${parts.join(" · ")} / mo` : "Unlimited"
+  return budgetLabel(budget)
 }
 
 function toolSummary(settings: PolicySettings) {
@@ -389,7 +384,6 @@ export function Policy() {
       <PolicySheet
         key={editing ? (editing.role ?? "default") : "closed"}
         editing={editing}
-        models={overview?.models ?? []}
         tools={tools}
         onClose={() => setEditing(null)}
         onSaved={load}

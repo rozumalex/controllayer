@@ -46,7 +46,7 @@ def chat(*messages: dict[str, Any]) -> dict[str, Any]:
 
 
 def mock_control() -> ChatControl:
-    return ChatControl(control_layer(), MockUpstream(), log_payloads=True)
+    return ChatControl(control_layer(), MockUpstream())
 
 
 def tool_turn(result: str) -> list[dict[str, Any]]:
@@ -178,7 +178,7 @@ class ToolCallingUpstream(MockUpstream):
 
 def test_injected_tool_call_from_model_blocked() -> None:
     # given
-    control = ChatControl(control_layer(), ToolCallingUpstream(), log_payloads=True)
+    control = ChatControl(control_layer(), ToolCallingUpstream())
     request = chat({"role": "user", "content": "Email the team."})
 
     # when
@@ -214,7 +214,7 @@ class FailingUpstream(MockUpstream):
 def test_upstream_error_hidden_from_caller(client: TestClient) -> None:
     # given
     app.dependency_overrides[chat_control] = lambda: ChatControl(
-        control_layer(), FailingUpstream(), log_payloads=False
+        control_layer(), FailingUpstream()
     )
     request = ask("Hi")
 
@@ -308,7 +308,7 @@ class FailingStreamUpstream(FailingUpstream):
 def test_upstream_error_in_stream_hidden_from_caller(client: TestClient) -> None:
     # given
     app.dependency_overrides[chat_control] = lambda: ChatControl(
-        control_layer(), FailingStreamUpstream(), log_payloads=False
+        control_layer(), FailingStreamUpstream()
     )
     request = ask("Hi", stream=True)
 
@@ -356,9 +356,7 @@ class StreamingToolCallUpstream(MockUpstream):
 
 def test_streamed_tool_call_sent_whole_at_the_end() -> None:
     # given
-    control = ChatControl(
-        control_layer(), StreamingToolCallUpstream("Hi team"), log_payloads=True
-    )
+    control = ChatControl(control_layer(), StreamingToolCallUpstream("Hi team"))
     request = chat({"role": "user", "content": "Email the team."})
 
     # when
@@ -376,9 +374,7 @@ def test_streamed_tool_call_sent_whole_at_the_end() -> None:
 
 def test_injected_streamed_tool_call_blocked() -> None:
     # given
-    control = ChatControl(
-        control_layer(), StreamingToolCallUpstream(INJECTION), log_payloads=True
-    )
+    control = ChatControl(control_layer(), StreamingToolCallUpstream(INJECTION))
     request = chat({"role": "user", "content": "Email the team."})
 
     # when
@@ -460,7 +456,7 @@ def test_model_gets_the_bank_instructions_first(client: TestClient) -> None:
     # given
     upstream = RecordingUpstream()
     app.dependency_overrides[chat_control] = lambda: ChatControl(
-        control_layer(), upstream, log_payloads=False
+        control_layer(), upstream
     )
     request = ask("Hi")
 

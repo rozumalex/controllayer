@@ -37,8 +37,8 @@ SEPARATOR = "__"
 LIST_TIMEOUT = 10
 # Like the chat adapter, the messages don't say why: the reasons are in the
 # logs, under the trace id.
-BLOCKED_CALL = "[control layer] The call to {tool} was blocked."
-WITHHELD = "[control layer] This tool result was withheld."
+BLOCKED_CALL = "The call to {tool} was blocked."
+WITHHELD = "This tool result was withheld."
 UNKNOWN_TOOL = "Unknown tool: {tool}"
 
 
@@ -85,7 +85,6 @@ class McpGateway:
         layer: ControlLayer,
         connect: Connect,
         servers: Callable[[], Awaitable[Sequence[UpstreamServer]]],
-        log_payloads: bool = False,
         sink: EventSink | None = None,
     ) -> None:
         self.layer = layer
@@ -93,7 +92,6 @@ class McpGateway:
         # The enabled servers, read on every request, so a server added in
         # the Control tab shows up without a restart.
         self.servers = servers
-        self.log_payloads = log_payloads
         self.sink = sink or LogEventSink(logger)
         # Whether the loop guard blocked a call. A loop doesn't end by
         # itself, so the agent stops asking for tools.
@@ -204,10 +202,8 @@ class McpGateway:
         return result
 
     async def log(self, trace_id: str, stage: str, **data: Any) -> None:
-        # Arguments and results may hold secrets, like prompts in the chat.
+        # Arguments and results are logged, but PII and secrets in them, as in
+        # the chat's prompts, never reach the logs.
         payloads = ("arguments", "body")
-        if not self.log_payloads:
-            data = {k: v for k, v in data.items() if k not in payloads}
-        # PII and secrets never reach the logs, even with the payloads.
         data = {k: scrub(v) if k in payloads else v for k, v in data.items()}
         await self.sink.write({"event": stage, "trace_id": trace_id, **data})

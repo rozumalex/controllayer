@@ -7,7 +7,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.control.guards.loop import Call, LoopGuard
 from app.core.config import settings
-from app.core.schema.policy import Budget, Clearance, PolicySettings, ToolAction
+from app.core.schema.policy import (
+    Budget,
+    Clearance,
+    Lockout,
+    PolicySettings,
+    ToolAction,
+)
 from app.db.models import BankDataCatalog, ControlEvent, Policy
 
 # The key of the default policy. No job title is a bare asterisk.
@@ -23,6 +29,10 @@ def builtin_policy() -> PolicySettings:
         above_clearance=ToolAction.REDACT,
         allowed_models=settings.chat_models,
         budget=Budget(),
+        lockout=Lockout(
+            blocks=settings.control_lockout_blocks,
+            minutes=max(1, settings.control_lockout_window_seconds // 60),
+        ),
         default_tool_action=ToolAction.ALLOW,
     )
 
@@ -70,12 +80,17 @@ def price(model: str) -> tuple[Decimal, Decimal]:
     return settings.models[max(known, key=len)].price
 
 
-async def monthly_usage(
-    session: AsyncSession, user_id: uuid.UUID
-) -> tuple[int, Decimal]:
-    """The tokens the user's chats used this calendar month (UTC), and what
-    they cost, from the model responses in the control layer's events."""
-    start = datetime.now(UTC).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+def cost(model: str, prompt: int, completion: int) -> Decimal:
+    """What the model's tokens cost, in US dollars."""
+    prompt_price, completion_price = price(model)
+    return (prompt * prompt_price + completion * completion_price) / 1_000_000
+
+
+async def spent_since(
+    session: AsyncSession, user_id: uuid.UUID, start: datetime
+) -> Decimal:
+    """What the user's chats cost since start, in US dollars, from the model
+    responses in the control layer's events."""
     usage = ControlEvent.data["usage"]
     model = func.coalesce(ControlEvent.data["model"].astext, "")
     totals = await session.execute(
@@ -91,13 +106,19 @@ async def monthly_usage(
         )
         .group_by(model)
     )
-    tokens, usd = 0, Decimal(0)
-    for name, prompt, completion in totals:
-        prompt, completion = prompt or 0, completion or 0
-        prompt_price, completion_price = price(name)
-        tokens += prompt + completion
-        usd += (prompt * prompt_price + completion * completion_price) / 1_000_000
-    return tokens, usd
+    return sum(
+        (
+            cost(name, prompt or 0, completion or 0)
+            for name, prompt, completion in totals
+        ),
+        Decimal(0),
+    )
+
+
+async def spent_this_week(session: AsyncSession, user_id: uuid.UUID) -> Decimal:
+    """What the user spent this week, from Monday (UTC)."""
+    today = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+    return await spent_since(session, user_id, today - timedelta(days=today.weekday()))
 
 
 async def recent_questions(session: AsyncSession, user_id: uuid.UUID) -> int:
@@ -156,3 +177,28 @@ async def recent_tool_calls(
         )
     )
     return [(server, tool, sha) for server, tool, sha in rows]
+
+
+async def recent_blocks(session: AsyncSession, user_id: uuid.UUID, seconds: int) -> int:
+    """How many of the user's requests the layer blocked in the last seconds,
+    since an admin last unlocked them."""
+    start = datetime.now(UTC) - timedelta(seconds=seconds)
+    # An admin's unlock wipes the slate.
+    unlocked = await session.scalar(
+        select(func.max(ControlEvent.created_at)).where(
+            ControlEvent.user_id == user_id, ControlEvent.event == "unlock"
+        )
+    )
+    if unlocked and unlocked > start:
+        start = unlocked
+    return (
+        await session.scalar(
+            select(func.count(func.distinct(ControlEvent.trace_id))).where(
+                ControlEvent.user_id == user_id,
+                ControlEvent.event == "decision",
+                ControlEvent.action == "block",
+                ControlEvent.created_at >= start,
+            )
+        )
+        or 0
+    )

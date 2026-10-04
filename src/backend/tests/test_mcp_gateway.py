@@ -53,13 +53,11 @@ class ListSink:
         self.events.append(event)
 
 
-def gateway(
-    *names: str, sink: EventSink | None = None, log_payloads: bool = False
-) -> McpGateway:
+def gateway(*names: str, sink: EventSink | None = None) -> McpGateway:
     async def servers() -> list[Upstream]:
         return [Upstream(name) for name in names]
 
-    return McpGateway(control_layer(), connect, servers, log_payloads, sink)
+    return McpGateway(control_layer(), connect, servers, sink)
 
 
 def text(result: types.CallToolResult) -> str:
@@ -137,7 +135,7 @@ def test_unknown_server_is_an_error() -> None:
 def test_call_traced_with_every_stage() -> None:
     # given
     sink = ListSink()
-    subject = gateway("bank", sink=sink, log_payloads=True)
+    subject = gateway("bank", sink=sink)
 
     # when
     asyncio.run(subject.call_tool("bank__get_client", {"client_id": "CLT-1"}, "a"))
@@ -170,7 +168,7 @@ def test_blocked_call_traced_as_blocked() -> None:
     assert sink.events[-1]["is_error"] is True
 
 
-def test_arguments_and_result_stored_only_with_payload_logging() -> None:
+def test_arguments_stored() -> None:
     # given
     sink = ListSink()
     subject = gateway("bank", sink=sink)
@@ -179,5 +177,5 @@ def test_arguments_and_result_stored_only_with_payload_logging() -> None:
     asyncio.run(subject.call_tool("bank__get_client", {"client_id": "CLT-1"}, "a"))
 
     # then
-    assert "CLT-1" not in str(sink.events)
-    assert "Golden Socks" not in str(sink.events)
+    [request] = [e for e in sink.events if e["event"] == "request"]
+    assert request["arguments"] == {"client_id": "CLT-1"}

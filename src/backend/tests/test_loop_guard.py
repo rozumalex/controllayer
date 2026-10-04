@@ -146,7 +146,7 @@ def test_agent_stops_asking_for_tools_after_a_loop() -> None:
     # given
     upstream = ToolUsingUpstream("bank__get_client", {"client_id": "C1"}, always=True)
     subject = gateway(LoopGuard(repeats=1, calls=0))
-    control = ChatControl(control_layer(), upstream, False, check_tools=False)
+    control = ChatControl(control_layer(), upstream, check_tools=False)
     agent = Agent(control, subject)
 
     # when
