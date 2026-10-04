@@ -107,15 +107,6 @@ tool_groups:
     bank__list_transactions: allow
     bank__list_trades: allow
     bank__search_research: allow
-  # Look after a client's relationship.
-  coverage: &coverage
-    bank__add_client_note: allow
-    bank__update_client_contact: allow
-  # Freeze an account, raise an AML alert, or open the account again.
-  control: &control
-    bank__flag_transaction: allow
-    bank__restrict_account: allow
-    bank__lift_restriction: allow
 
 policies:
   # A new job title reads internal data, and calls no tool but search until
@@ -130,51 +121,8 @@ policies:
       bank__search_clients: allow
       bank__search_research: allow
 
-  # Juniors: read and take notes, but move nothing. Balances come back
-  # redacted.
-  Analyst:
-    <<: *balanced
-    clearance: INTERNAL
-    allowed_models: [gpt-4.1-mini, gpt-4o-mini, qwen2.5:7b]
-    budget: {weekly_usd: 6}
-    default_tool_action: block
-    tools:
-      <<: *read
-      bank__get_account: redact
-      bank__add_client_note: allow
-
-  Associate:
-    <<: *balanced
-    clearance: INTERNAL
-    allowed_models: [gpt-4.1-mini, gpt-4o-mini, qwen2.5:7b]
-    budget: {weekly_usd: 10}
-    default_tool_action: block
-    tools:
-      <<: [*read, *coverage]
-
   # Seniors cover clients and trade for them, so every tool is allowed but
-  # the ones listed. Freezing accounts stays with risk and compliance.
-  Vice President:
-    <<: *balanced
-    clearance: CONFIDENTIAL
-    allowed_models: [gpt-4.1, gpt-4.1-mini, qwen2.5:7b]
-    budget: {weekly_usd: 25}
-    default_tool_action: allow
-    tools:
-      bank__initiate_payment: block
-      bank__restrict_account: block
-      bank__lift_restriction: block
-
-  Executive Director:
-    <<: *permissive
-    clearance: CONFIDENTIAL
-    allowed_models: [gpt-4.1, gpt-4.1-mini, o4-mini, qwen2.5:7b]
-    budget: {weekly_usd: 50}
-    default_tool_action: allow
-    tools:
-      bank__restrict_account: block
-      bank__lift_restriction: block
-
+  # freezing accounts.
   Managing Director:
     <<: *permissive
     clearance: RESTRICTED
@@ -184,28 +132,6 @@ policies:
     tools:
       bank__restrict_account: block
       bank__lift_restriction: block
-
-  # Second line: sees everything, can stop money, never moves it.
-  Compliance Officer:
-    <<: *permissive
-    clearance: RESTRICTED
-    allowed_models: [gpt-4.1, gpt-4.1-mini, o4-mini, qwen2.5:7b]
-    budget: {weekly_usd: 38}
-    default_tool_action: block
-    tools:
-      <<: [*read, *control]
-      bank__add_client_note: allow
-
-  Risk Manager:
-    <<: *permissive
-    clearance: CONFIDENTIAL
-    allowed_models: [gpt-4.1, gpt-4.1-mini, o4-mini, qwen2.5:7b]
-    budget: {weekly_usd: 30}
-    default_tool_action: block
-    tools:
-      <<: *read
-      bank__flag_transaction: allow
-      bank__restrict_account: allow
 
   # Middle office: settles payments and trades, sees client data redacted.
   Operations Specialist:
@@ -221,16 +147,6 @@ policies:
       bank__initiate_payment: allow
       bank__cancel_trade: allow
       bank__flag_transaction: allow
-
-  # Behind the information barrier: research only, no client or trade data.
-  Research Analyst:
-    <<: *strict
-    clearance: INTERNAL
-    allowed_models: [gpt-4.1, gpt-4.1-mini, o4-mini, qwen2.5:7b]
-    budget: {weekly_usd: 20}
-    default_tool_action: block
-    tools:
-      bank__search_research: allow
 
   # Builds the systems, never touches client data, and calls no bank tool.
   Engineer:
