@@ -7,6 +7,8 @@ their own copies. The bank is the demo organization. Its staff are the
 challenge's accounts, one employee per role in scripts/policies.yaml: they
 are updated in place, so the rows that refer to them, such as the control
 events, are kept, and other staff are removed with their traces and chats.
+The Managing Director's row becomes the demo account, so the bank has three
+people.
 Rows that predate organizations join it too. It also saves the policies in
 scripts/policies.yaml for the demo's roles that have none, so a policy
 someone changed is kept, removes the policies of other roles, and saves the
@@ -35,7 +37,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import Table, delete, func, inspect, select, text, update
+from sqlalchemy import Table, delete, func, inspect, or_, select, text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
@@ -67,9 +69,6 @@ LOCAL_HOSTS = {"db", "localhost", "127.0.0.1"}
 STAFF_DOMAIN = "goldensocks.com"
 # Columns the seed sets itself, which the data files don't have.
 OWN_COLUMNS = {"org_id", "external_id", "active"}
-# The demo account's job title. No role policy has it, so the account works
-# under the default policy, and isn't one of the challenge's accounts.
-DEMO_ROLE = "Vice President"
 # The demo's single sign-on: Duende's public demo IdentityServer, whose test
 # users anyone can sign in as. Its ID tokens carry no groups, so the rules
 # match the user's sub: alice (1) and bob (2) get two different policies.
@@ -224,7 +223,13 @@ STORY: list[tuple[float, str, list[tuple[str, dict[str, Any]]]]] = [
 
 async def seed_directory(connection: AsyncConnection, demo: uuid.UUID) -> None:
     """Makes the demo's directory look synced by SCIM from its IdP."""
-    staff = User.org_id == demo, User.email.like(f"%@{STAFF_DOMAIN}")
+    staff = (
+        User.org_id == demo,
+        or_(
+            User.email.like(f"%@{STAFF_DOMAIN}"),
+            User.email == settings.demo_email,
+        ),
+    )
     titles = await connection.scalars(select(User.title).where(*staff).distinct())
     roles = [title for title in titles if title]
     groups = {}
@@ -335,10 +340,14 @@ async def seed(url: str) -> None:
             # COPY, through asyncpg, loads the rows far faster than INSERT.
             raw = (await connection.get_raw_connection()).driver_connection
             assert raw is not None
+            director: dict[str, Any] = {}
             for table in tables:
                 columns, rows = load(table)
                 if table.name == "users":
-                    rows = challenge_staff(columns, rows)
+                    # The first, the Managing Director, signs in as the
+                    # demo account, so the bank has only three people.
+                    first, *rows = challenge_staff(columns, rows)
+                    director = dict(zip(columns, first, strict=True))
                     await upsert_staff(raw, demo, columns, rows)
                 else:
                     await raw.copy_records_to_table(
@@ -381,12 +390,11 @@ async def seed(url: str) -> None:
                 )
             )
             print(f"policies: {dropped.rowcount} of other roles removed")
+            # The Managing Director, with the demo's email, and an admin.
             account = {
+                **{k: v for k, v in director.items() if k not in ("id", "email")},
                 "email": settings.demo_email,
-                "name": "Demo User",
-                "title": DEMO_ROLE,
                 "clearance_level": PRIVILEGED,
-                "employment_status": "ACTIVE",
                 "org_id": demo,
             }
             await connection.execute(
@@ -396,7 +404,7 @@ async def seed(url: str) -> None:
                     index_elements=[User.org_id, User.email], set_=account
                 )
             )
-            print(f"demo account: {settings.demo_email}, a {DEMO_ROLE}")
+            print(f"demo account: {settings.demo_email}, {account['name']}")
             await connection.execute(
                 insert(IdentityProvider)
                 .values(org_id=demo, **DEMO_IDP)
