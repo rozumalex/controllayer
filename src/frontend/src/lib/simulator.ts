@@ -7,7 +7,7 @@ export type Account = {
   role: string
   name: string
   policy: PolicySettings
-  // Whether the layer locked the account out for too many blocked requests.
+  // Whether the layer locked the account out for too many blocked attacks.
   locked: boolean
 }
 
