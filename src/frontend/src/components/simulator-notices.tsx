@@ -99,7 +99,7 @@ function content(notice: Notice): {
               <b>Nobody knows yet.</b> {STORY.quiet} Meanwhile, their AI agent
               is very eager to help: it reads client records, moves money and
               digs through the bank's systems for whoever is typing. That's you
-              now. Grab what you can before someone has their morning coffee.
+              now. Grab what you can before someone starts asking questions.
             </p>
             <Separator />
             <p className="font-semibold">Your hacker's checklist</p>
