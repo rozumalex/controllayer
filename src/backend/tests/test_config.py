@@ -23,25 +23,6 @@ def test_database_url_asyncpg_unchanged() -> None:
     assert Settings(database_url=url).database_url == url
 
 
-def test_redis_url_tls_requires_certificate() -> None:
-    # given
-    url = "rediss://default:secret@cache.example.com:25061"
-
-    # when
-    settings = Settings(redis_url=url)
-
-    # then
-    assert settings.redis_url == f"{url}?ssl_cert_reqs=required"
-
-
-def test_redis_url_plain_unchanged() -> None:
-    # given
-    url = "redis://localhost:6379/0"
-
-    # when / then
-    assert Settings(redis_url=url).redis_url == url
-
-
 def test_resend_api_key_sends_through_resend() -> None:
     # when
     settings = Settings(resend_api_key="re_test", smtp_host="mailpit")

@@ -6,7 +6,7 @@ from app.core.config import settings
 def init_sentry() -> None:
     """Send errors and traces to Sentry. Does nothing without SENTRY_DSN.
 
-    The SDK turns on its FastAPI, Celery, SQLAlchemy and Redis integrations by
+    The SDK turns on its FastAPI and SQLAlchemy integrations by
     itself when those packages are installed.
     """
     if not settings.sentry_dsn:

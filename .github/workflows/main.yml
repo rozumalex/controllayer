@@ -22,7 +22,7 @@ jobs:
 
   # Deploys to DigitalOcean App Platform from .do/app.yaml once the checks
   # pass. It runs only when the DIGITALOCEAN_APP_NAME repository variable is
-  # set, so a copy of the template without a DigitalOcean account skips it.
+  # set, so a fork without a DigitalOcean account skips it.
   deploy:
     needs: checks
     if: vars.DIGITALOCEAN_APP_NAME != ''
@@ -47,23 +47,12 @@ jobs:
             fi
           }
           create "$APP_NAME-db" pg
-          create "$APP_NAME-valkey" valkey
-
-      # Keep the Celery queue across restarts, and never drop queued tasks
-      # when memory runs out.
-      - name: Configure Valkey
-        run: |
-          id=$(doctl databases list --format ID,Name --no-header \
-            | awk -v name="$APP_NAME-valkey" '$2 == name { print $1 }')
-          doctl databases configuration update "$id" --engine valkey \
-            --config-json '{"valkey_persistence": "rdb", "valkey_maxmemory_policy": "noeviction"}'
 
       - uses: digitalocean/app_action/deploy@v2
         env:
           SENTRY_DSN: ${{ vars.SENTRY_DSN }}
           VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
           GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
-          NEW_RELIC_LICENSE_KEY: ${{ secrets.NEW_RELIC_LICENSE_KEY }}
           BANK_MCP_TOKEN: ${{ secrets.BANK_MCP_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}

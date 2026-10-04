@@ -30,7 +30,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 EXPOSE 8000
 
-CMD ["newrelic-admin", "run-program", "fastapi", "dev", "app/main.py", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["fastapi", "dev", "app/main.py", "--host", "0.0.0.0", "--port", "8000"]
 
 # Runtime stage: only Python, the virtual environment and the app code.
 FROM python:3.14-slim-bookworm AS runtime
@@ -56,6 +56,4 @@ USER app
 
 EXPOSE 8000
 
-# newrelic-admin starts the New Relic agent before the app imports anything,
-# and does nothing while NEW_RELIC_LICENSE_KEY is empty.
-CMD ["newrelic-admin", "run-program", "fastapi", "run", "app/main.py", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["fastapi", "run", "app/main.py", "--host", "0.0.0.0", "--port", "8000"]

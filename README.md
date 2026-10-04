@@ -79,17 +79,6 @@ uv run ruff check . && uv run ruff format .
 uv run ty check
 ```
 
-### Background tasks
-
-[Celery](https://docs.celeryq.dev/) runs background and scheduled tasks, with Redis as the broker. The `worker` service runs the worker and the beat scheduler in one process, so run only one copy of it: each scheduler sends every scheduled task again.
-
-- Put tasks in `app/tasks/<name>.py` with the `@celery_app.task` decorator from `app.worker`, and add the module to `include` in `app/worker.py`.
-- Send a task from an endpoint with `task.delay(...)`.
-- Schedule a task in `celery_app.conf.beat_schedule` in `app/worker.py` with `crontab(...)`, for example `crontab(hour=3, minute=0)`. `app/tasks/ping.py` is an example that runs every minute. Beat keeps the last run times in a file that is lost when the container is recreated. A crontab runs at its clock time anyway, while a fixed interval starts counting again on every deploy, so prefer crontab.
-- Keep a task under 60 seconds. On a deploy, the worker stops taking new tasks and waits up to 60 seconds for the running ones to finish. A task that runs longer is killed and runs again from the start, so write tasks that are safe to run twice.
-
-To run it on the host: `uv run celery -A app.worker worker --beat --loglevel INFO`, with Redis running (`docker compose up -d redis`).
-
 ### Organizations
 
 Every user belongs to an organization, and so do its role policies, its MCP servers and the control layer's events. A user sees and manages only their own organization's: the admin pages, the dashboard, the traces and the audit export filter by it, and another organization's MCP server or trace is not found. The Golden Socks bank is the `demo` organization, which `./dev seed` creates. The seed also moves every row that has no organization yet into `demo`, so a database from before organizations keeps working.
@@ -257,10 +246,8 @@ pnpm format
 | --------- | -------------------------------------------------------------- | --------------------- |
 | `app`     | Frontend: the Vite dev server with hot reload                  | http://localhost:3000 |
 | `api`     | Backend: `fastapi dev`, which reloads on every change          | http://localhost:8000 |
-| `worker`  | Backend: Celery worker and beat scheduler, reloads on change   |                       |
 | `migrate` | Applies the migrations, then exits. `api` starts after it ends |                       |
 | `db`      | Postgres 18                                                    | `localhost:5432`      |
-| `redis`   | Redis 8, the Celery broker                                     | `localhost:6379`      |
 
 Manage the stack with the `./dev` script in the repo root. Every command except `lint` runs in the Docker containers. A command uses the running container when the stack is up, and a temporary one when it is down. Run `./dev help` for the full list.
 
@@ -321,7 +308,7 @@ To change the ports or the database credentials, see [Environment variables](#en
 
 Both Dockerfiles use multi-stage builds. A `dev` stage is for Compose, and the last stage, the default one, is for production:
 
-- Backend: a small image with Python, the virtual environment without dev dependencies, and the app code. It runs `fastapi run` under `newrelic-admin run-program`, which starts the New Relic agent, as a non-root user. Run `alembic upgrade head` in the same image to apply the migrations, `python -m scripts.seed -y` to load the bank data, and `newrelic-admin run-program celery -A app.worker worker --beat` to run the worker.
+- Backend: a small image with Python, the virtual environment without dev dependencies, and the app code. It runs `fastapi run` as a non-root user. Run `alembic upgrade head` in the same image to apply the migrations, and `python -m scripts.seed -y` to load the bank data.
 - Frontend: no image. The frontend deploys as static HTML, JS and CSS files. The last stage holds only the built files, so Docker can copy them out to `src/frontend/dist`. Running `pnpm build` locally gives the same files.
 
 ```sh
@@ -342,22 +329,18 @@ Every variable has a default, so the project runs without any setup.
 | `APP_PORT`                    | Compose                    | `3000`                                                      | Host port for the frontend                                                                         |
 | `API_PORT`                    | Compose                    | `8000`                                                      | Host port for the backend                                                                          |
 | `DB_PORT`                     | Compose                    | `5432`                                                      | Host port for Postgres                                                                             |
-| `REDIS_PORT`                  | Compose                    | `6379`                                                      | Host port for Redis                                                                                |
 | `NGROK_AUTHTOKEN`             | Compose                    |                                                             | ngrok authtoken for `./dev ngrok`, from https://dashboard.ngrok.com                                |
 | `POSTGRES_USER`               | Compose                    | `postgres`                                                  | Database user                                                                                      |
 | `POSTGRES_PASSWORD`           | Compose                    | `postgres`                                                  | Database password                                                                                  |
 | `POSTGRES_DB`                 | Compose                    | `app`                                                       | Database name                                                                                      |
 | `DATABASE_URL`                | Backend                    | `postgresql+asyncpg://postgres:postgres@localhost:5432/app` | Database connection. It must use the `postgresql+asyncpg://` driver                                |
-| `REDIS_URL`                   | Backend                    | `redis://localhost:6379/0`                                  | Redis that Celery sends the tasks through                                                          |
 | `API_PREFIX`                  | Backend                    | `/api`                                                      | Path prefix for every backend route                                                                |
 | `API_URL`                     | Frontend (Vite dev server) | `http://localhost:8000`                                     | Backend that the dev server sends `/api/` requests to                                              |
-| `SENTRY_DSN`                  | Backend, Compose           | empty, Sentry off                                           | [Sentry](https://sentry.io/) project that the API and the worker send errors and traces to         |
+| `SENTRY_DSN`                  | Backend, Compose           | empty, Sentry off                                           | [Sentry](https://sentry.io/) project that the API sends errors and traces to                        |
 | `SENTRY_ENVIRONMENT`          | Backend                    | `development`                                               | Environment name on the Sentry events                                                              |
-| `SENTRY_TRACES_SAMPLE_RATE`   | Backend                    | `1.0`                                                       | Share of the requests and tasks that send a trace, from `0.0` to `1.0`                             |
+| `SENTRY_TRACES_SAMPLE_RATE`   | Backend                    | `1.0`                                                       | Share of the requests that send a trace, from `0.0` to `1.0`                                       |
 | `VITE_SENTRY_DSN`             | Frontend (build), Compose  | empty, Sentry off                                           | Sentry project that the browser sends errors and traces to                                         |
 | `VITE_SENTRY_ENVIRONMENT`     | Frontend (build)           | the Vite mode, `production` in the Docker build             | Environment name on the browser's Sentry events                                                    |
-| `NEW_RELIC_LICENSE_KEY`       | New Relic agent, Compose   | empty, New Relic off                                        | [New Relic](https://newrelic.com/) ingest license key that the API and the worker report with      |
-| `NEW_RELIC_APP_NAME`          | New Relic agent, Compose   | `backend` in Compose                                        | App name in New Relic APM; the deploy sets it to the DigitalOcean app name                         |
 | `OPENAI_API_KEY` | Backend, Compose | empty, OpenAI models off | OpenAI key for the OpenAI models in the [model pool](#model-pool) |
 | `OLLAMA_URL` | Backend, Compose | empty, local models off | Base URL of an Ollama server's OpenAI-compatible API, such as `http://host.docker.internal:11434/v1` |
 | `MODELS` | Backend | four OpenAI models and `qwen2.5:7b` | The model pool, as JSON: `{"<name>": {"provider": "openai" or "ollama", "price": [prompt, completion]}}`, in dollars per million tokens |
@@ -382,8 +365,8 @@ Every variable has a default, so the project runs without any setup.
 
 Where to set them:
 
-- **Compose:** in your shell, or in a `.env` file next to `docker-compose.yml`, for example `API_PORT=8010 docker compose up --build`. Compose builds `DATABASE_URL` from the `POSTGRES_*` variables, and sets `REDIS_URL` to the `redis` service and `API_URL` to the `api` service, so you do not set those three yourself.
-- **Backend outside Docker:** in your shell, or in `src/backend/.env`. The New Relic agent reads only the shell, not `.env`.
+- **Compose:** in your shell, or in a `.env` file next to `docker-compose.yml`, for example `API_PORT=8010 docker compose up --build`. Compose builds `DATABASE_URL` from the `POSTGRES_*` variables, and sets `API_URL` to the `api` service, so you do not set those two yourself.
+- **Backend outside Docker:** in your shell, or in `src/backend/.env`.
 - **Frontend outside Docker:** in your shell, for example `API_URL=http://localhost:8010 pnpm dev`.
 
 ## Pre-commit hooks
@@ -421,19 +404,17 @@ GitHub Actions runs these workflows from `.github/workflows`:
 | --------- | -------------------------------------------------------------------- | -------------------------------- |
 | `web`     | The frontend's static files, built with `pnpm build`                 | free                             |
 | `api`     | The backend image, at `/api`                                         | $5                               |
-| `worker`  | The backend image, with `celery -A app.worker worker --beat`         | $5                               |
 | `migrate` | `alembic upgrade head`, before every deploy                          | per run                          |
 | `db`      | A managed Postgres cluster, `<app name>-db`, created on first deploy | $15                              |
-| `redis`   | A managed Valkey cluster, `<app name>-valkey`, the Celery broker     | $15                              |
 
-That is about $40 a month, or about $1.30 a day. The app gets a URL like `https://<app name>-xxxxx.ondigitalocean.app`, where `/` serves the frontend and `/api/*` goes to the backend unchanged.
+That is about $20 a month, or about $0.70 a day. The app gets a URL like `https://<app name>-xxxxx.ondigitalocean.app`, where `/` serves the frontend and `/api/*` goes to the backend unchanged.
 
 Set it up once:
 
 1. In DigitalOcean, create a [personal access token](https://cloud.digitalocean.com/account/api/tokens) with full access.
 2. Give DigitalOcean access to the repository: install the [DigitalOcean GitHub app](https://github.com/apps/digitalocean) on it.
 3. In the repository settings on GitHub, under **Secrets and variables → Actions**, add the secret `DIGITALOCEAN_ACCESS_TOKEN` with the token, and the variable `DIGITALOCEAN_APP_NAME` with a name for the app: lowercase letters, digits and dashes, at most 29 characters.
-4. Push to `main`, or run the Main workflow from the Actions tab. The first run creates the database clusters, which takes about five minutes, and then the app. The URL is in the deploy job's log and in the DigitalOcean console.
+4. Push to `main`, or run the Main workflow from the Actions tab. The first run creates the database cluster, which takes about five minutes, and then the app. The URL is in the deploy job's log and in the DigitalOcean console.
 
 Without the `DIGITALOCEAN_APP_NAME` variable, `main.yml` skips the deploy.
 

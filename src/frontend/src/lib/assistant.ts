@@ -61,16 +61,16 @@ async function* readEvents(response: Response): AsyncGenerator<ChatEvent> {
   }
 }
 
-export type ChatTurn = { role: string; content: string }
+type ChatTurn = { role: string; content: string }
 
 // The answer so far: its text, whether the control layer blocked the prompt
 // or withheld the answer, and the request's trace id.
-export type ChatChunk = { text: string; blocked: boolean; traceId: string }
+type ChatChunk = { text: string; blocked: boolean; traceId: string }
 
 // Sends the whole conversation to the control layer's OpenAI-compatible API,
 // which checks the new message before the model sees it, and yields the
 // answer as it streams. headers go with the request.
-export async function* streamChat(
+async function* streamChat(
   conversation: ChatTurn[],
   signal: AbortSignal,
   headers: Record<string, string> = {}

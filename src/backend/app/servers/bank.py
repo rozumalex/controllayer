@@ -154,9 +154,6 @@ def open_for_business(account: BankAccount) -> None:
         )
 
 
-# Reading
-
-
 @bank.tool(annotations=READ)
 async def search_clients(
     name: str | None = None,
@@ -295,8 +292,6 @@ async def search_research(
     return found
 
 
-# Payments and AML
-
 PAYMENT_TYPES = ["WIRE", "SEPA", "ACH", "FX_TRANSFER"]
 
 
@@ -381,9 +376,6 @@ async def flag_transaction(transaction_id: str, reason: str) -> dict[str, Any]:
         return {"transaction": row(transaction)}
 
 
-# Accounts
-
-
 @bank.tool(annotations=DESTRUCTIVE)
 async def restrict_account(
     account_id: str, restriction: Literal["RISK_REVIEW", "LEGAL_HOLD"]
@@ -412,9 +404,6 @@ async def lift_restriction(account_id: str) -> dict[str, Any]:
         account.status = "OPEN"
         account.restriction_flag = "NONE"
         return {"account": row(account)}
-
-
-# Trading
 
 
 def settlement_date(asset_class: str, day: date) -> date:
@@ -503,9 +492,6 @@ async def cancel_trade(trade_id: str, reason: str) -> dict[str, Any]:
         trade.status = "CANCELLED"
         trade.internal_comment = stamped(trade.internal_comment, f"Cancelled: {reason}")
         return {"trade": row(trade)}
-
-
-# Clients
 
 
 @bank.tool(annotations=WRITE)
