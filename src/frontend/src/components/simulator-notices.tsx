@@ -45,7 +45,7 @@ const STORIES = [
   {
     lead: "Last night an email went out to Golden Socks staff: “Your Microsoft 365 password expires today, keep it here.” One employee clicked, typed their password into your look-alike page, and went to bed.",
     quiet:
-      "The employee is asleep, dreaming of a bonus. IT is asleep, dreaming of fewer tickets.",
+      "The employee is proud they changed their password on time. IT is busy fixing the printer again.",
   },
   {
     lead: "Last week a Golden Socks employee installed a “free PDF converter” on their work laptop. It was your infostealer. Overnight it sent you every cookie in their browser, the bank's single sign-on session among them.",
