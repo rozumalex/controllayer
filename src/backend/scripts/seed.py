@@ -10,13 +10,13 @@ events, are kept, and other staff are removed with their traces and chats.
 The Managing Director's row becomes the demo account, so the bank has three
 people.
 Rows that predate organizations join it too. It also saves the policies in
-scripts/policies.yaml for the demo's roles that have none, so a policy
-someone changed is kept, removes the policies of other roles, and saves the
-demo account that "Try the demo" signs in as, and makes the demo's
-directory look synced by SCIM: a group for each role, the rules that give
-each group its role, a SCIM token and a provisioning log. Other users and
-tables are
-left alone, so it is safe to run again. Apply the migrations first.
+scripts/policies.yaml over the demo's, removes the policies of other roles,
+saves the demo account that "Try the demo" signs in as, registers the bank
+MCP server, loads the staff's recorded chats as control events, and makes
+the demo's directory look synced by SCIM: a group for each role and none
+for other roles, the rules that give each group its role, a SCIM token and
+a provisioning log. Other users and tables are left alone, so it is safe to
+run again. Apply the migrations first.
 
 Run from src/backend: `uv run python -m scripts.seed`, or `./dev seed` from
 the repo root. Pass `--url <postgres url>` to seed another database, such as
@@ -28,6 +28,7 @@ import asyncio
 import csv
 import gzip
 import hashlib
+import json
 import secrets
 import sys
 import uuid
@@ -51,9 +52,11 @@ from app.db import models  # noqa: F401  registers the models in Base.metadata
 from app.db.base import Base
 from app.db.models import (
     BankClient,
+    ControlEvent,
     DirectoryEvent,
     DirectoryGroup,
     IdentityProvider,
+    McpServer,
     Organization,
     Policy,
     User,
@@ -86,6 +89,16 @@ DEMO_IDP = {
     "default_role": None,
     "enabled": True,
 }
+# The example bank MCP server, which the API serves itself on its port.
+BANK_SERVER = {
+    "name": "bank",
+    "url": f"http://localhost:8000{settings.api_prefix}/bank/mcp",
+    "auth_header": f"Bearer {settings.bank_mcp_token}",
+    "enabled": True,
+}
+# The staff's chats since yesterday afternoon, recorded by
+# scripts/record_activity.py: the control layer's events, by role.
+ACTIVITY = Path(__file__).resolve().parent / "activity.json.gz"
 # The tables whose rows belong to an organization, and may predate them.
 ORG_TABLES = ["users", "mcp_servers", "control_events"]
 
@@ -232,6 +245,13 @@ async def seed_directory(connection: AsyncConnection, demo: uuid.UUID) -> None:
     )
     titles = await connection.scalars(select(User.title).where(*staff).distinct())
     roles = [title for title in titles if title]
+    # The groups of roles the bank no longer has, with their members.
+    await connection.execute(
+        delete(DirectoryGroup).where(
+            DirectoryGroup.org_id == demo,
+            DirectoryGroup.display_name.not_in([group_of(r) for r in roles]),
+        )
+    )
     groups = {}
     for role in roles:
         groups[role] = await connection.scalar(
@@ -306,6 +326,45 @@ async def seed_directory(connection: AsyncConnection, demo: uuid.UUID) -> None:
     print(f"demo directory: {len(roles)} groups, {len(log)} log entries")
 
 
+async def seed_activity(connection: AsyncConnection, demo: uuid.UUID) -> None:
+    """Gives the demo the recorded chats in place of its control events, each
+    by the user of its role: the demo account is the Managing Director.
+    Without the recording, the events are left alone."""
+    if not ACTIVITY.exists():
+        print(f"control events: no {ACTIVITY.name} to load")
+        return
+    with gzip.open(ACTIVITY, "rt") as file:
+        events = json.load(file)
+    staff = await connection.execute(
+        select(User.title, User.id).where(
+            User.org_id == demo, User.email.like(f"%@{STAFF_DOMAIN}")
+        )
+    )
+    users = {title: str(id) for title, id in staff}
+    users["Managing Director"] = str(
+        await connection.scalar(
+            select(User.id).where(
+                User.org_id == demo, User.email == settings.demo_email
+            )
+        )
+    )
+    await connection.execute(delete(ControlEvent).where(ControlEvent.org_id == demo))
+    rows = [
+        {
+            "trace_id": e["trace_id"],
+            "event": e["event"],
+            "action": e["action"],
+            "user_id": users[e["role"]],
+            "org_id": demo,
+            "data": {**e["data"], "user_id": users[e["role"]], "org_id": str(demo)},
+            "created_at": datetime.fromisoformat(e["at"]),
+        }
+        for e in events
+    ]
+    await connection.execute(insert(ControlEvent).values(rows))
+    print(f"control events: {len(rows)} recorded")
+
+
 async def seed(url: str) -> None:
     tables = seeded_tables()
     engine = create_async_engine(url, poolclass=NullPool)
@@ -369,21 +428,23 @@ async def seed(url: str) -> None:
                     {"demo": demo},
                 )
                 print(f"{name}: {joined.rowcount} joined the demo organization")
-            added = await connection.execute(
-                insert(Policy)
-                .values(
-                    [
-                        {
-                            "org_id": demo,
-                            "role": role,
-                            "settings": policy.model_dump(mode="json"),
-                        }
-                        for role, policy in POLICIES.items()
-                    ]
-                )
-                .on_conflict_do_nothing(index_elements=[Policy.org_id, Policy.role])
+            policies = insert(Policy).values(
+                [
+                    {
+                        "org_id": demo,
+                        "role": role,
+                        "settings": policy.model_dump(mode="json"),
+                    }
+                    for role, policy in POLICIES.items()
+                ]
             )
-            print(f"policies: {added.rowcount} new of {len(POLICIES)}")
+            added = await connection.execute(
+                policies.on_conflict_do_update(
+                    index_elements=[Policy.org_id, Policy.role],
+                    set_={"settings": policies.excluded.settings},
+                )
+            )
+            print(f"policies: {added.rowcount} saved")
             dropped = await connection.execute(
                 delete(Policy).where(
                     Policy.org_id == demo, Policy.role.not_in(list(POLICIES))
@@ -414,6 +475,15 @@ async def seed(url: str) -> None:
             )
             print(f"demo single sign-on: {DEMO_IDP['name']}")
             await seed_directory(connection, demo)
+            await connection.execute(
+                insert(McpServer)
+                .values(org_id=demo, **BANK_SERVER)
+                .on_conflict_do_update(
+                    constraint="mcp_servers_org_id_name_key", set_=BANK_SERVER
+                )
+            )
+            print(f"bank MCP server: {BANK_SERVER['url']}")
+            await seed_activity(connection, demo)
     finally:
         await engine.dispose()
 

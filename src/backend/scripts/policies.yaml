@@ -1,9 +1,7 @@
 # The policies of the AI Control Layer, one for each Golden Socks role.
 #
-# `./dev seed` saves the policy of every role below that has none in the
-# database yet, so a policy someone changed on the Policies page is kept. To
-# apply a change to this file to a role that already has a policy, reset that
-# role on the Policies page first, or delete its row in `policies`.
+# `./dev seed` saves these policies over the demo organization's, on every
+# deploy. Each demo sandbox copies them, and a visitor changes only their own.
 #
 # A role is a job title in users. The role "*" is the default: it applies to
 # every job title without a policy of its own.
