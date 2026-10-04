@@ -31,7 +31,7 @@ const STEPS = [
   ],
   [
     "Or bring an army.",
-    "Press Attack, and our 1,057 attacks run live through the real agent, Portcullis and the bank's MCP server.",
+    "Press Attack, and our attack corpus runs live through the real agent and model, Portcullis and the bank's MCP server, in a new order every time.",
   ],
   [
     "Turn protection off",
@@ -132,7 +132,7 @@ function content(notice: Notice): {
               <b>lock the account</b>.
             </p>
             <p className="text-xs text-muted-foreground">
-              Demo data only. Anything you write to the bank is rolled back.
+              Demo data only: the bank and its clients are made up.
             </p>
           </>
         ),

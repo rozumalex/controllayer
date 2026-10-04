@@ -11,6 +11,7 @@ from app.control.guards.lockout import LockoutGuard
 from app.control.guards.prompt_injection import PromptInjectionGuard
 from app.control.guards.spotlight import SpotlightGuard
 from app.control.pipeline import Mode, Pipeline
+from app.control.upstream import MockUpstream, completion
 from app.core import simulator
 from app.core.assistant import SYSTEM_PROMPT
 from app.core.config import settings
@@ -26,6 +27,21 @@ CHAT = "/api/v1/chat/completions"
 LEAK_PROMPT = next(g for g in GOALS if g.id == "leak_prompt")
 
 
+class LeakingModel(MockUpstream):
+    """A model that answers anything with its system prompt, and spends
+    enough tokens to show on a budget."""
+
+    def __init__(self, model: str) -> None:
+        super().__init__()
+        self.model = model
+
+    async def complete(self, request: dict[str, Any]) -> dict[str, Any]:
+        response = completion(self.model, SYSTEM_PROMPT, "stop")
+        used = {"prompt_tokens": 10_000, "completion_tokens": 1_000}
+        response["usage"] = {**used, "total_tokens": 11_000}
+        return response
+
+
 @pytest.fixture(autouse=True)
 def no_pace(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(simulator, "PACE", 0)
@@ -35,7 +51,9 @@ def simulate(
     user: User, security: bool, budget: Budget | None = None
 ) -> dict[str, Any]:
     settings = builtin_policy().model_copy(update={"budget": budget or Budget()})
-    run = Simulation(user, "Analyst", settings, [LEAK_PROMPT], security)
+    run = Simulation(
+        user, "Analyst", settings, [LEAK_PROMPT], security, upstream=LeakingModel
+    )
 
     async def last() -> dict[str, Any]:
         events = [event async for event in run.run()]
