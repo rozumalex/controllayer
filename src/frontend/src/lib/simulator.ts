@@ -15,7 +15,7 @@ export type Account = {
   out_of_budget: boolean
 }
 
-export type AttackGoal = {
+type AttackGoal = {
   id: string
   title: string
   description: string
@@ -26,7 +26,7 @@ export type ChecklistItem = { id: string; title: string; description: string }
 
 // An OWASP Top 10 risk for LLM applications, with the guards whose stops
 // count toward it. A risk with no guards isn't covered.
-export type Risk = { id: string; title: string; guards: string[] }
+type Risk = { id: string; title: string; guards: string[] }
 
 export type Simulator = {
   accounts: Account[]
@@ -51,7 +51,7 @@ export type CaseStatus =
   | "locked_out"
   | "unlocked"
 
-export type Verdict = {
+type Verdict = {
   direction: string
   tool: string
   guard: string
@@ -98,7 +98,7 @@ export type CaseEvent = {
   run_id?: string | null
 }
 
-export type RunTotals = {
+type RunTotals = {
   outcome: "done" | "out_of_budget" | "over_budget" | "locked_out" | "stopped"
   goal: string
   role: string
@@ -129,8 +129,6 @@ export type PromptEvent = {
   turn: number
   turns: number
 }
-
-export type AttackRun = RunTotals & { trace_id: string; created_at: string }
 
 export type AttackRequest = {
   role: string
@@ -200,21 +198,6 @@ export async function unlock(role: string): Promise<CaseEvent> {
 // The account's logs: its attack cases and chat answers, oldest first.
 export const fetchCases = (role: string) =>
   get<CaseEvent[]>(`/api/demo/cases?role=${encodeURIComponent(role)}`)
-
-// A request the layer checked, as GET /api/demo/history gives it.
-export type HistoryEntry = {
-  trace_id: string
-  created_at: string
-  user: string | null
-  status: "blocked" | "contained" | "passed" | "allowed"
-  guard: string | null
-  reason: string | null
-  verdicts: Verdict[]
-}
-
-export const fetchHistory = () => get<HistoryEntry[]>("/api/demo/history")
-
-export const fetchRuns = () => get<AttackRun[]>("/api/demo/runs")
 
 // Runs an attack and calls onEvent with each line the server streams. Abort
 // the signal to stop it. Before each line it waits for wait, which pauses the

@@ -66,7 +66,6 @@ const STORIES = [
 
 const STORY = STORIES[Math.floor(Math.random() * STORIES.length)]
 
-// The moments of a run worth stopping for, each with what it means.
 export type ScenarioNotice = {
   owasp: string
   title: string
@@ -74,6 +73,7 @@ export type ScenarioNotice = {
   story: string
 }
 
+// The moments of a run worth stopping for, each with what it means.
 export type Notice =
   | { kind: "welcome" }
   | { kind: "breach"; stolen: number; security: boolean }

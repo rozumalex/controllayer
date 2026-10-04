@@ -1,6 +1,6 @@
 """The control layer's OpenAI-compatible API. Any OpenAI client reaches the
 bank assistant and the model pool through it: it sets the base URL to /api/v1
-and the API key to the user's ID."""
+and the API key to the session token from sign-in."""
 
 import json
 import logging

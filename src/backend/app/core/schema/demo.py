@@ -1,5 +1,3 @@
-from datetime import datetime
-from decimal import Decimal
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -29,7 +27,7 @@ class AttackGoal(BaseModel):
     id: str
     title: str
     description: str
-    cases: int = Field(description="The corpus cases the goal replays.")
+    cases: int = Field(description="The scenario turns that go after the goal.")
 
 
 class ChecklistItem(BaseModel):
@@ -71,7 +69,7 @@ class Case(BaseModel):
     an attack, or a chat answer."""
 
     type: Literal["case"] = "case"
-    id: str = Field(description="The corpus case, or chat.")
+    id: str = Field(description="The scenario turn, or chat.")
     category: str
     source: str
     mutation: str
@@ -126,42 +124,3 @@ class AttackNextRequest(BaseModel):
         default=None,
         description="When set, the next scenario uses this protection setting.",
     )
-
-
-class AttackRun(BaseModel):
-    trace_id: str = Field(description="The trace of the run's last case.")
-    created_at: datetime
-    outcome: Literal["done", "out_of_budget", "over_budget", "locked_out", "stopped"]
-    goal: str
-    role: str
-    security: bool
-    cases: int
-    blocked: int
-    landed: int
-    false_alarms: int
-    stolen: int = Field(
-        description="Client data, the canary password and system prompt leaks "
-        "that got out."
-    )
-    tokens: int
-    usd: Decimal
-    guards: dict[str, int] = Field(description="Attacks each guard stopped.")
-
-
-class HistoryVerdict(BaseModel):
-    direction: str | None = None
-    tool: str | None = None
-    guard: str
-    action: str
-    reason: str = ""
-    latency_ms: float = 0
-
-
-class HistoryEntry(BaseModel):
-    trace_id: str
-    created_at: datetime
-    user: str | None = Field(description="The name of the user it ran as.")
-    status: Literal["blocked", "contained", "passed", "allowed"]
-    guard: str | None = Field(description="The guard that blocked it, or would.")
-    reason: str | None
-    verdicts: list[HistoryVerdict]

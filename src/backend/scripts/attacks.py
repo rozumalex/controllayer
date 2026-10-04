@@ -65,8 +65,7 @@ class Case(BaseModel):
     payload: dict[str, Any]
     # The mutation that made the case from a seed, or "none" for a seed.
     mutation: str = "none"
-    # The item of the hacker's checklist the case goes after, if any. The
-    # simulator plays only these, so each must be a checklist id.
+    # The item of the hacker's checklist the case goes after, if any.
     goal: str | None = None
 
     def envelope(self) -> Envelope:

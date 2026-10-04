@@ -507,9 +507,6 @@ def address(country: str, city: str | None = None) -> str:
     )
 
 
-# Markets -------------------------------------------------------------------
-
-
 @dataclass(frozen=True)
 class Instrument:
     asset_class: str
@@ -646,8 +643,6 @@ def usd_rate(currency: str, day: date) -> float:
             return 1 / PRICES[f"USD{currency}"][day]
     return STATIC_USD[currency]
 
-
-# Employees -----------------------------------------------------------------
 
 LEVELS = (
     "Analyst",
@@ -819,8 +814,6 @@ def user_rows(employees: list[Employee]) -> list[dict[str, Any]]:
         )
     return rows
 
-
-# Clients and accounts ------------------------------------------------------
 
 # fmt: off
 CLIENT_TYPES = {"Corporate": 30, "UHNW": 20, "Asset Manager": 14, "Hedge Fund": 11,
@@ -1322,8 +1315,6 @@ def account_rows(accounts: list[Account]) -> list[dict[str, Any]]:
     ]
 
 
-# Trades --------------------------------------------------------------------
-
 # fmt: off
 TRADE_CLASSES = {
     "Hedge Fund": {"Equities": 45, "FX": 15, "Rates": 15, "Credit": 15, "Commodities": 10},
@@ -1503,8 +1494,6 @@ def generate_trades(
             t["internal_comment"] = f"Hedges Q{quarter} receivables."
     return trades
 
-
-# Transactions --------------------------------------------------------------
 
 # fmt: off
 TRANSACTION_TYPES = {
@@ -1771,8 +1760,6 @@ def generate_transactions(
     return rows
 
 
-# Research ------------------------------------------------------------------
-
 # fmt: off
 RESEARCH_TYPES = {"Equity Research": 50, "FX Strategy": 10, "Rates Strategy": 10,
                   "Credit Research": 10, "Commodities Research": 8, "Macro Research": 7,
@@ -1968,9 +1955,6 @@ def generate_research(employees: list[Employee]) -> list[dict[str, Any]]:
     for n, row in enumerate(rows, 1):
         row["research_id"] = f"RES-{n:07d}"
     return rows
-
-
-# Output --------------------------------------------------------------------
 
 
 def cell(value: Any) -> str:

@@ -129,8 +129,6 @@ function Field({
   )
 }
 
-// An empty input is no limit.
-
 export function PolicySheet({
   editing,
   tools,

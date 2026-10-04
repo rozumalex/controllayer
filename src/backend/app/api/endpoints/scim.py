@@ -104,9 +104,6 @@ def listing(resources: list[dict[str, Any]], total: int, start: int) -> JSONResp
     )
 
 
-# Users
-
-
 def user_resource(user: User) -> dict[str, Any]:
     given, _, family = user.name.partition(" ")
     resource: dict[str, Any] = {
@@ -246,9 +243,6 @@ async def delete_user(id: str, org: Org, session: Session) -> Response:
     await deactivate(session, await own_user(session, org, id))
     await session.commit()
     return Response(status_code=204)
-
-
-# Groups
 
 
 def group_resource(group: DirectoryGroup) -> dict[str, Any]:

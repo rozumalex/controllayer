@@ -5,13 +5,13 @@ import { userHeaders } from "@/lib/users"
 export type Outcome =
   "allowed" | "suspicious" | "flagged" | "blocked" | "error" | "unlocked"
 
-export type Usage = {
+type Usage = {
   prompt_tokens: number
   completion_tokens: number
   total_tokens: number
 }
 
-export type Finding = {
+type Finding = {
   guard: string
   action: string
   reason: string
@@ -34,7 +34,7 @@ export type TraceSummary = {
   duration_ms: number
 }
 
-export type Stats = {
+type Stats = {
   requests: number
   blocked: number
   flagged: number
@@ -68,7 +68,7 @@ export const fetchTrace = (traceId: string) =>
 
 export type Range = "1h" | "24h" | "7d"
 
-export type Bucket = {
+type Bucket = {
   start: string
   allowed: number
   suspicious: number
@@ -81,7 +81,7 @@ export type Bucket = {
   p95_ms: number | null
 }
 
-export type FindingCount = { guard: string; reason: string; count: number }
+type FindingCount = { guard: string; reason: string; count: number }
 
 export type Analytics = {
   range: Range
