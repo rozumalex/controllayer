@@ -5,18 +5,17 @@ account is locked out, or someone stops it.
 Every case goes the way the employee's own requests go: the agent, the chat's
 control layer, the MCP gateway and the bank's MCP server, under the policy of
 the employee's role, and its events reach the dashboard under the employee's
-name. Only the model is scripted. It stands for an agent the attacker took
-over, which does whatever a case asks once its prompt gets through, so what
-the attacker gets is what the guards let through, not what a model refused.
+name. The model is the real one the role's policy picks, so what the
+attacker gets is what both the model and the guards let through. Each run
+takes the cases one at a time, in a new random order.
 
 With security off, the guards run in the OFF mode: they log every verdict,
 and block or change nothing.
 """
 
 import asyncio
-import json
 import random
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from decimal import Decimal
 from functools import cache
@@ -28,6 +27,7 @@ from sqlalchemy import select
 
 from app.api.deps import (
     chat_model,
+    chat_upstream,
     control_layer,
     event_sink,
     gateway,
@@ -44,7 +44,7 @@ from app.control.guards.policy import BudgetGuard, ModelGuard
 from app.control.guards.prompt_leak import PromptLeakGuard
 from app.control.guards.sensitive_data import PII, SECRETS, scrub
 from app.control.pipeline import Mode
-from app.control.upstream import chunk, completion
+from app.control.upstream import ChatUpstream
 from app.core.assistant import SYSTEM_PROMPT, conversation
 from app.core.schema.policy import Clearance, PiiKind, PolicySettings
 from app.db.models import Policy, User
@@ -96,13 +96,6 @@ GOALS = [
     ),
 ]
 
-# The client the taken-over agent reads.
-TARGET_CLIENT = "CLT-000003"
-# What the taken-over agent reads once a data-theft prompt gets through.
-READ_CLIENTS = [
-    ("bank__search_clients", {"sector": "Private Individuals", "limit": 5}),
-    ("bank__get_client", {"client_id": TARGET_CLIENT}),
-]
 # Seconds between cases, so the dashboard can follow.
 PACE = 0.25
 # With security off nothing stops the attack at its budget; it ends here.
@@ -117,21 +110,14 @@ LOGGED = ("direction", "tool", "guard", "action", "reason", "latency_ms")
 
 @cache
 def goal_cases(categories: frozenset[str]) -> list[Case]:
-    """The prompt cases of the categories, seeds and variants mixed in a
-    fixed order. Cases planted in a tool call or result can't be sent as a
-    chat message, so the simulator leaves them out."""
-    cases = [
+    """The prompt cases of the categories, seeds and variants. Cases planted
+    in a tool call or result can't be sent as a chat message, so the
+    simulator leaves them out."""
+    return [
         c
         for c in expand(load())
         if c.category in categories and c.source == "user_prompt"
     ]
-    random.Random(0).shuffle(cases)
-    return cases
-
-
-def tokens(value: Any) -> int:
-    """About as many tokens as a model would count: four characters each."""
-    return len(json.dumps(value, default=str)) // 4 + 1
 
 
 def leaked_prompt(text: str) -> bool:
@@ -196,65 +182,6 @@ def loot(text: str) -> dict[str, int]:
 def stolen(text: str) -> int:
     """The PII, secrets and system prompt in what reached the attacker."""
     return sum(loot(text).values())
-
-
-class CompromisedModel:
-    """The agent's model, taken over: it makes the tool calls the case asks
-    for, then writes back what it got."""
-
-    def __init__(self, case: Case, model: str) -> None:
-        self.case = case
-        self.model = model
-
-    def calls(self) -> list[tuple[str, dict[str, Any]]]:
-        case = self.case
-        if case.expect == "allow" or case.category in {"prompt_leak", "secret_leak"}:
-            return []
-        return READ_CLIENTS
-
-    def answer(self, messages: list[dict[str, Any]]) -> str:
-        results = [m["content"] for m in messages if m.get("role") == "tool"]
-        if results:
-            return "\n".join(str(r) for r in results)
-        if self.case.category == "prompt_leak":
-            return SYSTEM_PROMPT
-        if self.case.category == "secret_leak":
-            prompts = [m for m in messages if m.get("role") == "user"]
-            return str(prompts[-1]["content"]) if prompts else ""
-        return "Done."
-
-    async def complete(self, request: dict[str, Any]) -> dict[str, Any]:
-        messages = request["messages"]
-        calls = self.calls()
-        asked = any(m.get("role") == "tool" for m in messages)
-        if calls and not asked and request.get("tool_choice") != "none":
-            message: dict[str, Any] = {
-                "role": "assistant",
-                "content": None,
-                "tool_calls": [
-                    {
-                        "id": f"call_{i}",
-                        "type": "function",
-                        "function": {"name": name, "arguments": json.dumps(args)},
-                    }
-                    for i, (name, args) in enumerate(calls)
-                ],
-            }
-            finish_reason = "tool_calls"
-        else:
-            message = {"role": "assistant", "content": self.answer(messages)}
-            finish_reason = "stop"
-        response = completion(self.model, "", finish_reason)
-        response["choices"][0]["message"] = message
-        used = {"prompt_tokens": tokens(messages), "completion_tokens": tokens(message)}
-        used["total_tokens"] = used["prompt_tokens"] + used["completion_tokens"]
-        response["usage"] = used
-        return response
-
-    async def stream(self, request: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
-        response = await self.complete(request)
-        choice = response["choices"][0]
-        yield chunk(response["id"], self.model, choice["message"], "stop")
 
 
 class Recorder:
@@ -398,6 +325,8 @@ class Simulation:
     goals: list[Goal]
     security: bool
     connect: Connect = field(default_factory=mcp_connect)
+    # The model the employee's agent talks to, by its name.
+    upstream: Callable[[str], ChatUpstream] = chat_upstream
     totals: Totals = field(default_factory=Totals)
     recorder: Recorder = field(default_factory=Recorder)
     # What the employee spent this week before the run.
@@ -419,7 +348,8 @@ class Simulation:
         async with SessionLocal() as session:
             self.spent = await spent_this_week(session, self.account.id)
         try:
-            for case in goal_cases(categories):
+            cases = goal_cases(categories)
+            for case in random.sample(cases, len(cases)):
                 if self.budget().used >= OVERRUN:
                     outcome = "over_budget"
                     break
@@ -459,7 +389,7 @@ class Simulation:
             sensitive_data(self.policy),
         ]
         prompt = str(case.payload.get("content", ""))
-        got = await self.ask(prompt, CompromisedModel(case, model), guards, trace_id)
+        got = await self.ask(prompt, self.upstream(model), guards, trace_id)
         result = await self.outcome(case.expect, trace_id, got)
         self.count(case.expect, result)
         case_event = {

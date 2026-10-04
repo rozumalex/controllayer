@@ -7,6 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api.deps import chat_control, control_layer
+from app.control import upstream as upstream_module
 from app.control.adapters.openai_chat import ChatControl
 from app.control.pipeline import Mode
 from app.control.upstream import (
@@ -246,6 +247,49 @@ def test_upstream_body_not_json_raises_502(monkeypatch: pytest.MonkeyPatch) -> N
     # then
     assert error.value.status_code == 502
     assert "not JSON" in error.value.body["error"]["message"]
+
+
+def test_upstream_retries_a_rate_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    # given
+    statuses = [429, 429, 200]
+    body = completion("gpt-4.1-mini", "Hello", "stop")
+
+    async def post(*args: Any, **kwargs: Any) -> httpx.Response:
+        request = httpx.Request("POST", "http://upstream")
+        return httpx.Response(statuses.pop(0), json=body, request=request)
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", post)
+    monkeypatch.setattr(upstream_module, "BACKOFF", 0)
+    upstream = OpenAIUpstream("key", "gpt-4.1-mini")
+    request = chat({"role": "user", "content": "Hi"})
+
+    # when
+    response = asyncio.run(upstream.complete(request))
+
+    # then
+    assert response["choices"][0]["message"]["content"] == "Hello"
+    assert statuses == []
+
+
+def test_upstream_gives_up_on_a_lasting_rate_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # given
+    async def post(*args: Any, **kwargs: Any) -> httpx.Response:
+        request = httpx.Request("POST", "http://upstream")
+        return httpx.Response(429, json={"error": {}}, request=request)
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", post)
+    monkeypatch.setattr(upstream_module, "BACKOFF", 0)
+    upstream = OpenAIUpstream("key", "gpt-4.1-mini")
+    request = chat({"role": "user", "content": "Hi"})
+
+    # when
+    with pytest.raises(UpstreamError) as error:
+        asyncio.run(upstream.complete(request))
+
+    # then
+    assert error.value.status_code == 429
 
 
 def events(text: str) -> list[dict[str, Any]]:
