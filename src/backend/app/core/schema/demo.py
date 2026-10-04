@@ -15,6 +15,9 @@ class Account(BaseModel):
         description="Whether the layer locked the account out for too many "
         "blocked attacks in a short time."
     )
+    checklist: list[str] = Field(
+        description="The ids of the checklist items this account can tick."
+    )
 
 
 class AttackGoal(BaseModel):
@@ -71,7 +74,10 @@ class Case(BaseModel):
     reason: str | None
     prompt: str = Field(description="PII and secrets in it are masked once stored.")
     answer: str = Field(description="PII and secrets in it are masked once stored.")
-    stolen: int = Field(description="PII, secrets and prompt leaks that got out.")
+    stolen: int = Field(
+        description="Client data, the canary password and system prompt leaks "
+        "that got out."
+    )
     achieved: list[str] = Field(description="The checklist goals it achieved.")
     risk: str | None = Field(
         description="The OWASP risk of the attack the layer stopped, or None when "
@@ -101,7 +107,10 @@ class AttackRun(BaseModel):
     blocked: int
     landed: int
     false_alarms: int
-    stolen: int = Field(description="PII, secrets and prompt leaks that got out.")
+    stolen: int = Field(
+        description="Client data, the canary password and system prompt leaks "
+        "that got out."
+    )
     tokens: int
     usd: Decimal
     guards: dict[str, int] = Field(description="Attacks each guard stopped.")

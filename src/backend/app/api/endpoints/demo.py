@@ -12,9 +12,10 @@ from fastapi import APIRouter, HTTPException, Query, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 
-from app.api.deps import CurrentUser, OrgId, event_sink, first_employee
+from app.api.deps import CurrentUser, OrgId, UserPolicy, event_sink, first_employee
 from app.api.endpoints.traces import prompt
 from app.control.audit import UserEventSink
+from app.core.checklist import CHECKLIST, above
 from app.core.schema.demo import (
     Account,
     AttackGoal,
@@ -30,7 +31,6 @@ from app.core.schema.demo import (
     UnlockRequest,
 )
 from app.core.simulator import (
-    CHECKLIST,
     ENDINGS,
     GOALS,
     RISKS,
@@ -59,8 +59,17 @@ async def account(user: User, role: str) -> tuple[User, Account]:
         blocked = await recent_blocks(session, employee.id, policy.lockout.seconds)
     limit = policy.lockout.blocks
     locked = bool(limit) and blocked >= limit
+    checklist = [
+        item.id
+        for item in CHECKLIST
+        if item.id != "above_clearance" or above(policy.clearance)
+    ]
     return employee, Account(
-        role=role, name=employee.name, policy=policy, locked=locked
+        role=role,
+        name=employee.name,
+        policy=policy,
+        locked=locked,
+        checklist=checklist,
     )
 
 
@@ -142,7 +151,9 @@ async def unlock(request: UnlockRequest, user: CurrentUser) -> Response:
         "logs, with PII and secrets masked."
     ),
 )
-async def chat_case(request: ChatCaseRequest, org_id: OrgId) -> dict[str, Any]:
+async def chat_case(
+    request: ChatCaseRequest, org_id: OrgId, policy: UserPolicy
+) -> dict[str, Any]:
     async with SessionLocal() as session:
         events = list(
             await session.scalars(
@@ -157,13 +168,13 @@ async def chat_case(request: ChatCaseRequest, org_id: OrgId) -> dict[str, Any]:
     if not events:
         raise HTTPException(404, "Unknown trace")
     case = {
-        **outcome(
+        **await outcome(
             None,
             request.security,
             request.trace_id,
-            [e.data for e in events if e.event == "verdict"],
-            [e.data for e in events if e.event == "upstream_response"],
+            [{**e.data, "event": e.event} for e in events],
             request.answer,
+            policy.clearance,
         ),
         "id": "chat",
         "category": "chat",

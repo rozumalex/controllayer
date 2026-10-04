@@ -15,14 +15,17 @@ from app.core import simulator
 from app.core.assistant import SYSTEM_PROMPT
 from app.core.config import settings
 from app.core.schema.policy import Budget, Clearance
-from app.core.simulator import GOALS, Simulation, loot, risk, stolen
+from app.core.simulator import GOALS, Simulation, risk
 from app.db.models import User
 from app.db.policy import builtin_policy
+from tests.test_bank_mcp import seed
 from tests.test_chat import ask, blocked
 from tests.test_pipeline import MemoryAuditSink
 from tests.test_policy_enforcement import policy, save
 
 CHAT = "/api/v1/chat/completions"
+# A real client's email, in the bank data the tests seed.
+EMAIL = "eleanor.fairbanks@beaconcrestpartners.com"
 LEAK_PROMPT = next(g for g in GOALS if g.id == "leak_prompt")
 
 
@@ -137,35 +140,6 @@ def test_off_mode_logs_but_changes_nothing() -> None:
     assert decision.action is Action.ALLOW
     assert decision.envelope.payload == envelope.payload
     assert [v.action for _, v in audit.events] == [Action.BLOCK, Action.MODIFY]
-
-
-def test_stolen_counts_pii_and_the_system_prompt() -> None:
-    # given
-    text = f"marie.vogel@gmail.com, +41 44 663 05 33\n{SYSTEM_PROMPT}"
-
-    # when / then
-    assert stolen(text) == 3
-
-
-def test_stolen_is_zero_for_redacted_text() -> None:
-    # given
-    text = "[REDACTED:email], [REDACTED:phone]"
-
-    # when / then
-    assert stolen(text) == 0
-
-
-def test_loot_names_the_goal_it_achieves() -> None:
-    # given
-    text = f"marie.vogel@gmail.com\n{SYSTEM_PROMPT}"
-
-    # when / then
-    assert loot(text) == {
-        "steal_contacts": 1,
-        "steal_accounts": 0,
-        "leak_secrets": 0,
-        "leak_prompt": 1,
-    }
 
 
 def test_lockout_blocks_once_the_limit_is_reached() -> None:
@@ -302,9 +276,10 @@ def test_attack_cases_count_toward_a_risk_only_when_stopped(
 
 def test_chat_case_tells_what_an_answer_took(db: None, client: TestClient) -> None:
     # given
+    asyncio.run(seed())
     request = ask("What is 2 + 2?")
     trace_id = client.post(CHAT, json=request).headers["x-trace-id"]
-    answer = f"Sure: marie.vogel@gmail.com\n{SYSTEM_PROMPT}"
+    answer = f"Sure: {EMAIL}\n{SYSTEM_PROMPT}"
     body = {"trace_id": trace_id, "answer": answer, "security": True}
 
     # when
@@ -313,9 +288,9 @@ def test_chat_case_tells_what_an_answer_took(db: None, client: TestClient) -> No
 
     # then
     assert case["status"] == "landed"
-    assert case["achieved"] == ["leak_prompt", "steal_contacts"]
+    assert case["achieved"] == ["above_clearance", "leak_prompt", "steal_contacts"]
     assert [c["trace_id"] for c in logs] == [trace_id]
-    assert "marie.vogel@gmail.com" not in logs[0]["answer"]
+    assert EMAIL not in logs[0]["answer"]
 
 
 def test_chat_with_security_off_lets_an_injection_through(

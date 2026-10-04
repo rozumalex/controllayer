@@ -130,8 +130,6 @@ const TIMELINE = {
 const USAGE = {
   usd: { label: "Spent", color: "#7c3aed" },
 } satisfies ChartConfig
-// The attacker's goals; normal work runs with the attack but isn't one.
-const CHECKLIST = ["steal_data", "leak_prompt", "leak_secrets"]
 const LOGS = 40
 const POINTS = 200
 
@@ -502,6 +500,12 @@ export function Simulator() {
     accounts[0]?.role
   const account = accounts.find((a) => a.role === role)
   const lockout = account?.policy.lockout
+  // The items this account can tick: one cleared for everything can't read
+  // above its clearance.
+  const checklist =
+    setup?.checklist.filter((item) => account?.checklist.includes(item.id)) ??
+    []
+  const ticked = checklist.filter((item) => achieved.has(item.id)).length
 
   const notify = (notice: Notice, once?: string) => {
     if (once && shown.current.has(once)) return
@@ -527,8 +531,10 @@ export function Simulator() {
     const fresh = event.achieved.filter((goal) => !achieved.has(goal))
     if (fresh.length) {
       setAchieved((achieved) => new Set([...achieved, ...fresh]))
-      const title = setup?.goals.find((g) => g.id === fresh[0])?.title
-      if (chat && title) notify({ kind: "achieved", goal: title })
+      for (const id of fresh) {
+        const title = setup?.checklist.find((item) => item.id === id)?.title
+        if (chat && title) notify({ kind: "achieved", goal: title })
+      }
     }
     if (event.stolen && !chat)
       notify({ kind: "breach", stolen: event.stolen, security }, "breach")
@@ -641,6 +647,7 @@ export function Simulator() {
       <div className="flex h-svh flex-col bg-muted/40">
         <NoticeDialog
           notice={notices[0] ?? null}
+          checklist={checklist}
           onClose={() => setNotices((notices) => notices.slice(1))}
         />
         <Header product="Attack simulator">
@@ -727,33 +734,36 @@ export function Simulator() {
               <ScrollArea className="min-h-0 flex-1">
                 <CardContent className="flex flex-col gap-3">
                   <div className="flex flex-col gap-2">
-                    <p className="font-semibold">Hacker's checklist</p>
-                    {setup?.goals
-                      .filter((g) => CHECKLIST.includes(g.id))
-                      .map((g) => (
-                        <div key={g.id} className="flex items-start gap-2">
-                          <Checkbox
-                            className="pointer-events-none mt-0.5 data-[state=checked]:border-destructive data-[state=checked]:bg-destructive"
-                            checked={achieved.has(g.id)}
-                            tabIndex={-1}
-                            aria-readonly
-                          />
-                          <span>
-                            <span
-                              className={cn(
-                                "block font-medium",
-                                achieved.has(g.id) &&
-                                  "text-destructive line-through"
-                              )}
-                            >
-                              {g.title}
-                            </span>
-                            <span className="block text-xs text-muted-foreground">
-                              {g.description}
-                            </span>
+                    <p className="flex justify-between font-semibold">
+                      Hacker's checklist
+                      <span className="text-muted-foreground tabular-nums">
+                        {ticked} / {checklist.length}
+                      </span>
+                    </p>
+                    {checklist.map((g) => (
+                      <div key={g.id} className="flex items-start gap-2">
+                        <Checkbox
+                          className="pointer-events-none mt-0.5 data-[state=checked]:border-destructive data-[state=checked]:bg-destructive"
+                          checked={achieved.has(g.id)}
+                          tabIndex={-1}
+                          aria-readonly
+                        />
+                        <span>
+                          <span
+                            className={cn(
+                              "block font-medium",
+                              achieved.has(g.id) &&
+                                "text-destructive line-through"
+                            )}
+                          >
+                            {g.title}
                           </span>
-                        </div>
-                      ))}
+                          <span className="block text-xs text-muted-foreground">
+                            {g.description}
+                          </span>
+                        </span>
+                      </div>
+                    ))}
                   </div>
 
                   {running ? (

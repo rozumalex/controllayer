@@ -142,7 +142,9 @@ class McpGateway:
         decision = await self.inspect(inbound)
         if decision.action is Action.BLOCK:
             self.looping |= decision.verdicts[-1].guard == LoopGuard.name
-            return await self.respond(trace_id, error(BLOCKED_CALL.format(tool=name)))
+            return await self.respond(
+                trace_id, tool, error(BLOCKED_CALL.format(tool=name))
+            )
 
         async with self.connect(server) as client:
             result = await client.call_tool(tool, decision.envelope.payload)
@@ -158,7 +160,9 @@ class McpGateway:
         )
         decision = await self.inspect(outbound)
         if decision.action is Action.BLOCK:
-            return await self.respond(trace_id, error(WITHHELD))
+            return await self.respond(
+                trace_id, tool, error(WITHHELD), done=not result.is_error
+            )
 
         checked = iter(decision.envelope.payload["content"])
         content = [
@@ -169,6 +173,7 @@ class McpGateway:
         ]
         return await self.respond(
             trace_id,
+            tool,
             types.CallToolResult(
                 content=content,
                 structured_content=decision.envelope.payload.get("structured_content"),
@@ -192,11 +197,20 @@ class McpGateway:
         return decision
 
     async def respond(
-        self, trace_id: str, result: types.CallToolResult
+        self,
+        trace_id: str,
+        tool: str,
+        result: types.CallToolResult,
+        done: bool | None = None,
     ) -> types.CallToolResult:
+        """Logs the result the agent gets. done tells whether the server
+        carried out the call, which a withheld result hides: by default,
+        whether the result is not an error."""
         await self.log(
             trace_id,
             "response",
+            tool=tool,
+            done=not result.is_error if done is None else done,
             is_error=bool(result.is_error),
             body=result.model_dump(mode="json", exclude_none=True),
         )

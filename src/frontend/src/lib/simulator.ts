@@ -9,6 +9,8 @@ export type Account = {
   policy: PolicySettings
   // Whether the layer locked the account out for too many blocked attacks.
   locked: boolean
+  // The ids of the checklist items this account can tick.
+  checklist: string[]
 }
 
 export type AttackGoal = {
