@@ -111,6 +111,7 @@ const GUARD_STYLES: Record<string, string> = {
   data_flow: "bg-sky-500/15 text-sky-700",
   attack_signatures: "bg-red-500/15 text-red-700",
   policy_tools: "bg-slate-500/15 text-slate-700",
+  policy_tools_listed: "bg-slate-500/15 text-slate-700",
   prompt_leak: "bg-fuchsia-500/15 text-fuchsia-700",
   policy_budget: "bg-orange-500/15 text-orange-700",
   rate_limit: "bg-orange-500/15 text-orange-700",

@@ -47,6 +47,10 @@
 #                          redact - the call goes through, and its result is
 #                                   masked down to public data, PII included;
 #                          block  - the call is refused.
+#   show_blocked_tools   true to show agents the tools the role blocks,
+#                        marked as blocked, so the user knows they exist. A
+#                        call to one is still refused, but doesn't count
+#                        toward a lockout. Off when left out.
 #
 # Secrets, such as API keys and passwords, are always blocked before they
 # reach a model. No policy can allow them.

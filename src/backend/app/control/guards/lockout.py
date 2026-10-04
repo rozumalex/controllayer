@@ -11,8 +11,8 @@ Only an attack counts: a block by one of the ATTACKS guards on what the user
 sent, their prompt or their agent's tool call, or on the answer they drew
 out. A poisoned tool result is the tool's fault, not the user's, so it counts
 against the tool (see spoiled_tool.py). A block by the budget, the rate
-limit, a model the role can't use, a secret pasted by mistake or a runaway
-loop stops that request only."""
+limit, a model the role can't use, a secret pasted by mistake, a runaway
+loop or a call to a tool the role shows as blocked stops that request only."""
 
 from typing import Any
 

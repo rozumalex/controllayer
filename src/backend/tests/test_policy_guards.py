@@ -3,10 +3,12 @@ import json
 from decimal import Decimal
 from typing import Any
 
+import mcp_types as types
 import pytest
 
 from app.control.envelope import Action, Direction, Envelope, Verdict
 from app.control.guard import Guard
+from app.control.guards.lockout import ATTACKS
 from app.control.guards.policy import (
     BudgetGuard,
     ClearanceGuard,
@@ -114,6 +116,50 @@ def test_tool_access(
 
     # when / then
     assert inspect(guard, call("get_client")).action is action
+
+
+TOOLS = [
+    types.Tool(name="bank__get_client", description="A client.", input_schema={}),
+    types.Tool(name="bank__restrict_account", input_schema={}),
+]
+BLOCKED = {"bank__restrict_account": ToolAction.BLOCK}
+
+
+def test_blocked_tools_are_not_listed() -> None:
+    # given
+    guard = ToolAccessGuard(BLOCKED, ToolAction.ALLOW)
+
+    # when
+    listed = guard.listed(TOOLS)
+
+    # then
+    assert [t.name for t in listed] == ["bank__get_client"]
+
+
+def test_blocked_tools_are_listed_as_blocked_when_shown() -> None:
+    # given
+    guard = ToolAccessGuard(BLOCKED, ToolAction.ALLOW, show_blocked=True)
+
+    # when
+    allowed, blocked = guard.listed(TOOLS)
+
+    # then
+    assert allowed == TOOLS[0]
+    assert blocked.name == "bank__restrict_account"
+    assert blocked.description is not None
+    assert blocked.description.startswith("Blocked for your role")
+
+
+def test_call_to_a_shown_blocked_tool_is_no_attack() -> None:
+    # given
+    guard = ToolAccessGuard(BLOCKED, ToolAction.ALLOW, show_blocked=True)
+
+    # when
+    verdict = inspect(guard, call("restrict_account"))
+
+    # then
+    assert verdict.action is Action.BLOCK
+    assert verdict.guard not in ATTACKS
 
 
 def test_data_within_clearance_passes() -> None:

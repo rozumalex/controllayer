@@ -197,7 +197,7 @@ def test_model_never_sees_a_blocked_tool() -> None:
     upstream = ToolUsingUpstream("crm__get_client", {"client_id": "C1"})
     control = ChatControl(control_layer(), upstream, check_tools=False)
     tools = ToolAccessGuard(settings.tools, settings.default_tool_action)
-    subject = Agent(control, gateway(settings), allows=tools.allows)
+    subject = Agent(control, gateway(settings), listed=tools.listed)
 
     # when
     asyncio.run(subject.complete(QUESTION, "trace"))

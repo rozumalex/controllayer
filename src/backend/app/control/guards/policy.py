@@ -9,6 +9,8 @@ from collections.abc import Mapping
 from decimal import Decimal
 from typing import Any
 
+import mcp_types as types
+
 from app.control.envelope import Action, Direction, Envelope, Verdict
 from app.core.schema.policy import Budget, Clearance, ToolAction
 
@@ -93,17 +95,48 @@ def share(used: int | Decimal, limit: int | Decimal) -> float:
     return float(used / limit) if limit else 1.0
 
 
+def blocked_description(tool: types.Tool) -> str:
+    note = "Blocked for your role: a call to it is refused. Don't call it."
+    return f"{note} {tool.description}" if tool.description else note
+
+
 class ToolAccessGuard:
-    """Blocks a call to a tool the role's policy blocks."""
+    """Blocks a call to a tool the role's policy blocks.
+
+    Agents see a blocked tool only when the policy shows blocked tools, and
+    then a call to it is a mistake, not an attack: it blocks under the name
+    LISTED, which the lockout doesn't count."""
 
     name = "policy_tools"
+    LISTED = "policy_tools_listed"
 
-    def __init__(self, tools: Mapping[str, ToolAction], default: ToolAction) -> None:
+    def __init__(
+        self,
+        tools: Mapping[str, ToolAction],
+        default: ToolAction,
+        show_blocked: bool = False,
+    ) -> None:
         self.tools = tools
         self.default = default
+        self.show_blocked = show_blocked
+        if show_blocked:
+            self.name = self.LISTED
 
     def allows(self, name: str) -> bool:
         return tool_action(self.tools, self.default, name) is not ToolAction.BLOCK
+
+    def listed(self, tools: list[types.Tool]) -> list[types.Tool]:
+        """The tools agents see: the allowed ones, then, if the policy shows
+        them, the blocked ones, marked as blocked."""
+        allowed = [t for t in tools if self.allows(t.name)]
+        if not self.show_blocked:
+            return allowed
+        blocked = [
+            t.model_copy(update={"description": blocked_description(t)})
+            for t in tools
+            if not self.allows(t.name)
+        ]
+        return allowed + blocked
 
     async def inspect(self, envelope: Envelope) -> Verdict:
         name = f"{envelope.server}{SEPARATOR}{envelope.tool}"

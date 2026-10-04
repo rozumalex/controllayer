@@ -44,6 +44,7 @@ const GUARDS = [
   "policy_model",
   "policy_budget",
   "policy_tools",
+  "policy_tools_listed",
   "policy_clearance",
   "data_flow",
 ]
