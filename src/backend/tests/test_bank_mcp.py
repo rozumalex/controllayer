@@ -373,7 +373,10 @@ def test_research_by_symbol(data: None) -> None:
     result = ok("search_research", symbol="sap")
 
     # then
-    assert [r["research_id"] for r in result["research"]] == ["RES-0000001"]
+    ids = [r["research_id"] for r in result["research"]]
+    assert "RES-0000001" in ids
+    # The planted research-feed note always leads the list.
+    assert ids[0] == "RSH-FEED"
 
 
 @pytest.mark.parametrize("token", ["", "bank-secret"])

@@ -200,6 +200,8 @@ async def claim(session: AsyncSession, hashed: str) -> uuid.UUID | None:
 async def fill_pool() -> None:
     """Copies the demo organization until DEMO_SANDBOX_POOL sandboxes wait to
     be claimed. Runs after a sign-in claims one, and when the API starts."""
+    if settings.demo_sandbox_pool <= 0:
+        return
     async with SessionLocal() as session:
         demo = await demo_org(session)
         if demo is None:

@@ -96,7 +96,10 @@ export function useChatHistory(
           if (state.saved.has(message.id)) continue
           if (message.role === "system") continue
           // Later messages wait for the answer still being written.
-          if (message.role === "assistant" && message.status.type === "running")
+          if (
+            message.role === "assistant" &&
+            message.status?.type === "running"
+          )
             break
           fresh.push(message)
         }

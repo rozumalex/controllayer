@@ -15,6 +15,14 @@ class Account(BaseModel):
         description="Whether the layer locked the account out for too many "
         "blocked attacks in a short time."
     )
+    lock_reason: str | None = Field(
+        default=None,
+        description="Why the layer locked the account, such as 6 blocked "
+        "attacks in 5 minutes; None when it isn't locked.",
+    )
+    out_of_budget: bool = Field(
+        description="Whether the account spent its weekly budget."
+    )
 
 
 class AttackGoal(BaseModel):
@@ -41,10 +49,15 @@ class Simulator(BaseModel):
     goals: list[AttackGoal]
     checklist: list[ChecklistItem] = Field(description="The hacker's checklist.")
     risks: list[Risk] = Field(description="The OWASP Top 10 for LLM applications.")
+    scenarios: int = Field(description="How many scenarios the attack runs.")
+    turns: int = Field(description="The total turn count across those scenarios.")
+    missing: list[str] = Field(
+        description="Ids of scenarios still holding a <turn N> placeholder."
+    )
 
 
 class UnlockRequest(BaseModel):
-    role: str = Field(description="The role of the account to unlock.")
+    role: str = Field(description="The role of the account to unlock or reset.")
 
 
 class ChatCaseRequest(BaseModel):
@@ -71,7 +84,10 @@ class Case(BaseModel):
     reason: str | None
     prompt: str = Field(description="PII and secrets in it are masked once stored.")
     answer: str = Field(description="PII and secrets in it are masked once stored.")
-    stolen: int = Field(description="PII, secrets and prompt leaks that got out.")
+    stolen: int = Field(
+        description="Client data, the canary password and system prompt leaks "
+        "that got out."
+    )
     achieved: list[str] = Field(description="The checklist goals it achieved.")
     risk: str | None = Field(
         description="The OWASP risk of the attack the layer stopped, or None when "
@@ -80,6 +96,15 @@ class Case(BaseModel):
     tokens: int
     usd: str
     verdicts: list[dict[str, Any]]
+    # Set on scenario turns; absent on chat cases and older logs.
+    scenario: str | None = None
+    title: str | None = None
+    owasp: str | None = None
+    turn: int | None = None
+    turns: int | None = None
+    # Set on a scenario's last turn, after the judge.
+    verdict: str | None = None
+    story: str | None = None
 
 
 class AttackRequest(BaseModel):
@@ -87,6 +112,19 @@ class AttackRequest(BaseModel):
     goals: list[str] = Field(min_length=1)
     security: bool = Field(
         description="Whether the guards block and redact, or only log."
+    )
+    step: bool = Field(
+        default=True,
+        description="When true, the run waits for POST /attack/next after "
+        "each scenario so logs stop with the chat's Next / Explain.",
+    )
+
+
+class AttackNextRequest(BaseModel):
+    run_id: str = Field(description="The run_id from a streamed case event.")
+    security: bool | None = Field(
+        default=None,
+        description="When set, the next scenario uses this protection setting.",
     )
 
 
@@ -101,7 +139,10 @@ class AttackRun(BaseModel):
     blocked: int
     landed: int
     false_alarms: int
-    stolen: int = Field(description="PII, secrets and prompt leaks that got out.")
+    stolen: int = Field(
+        description="Client data, the canary password and system prompt leaks "
+        "that got out."
+    )
     tokens: int
     usd: Decimal
     guards: dict[str, int] = Field(description="Attacks each guard stopped.")

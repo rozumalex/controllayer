@@ -54,6 +54,12 @@ class Lockout(BaseModel):
         ge=0,
         description="Blocked attacks in the window that lock the account; 0 is off.",
     )
+    flags: int = Field(
+        default=10,
+        ge=0,
+        description="Suspicious requests in the window that lock the account: "
+        "ones an injection guard scored high but let through; 0 is off.",
+    )
     minutes: int = Field(default=5, ge=1, le=1440, description="The window.")
 
     @property

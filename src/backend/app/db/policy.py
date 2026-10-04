@@ -2,11 +2,11 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import BigInteger, func, select
+from sqlalchemy import BigInteger, Float, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.control.envelope import Direction
-from app.control.guards.lockout import ATTACKS, INJECTIONS
+from app.control.envelope import Action, Direction
+from app.control.guards.lockout import ATTACKS, INJECTIONS, SUSPICIOUS
 from app.control.guards.loop import Call, LoopGuard
 from app.control.guards.spoiled_tool import Tool
 from app.core.config import settings
@@ -200,19 +200,25 @@ async def recent_tool_calls(
     return [(server, tool, sha) for server, tool, sha in rows]
 
 
-async def recent_blocks(session: AsyncSession, user_id: uuid.UUID, seconds: int) -> int:
-    """How many of the user's attacks the layer blocked in the last seconds,
-    since an admin last unlocked them: blocks by an attack guard on what
-    they sent or the answer they drew out, not on a tool's result."""
+async def window_start(
+    session: AsyncSession, user_id: uuid.UUID, seconds: int
+) -> datetime:
+    """The start of the lockout's window: seconds ago, or when an admin last
+    unlocked the user, since an unlock wipes the slate."""
     start = datetime.now(UTC) - timedelta(seconds=seconds)
-    # An admin's unlock wipes the slate.
     unlocked = await session.scalar(
         select(func.max(ControlEvent.created_at)).where(
             ControlEvent.user_id == user_id, ControlEvent.event == "unlock"
         )
     )
-    if unlocked and unlocked > start:
-        start = unlocked
+    return max(start, unlocked) if unlocked else start
+
+
+async def recent_blocks(session: AsyncSession, user_id: uuid.UUID, seconds: int) -> int:
+    """How many of the user's attacks the layer blocked in the last seconds,
+    since an admin last unlocked them: blocks by an attack guard on what
+    they sent or the answer they drew out, not on a tool's result."""
+    start = await window_start(session, user_id, seconds)
     data = ControlEvent.data
     return (
         await session.scalar(
@@ -222,6 +228,27 @@ async def recent_blocks(session: AsyncSession, user_id: uuid.UUID, seconds: int)
                 ControlEvent.action == "block",
                 data["direction"].astext != Direction.OUTBOUND,
                 data["guard"].astext.in_(ATTACKS),
+                ControlEvent.created_at >= start,
+            )
+        )
+        or 0
+    )
+
+
+async def recent_flags(session: AsyncSession, user_id: uuid.UUID, seconds: int) -> int:
+    """How many of the user's requests the layer flagged as suspicious in the
+    last seconds, since an admin last unlocked them (see lockout.suspicious)."""
+    start = await window_start(session, user_id, seconds)
+    data = ControlEvent.data
+    return (
+        await session.scalar(
+            select(func.count(func.distinct(ControlEvent.trace_id))).where(
+                ControlEvent.user_id == user_id,
+                ControlEvent.event == "verdict",
+                ControlEvent.action == Action.ALLOW,
+                data["direction"].astext != Direction.OUTBOUND,
+                data["guard"].astext.in_(INJECTIONS),
+                data["score"].astext.cast(Float) >= SUSPICIOUS,
                 ControlEvent.created_at >= start,
             )
         )

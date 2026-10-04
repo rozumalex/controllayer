@@ -49,6 +49,7 @@ from app.db.policy import (
     data_catalog,
     poisoned_tools,
     recent_blocks,
+    recent_flags,
     recent_flows,
     recent_questions,
     recent_tool_calls,
@@ -180,10 +181,12 @@ async def user_policy(user: ActingUser) -> PolicySettings:
 UserPolicy = Annotated[PolicySettings, Depends(user_policy)]
 
 
-def lockout(policy: PolicySettings, blocked: int) -> LockoutGuard:
-    """Locks the user out after too many blocked attacks, as their role's
-    policy says; blocked is how many of theirs were blocked in the window."""
-    return LockoutGuard(policy.lockout.blocks, policy.lockout.seconds, blocked)
+def lockout(policy: PolicySettings, blocked: int, flagged: int) -> LockoutGuard:
+    """Locks the user out after too many blocked attacks or suspicious
+    requests, as their role's policy says; blocked and flagged are how many
+    of theirs the window holds."""
+    limits = policy.lockout
+    return LockoutGuard(limits.blocks, limits.seconds, blocked, limits.flags, flagged)
 
 
 def chat_model(policy: PolicySettings) -> str:
@@ -304,8 +307,9 @@ async def chat_control(
         weekly = await spent_this_week(session, user.id)
         recent = await recent_questions(session, user.id)
         blocked = await recent_blocks(session, user.id, policy.lockout.seconds)
+        flagged = await recent_flags(session, user.id, policy.lockout.seconds)
     guards = [
-        lockout(policy, blocked),
+        lockout(policy, blocked, flagged),
         RateLimitGuard(settings.control_rate_limit_per_minute, recent),
         ModelGuard(model, policy.allowed_models),
         BudgetGuard(policy.budget, weekly),
@@ -349,6 +353,7 @@ async def mcp_gateway(
             session, user.id, settings.control_loop_window_seconds
         )
         blocked = await recent_blocks(session, user.id, policy.lockout.seconds)
+        flagged = await recent_flags(session, user.id, policy.lockout.seconds)
         poisoned = await poisoned_tools(
             session, user.org_id, settings.control_spoiled_tool_window_seconds
         )
@@ -363,6 +368,7 @@ async def mcp_gateway(
         recent,
         blocked,
         poisoned,
+        flagged=flagged,
         mode=mode,
     )
 
@@ -379,10 +385,12 @@ def gateway(
     poisoned: Mapping[Tool, int] | None = None,
     connect: Connect | None = None,
     mode: Mode | None = None,
+    flagged: int = 0,
 ) -> McpGateway:
     """The gateway for one request, with what the guards remember of the
     user's earlier ones: the data flow guard's labels and hashes, the loop
-    guard's recent calls, the user's blocked attacks, and the poisoned
+    guard's recent calls, the user's blocked attacks and suspicious
+    requests, and the poisoned
     results each of the organization's tools sent."""
     # First, so it counts every call, even one another guard blocks.
     loop = LoopGuard(
@@ -409,7 +417,7 @@ def gateway(
             sink,
             policy,
             [
-                lockout(policy, blocked),
+                lockout(policy, blocked, flagged),
                 loop,
                 tool_access(policy),
                 spoiled,

@@ -1,7 +1,7 @@
 import asyncio
 import tomllib
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -31,6 +31,10 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         filling = asyncio.create_task(fill_pool())
         yield
         filling.cancel()
+        # Waits for the task to close its session, so no transaction outlives
+        # the event loop.
+        with suppress(asyncio.CancelledError):
+            await filling
     await OPENAI_HTTP.aclose()
     await engine.dispose()
 

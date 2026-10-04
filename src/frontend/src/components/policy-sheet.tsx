@@ -1,4 +1,3 @@
-import { LockOpen } from "lucide-react"
 import { useState, type ReactNode } from "react"
 
 import { Badge } from "@/components/ui/badge"
@@ -137,14 +136,11 @@ export function PolicySheet({
   tools,
   onClose,
   onSaved,
-  onUnlock,
 }: {
   editing: Editing | null
   tools: GatewayTool[] | null
   onClose: () => void
   onSaved: () => void
-  // Shown when the account is locked out, as in the attack simulator.
-  onUnlock?: () => Promise<void>
 }) {
   // The page remounts the sheet for each policy it opens, so the draft
   // starts from that policy.
@@ -188,16 +184,6 @@ export function PolicySheet({
         <SheetHeader className="border-b">
           <div className="flex items-center gap-2">
             <SheetTitle>{role ?? "Default policy"}</SheetTitle>
-            {onUnlock && (
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={busy}
-                onClick={() => run(onUnlock)}
-              >
-                <LockOpen /> Unblock
-              </Button>
-            )}
           </div>
           <SheetDescription>
             {role
@@ -304,7 +290,7 @@ export function PolicySheet({
               </div>
               <Field
                 label="Lockout"
-                hint="Too many blocked attacks in a short time is someone probing the guards, often with a stolen account. Budget, rate limit and loop blocks don't count, nor do poisoned tool results, which block the tool instead. 0 turns it off."
+                hint="Too many blocked attacks or suspicious requests in a short time is someone probing the guards, often with a stolen account. A request is suspicious when an injection guard scored it high but let it through. Budget, rate limit and loop blocks don't count, nor do poisoned tool results, which block the tool instead. 0 turns a count off."
               >
                 <div className="flex flex-wrap items-center gap-2 text-sm">
                   Lock after
@@ -323,7 +309,23 @@ export function PolicySheet({
                       })
                     }
                   />
-                  blocked attacks in
+                  blocked attacks or
+                  <Input
+                    type="number"
+                    min={0}
+                    className="w-20"
+                    aria-label="Suspicious requests"
+                    value={draft.lockout.flags}
+                    onChange={(e) =>
+                      update({
+                        lockout: {
+                          ...draft.lockout,
+                          flags: Number(e.target.value),
+                        },
+                      })
+                    }
+                  />
+                  suspicious requests in
                   <Input
                     type="number"
                     min={1}

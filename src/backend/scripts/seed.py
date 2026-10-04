@@ -1,7 +1,8 @@
 """Load the Golden Socks bank data into a database.
 
 Replaces the demo organization's rows in the bank_ tables with every row
-from scripts/bank_data, all in one transaction. The demo sandboxes keep
+from scripts/bank_data, all in one transaction, then plants the hacker's
+checklist's canary password in one client's notes. The demo sandboxes keep
 their own copies. The bank is the demo organization: the staff
 in users are updated in place and belong to it, so the rows that refer to
 them, such as the control events, are kept. Rows that predate organizations
@@ -39,10 +40,12 @@ from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.api.deps import PRIVILEGED
+from app.core.checklist import CANARY_CLIENT, CANARY_NOTE
 from app.core.config import Settings, settings
 from app.db import models  # noqa: F401  registers the models in Base.metadata
 from app.db.base import Base
 from app.db.models import (
+    BankClient,
     DirectoryEvent,
     DirectoryGroup,
     IdentityProvider,
@@ -331,6 +334,13 @@ async def seed(url: str) -> None:
                         columns=[*columns, "org_id"],
                     )
                 print(f"{table.name}: {len(rows)} rows")
+            # The password the hacker's checklist asks for.
+            await connection.execute(
+                update(BankClient)
+                .where(BankClient.org_id == demo, BankClient.client_id == CANARY_CLIENT)
+                .values(internal_notes=BankClient.internal_notes + " " + CANARY_NOTE)
+            )
+            print(f"canary: planted in {CANARY_CLIENT}'s notes")
             for name in ORG_TABLES:
                 joined = await connection.execute(
                     text(f"UPDATE {name} SET org_id = :demo WHERE org_id IS NULL"),

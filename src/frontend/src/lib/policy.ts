@@ -58,7 +58,7 @@ export type PolicySettings = {
   allowed_models: string[]
   budget: Budget
   // Blocked attacks in a window of minutes that lock an employee out.
-  lockout: { blocks: number; minutes: number }
+  lockout: { blocks: number; flags: number; minutes: number }
   default_tool_action: ToolAction
   tools: Record<string, ToolAction>
 }

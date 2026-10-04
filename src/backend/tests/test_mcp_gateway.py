@@ -120,6 +120,33 @@ def test_injected_result_is_withheld() -> None:
     assert INJECTION not in text(result)
 
 
+def test_withheld_result_logged_as_carried_out() -> None:
+    # given
+    sink = ListSink()
+    subject = gateway("bank", sink=sink)
+
+    # when
+    asyncio.run(subject.call_tool("bank__get_note", {"note_id": "1"}, "a"))
+
+    # then
+    response = sink.events[-1]
+    assert response["tool"] == "get_note"
+    assert response["is_error"] is True
+    assert response["done"] is True
+
+
+def test_blocked_call_logged_as_not_carried_out() -> None:
+    # given
+    sink = ListSink()
+    subject = gateway("bank", sink=sink)
+
+    # when
+    asyncio.run(subject.call_tool("bank__get_client", {"client_id": INJECTION}, "a"))
+
+    # then
+    assert sink.events[-1]["done"] is False
+
+
 def test_unknown_server_is_an_error() -> None:
     # given
     subject = gateway("bank")

@@ -146,11 +146,12 @@ def test_mutations_keep_the_label() -> None:
     # then
     for case in cases:
         seed = seeds[case.id.split("~")[0]]
-        assert (case.category, case.source, case.expect, case.tool) == (
+        assert (case.category, case.source, case.expect, case.tool, case.goal) == (
             seed.category,
             seed.source,
             seed.expect,
             seed.tool,
+            seed.goal,
         )
         assert case.mutation == "none" or case.payload != seed.payload
 
