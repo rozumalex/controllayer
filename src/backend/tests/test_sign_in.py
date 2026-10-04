@@ -52,19 +52,19 @@ async def stored(email: str) -> tuple[User | None, Organization | None]:
         return user, org
 
 
-async def add_demo_account() -> None:
+async def add_demo_account() -> User:
     org_id = await demo_org_id()
     async with SessionLocal() as session:
-        session.add(
-            User(
-                email=settings.demo_email,
-                name="Demo User",
-                title="Vice President",
-                clearance_level=PRIVILEGED,
-                org_id=org_id,
-            )
+        account = User(
+            email=settings.demo_email,
+            name="Demo User",
+            title="Vice President",
+            clearance_level=PRIVILEGED,
+            org_id=org_id,
         )
+        session.add(account)
         await session.commit()
+        return account
 
 
 def test_code_goes_to_the_email(inbox: list[dict[str, str]]) -> None:
@@ -235,19 +235,23 @@ def test_email_sign_in_is_off_without_smtp(monkeypatch: pytest.MonkeyPatch) -> N
 
 
 @pytest.mark.parametrize("path", ["/api/auth/demo", "/api/auth/email"])
-def test_demo_lands_in_the_demo_organization(path: str) -> None:
+def test_demo_lands_in_a_sandbox_of_the_demo_organization(path: str) -> None:
     # given
-    asyncio.run(add_demo_account())
+    demo = asyncio.run(add_demo_account())
     client = TestClient(app)
+    key = "k" * 64
+    body = {"email": settings.demo_email, "key": key, "demo_key": key}
 
     # when
-    signed = client.post(path, json={"email": settings.demo_email}).json()
+    signed = client.post(path, json=body).json()
 
     # then
     headers = {"Authorization": f"Bearer {signed['token']}"}
     me = client.get("/api/employees/me", headers=headers).json()
     assert me["email"] == settings.demo_email
     assert me["role"] == "Vice President"
+    # Its copy in the sandbox, not the demo's own account.
+    assert me["id"] != str(demo.id)
 
 
 def test_sign_out_ends_the_session(inbox: list[dict[str, str]]) -> None:

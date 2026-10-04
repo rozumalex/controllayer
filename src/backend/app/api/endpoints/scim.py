@@ -10,11 +10,12 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, Request, Response
 from fastapi.responses import JSONResponse
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.directory import assign_role, deactivate, record
 from app.db.models import DirectoryGroup, Organization, User
+from app.db.sandbox import outside_sandboxes
 from app.db.session import get_session
 
 router = APIRouter(prefix="/scim/v2", tags=["scim"])
@@ -183,7 +184,14 @@ async def create_user(org: Org, session: Session, request: Request) -> JSONRespo
     body = await body_of(request)
     user = User(org_id=org.id, name="", email="")
     apply_user(user, body)
-    taken = await session.scalar(select(User).where(User.email == user.email))
+    # Unique in the organization, and among the users outside the sandboxes,
+    # whom a sign-in by email finds.
+    taken = await session.scalar(
+        select(User).where(
+            User.email == user.email,
+            or_(User.org_id == org.id, outside_sandboxes()),
+        )
+    )
     if taken is not None:
         raise ScimError(409, f"{user.email} exists", "uniqueness")
     session.add(user)

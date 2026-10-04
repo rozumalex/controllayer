@@ -17,7 +17,8 @@ from app.core.schema.policy import (
     PolicySettings,
     ToolAction,
 )
-from app.db.models import BankDataCatalog, ControlEvent, Policy
+from app.db.models import BankDataCatalog, ControlEvent, Organization, Policy
+from app.db.models.organization import DEMO_SLUG
 
 # The key of the default policy. No job title is a bare asterisk.
 DEFAULT_ROLE = "*"
@@ -67,9 +68,26 @@ async def role_policy(
     return await default_policy(session, org_id)
 
 
-async def data_catalog(session: AsyncSession) -> dict[tuple[str, str], Clearance]:
-    """The sensitivity of every field of the bank's data, by table and field."""
-    rows = await session.scalars(select(BankDataCatalog))
+async def data_catalog(
+    session: AsyncSession, org_id: uuid.UUID | None
+) -> dict[tuple[str, str], Clearance]:
+    """The sensitivity of every field of the organization's bank, by table and
+    field. An organization with no bank of its own reaches the demo's, so it
+    gets the demo's catalog."""
+    rows = list(
+        await session.scalars(
+            select(BankDataCatalog).where(BankDataCatalog.org_id == org_id)
+        )
+    )
+    if not rows:
+        demo = select(Organization.id).where(Organization.slug == DEMO_SLUG)
+        rows = list(
+            await session.scalars(
+                select(BankDataCatalog).where(
+                    BankDataCatalog.org_id == demo.scalar_subquery()
+                )
+            )
+        )
     return {(r.table_name, r.field_name): Clearance(r.sensitivity) for r in rows}
 
 

@@ -8,7 +8,7 @@ import secrets
 from typing import Annotated
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,6 +20,7 @@ from app.core.google import verify as verify_google
 from app.core.mail import MailError, send_mail
 from app.core.schema.auth import (
     CodeSent,
+    DemoSignIn,
     EmailCode,
     EmailSignIn,
     GoogleSignIn,
@@ -28,6 +29,7 @@ from app.core.schema.auth import (
 from app.core.sign_in_email import sign_in_email
 from app.db.auth import issue_token, new_code, revoke_token, use_code
 from app.db.models import Organization, User
+from app.db.sandbox import fill_pool, outside_sandboxes, sandbox_account
 from app.db.session import get_session
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -84,7 +86,9 @@ def organization_name(email: str, name: str) -> str:
 async def user_for(session: AsyncSession, email: str, name: str | None) -> User:
     """The user with this email. One who has none yet gets an account, and a
     new organization that they administer."""
-    user = await session.scalar(select(User).where(User.email == email))
+    user = await session.scalar(
+        select(User).where(User.email == email, outside_sandboxes())
+    )
     if user is not None and not user.active:
         raise HTTPException(403, "Your organization has deactivated you")
     if user is not None:
@@ -106,16 +110,21 @@ async def user_for(session: AsyncSession, email: str, name: str | None) -> User:
     description=(
         "Emails a six-digit code to sign in with at `/api/auth/email/verify`. "
         "The answer is the same whether or not the email has an account. The "
-        "demo account's email signs in at once instead."
+        "demo account's email signs in at once instead, to the sandbox of "
+        "`demo_key`."
     ),
     responses={
         429: {"description": "A code was sent to this email moments ago."},
         503: {"description": "Email sign-in is off or the mail failed."},
     },
 )
-async def email(request: EmailSignIn, session: Session) -> CodeSent | SignedIn:
+async def email(
+    request: EmailSignIn, session: Session, background: BackgroundTasks
+) -> CodeSent | SignedIn:
     if request.email == settings.demo_email:
-        return await demo(session)
+        # With no key, a sandbox no one else can sign in to again.
+        key = request.demo_key or secrets.token_hex(32)
+        return await demo(DemoSignIn(key=key), session, background)
     if not settings.smtp_host:
         raise HTTPException(503, "Email sign-in is off")
     code = await new_code(session, request.email)
@@ -124,7 +133,9 @@ async def email(request: EmailSignIn, session: Session) -> CodeSent | SignedIn:
     minutes = settings.email_code_minutes
     # The mail goes to the email's owner, so saying whether it has an
     # account tells no one else anything.
-    known = await session.scalar(select(User.id).where(User.email == request.email))
+    known = await session.scalar(
+        select(User.id).where(User.email == request.email, outside_sandboxes())
+    )
     # The link carries the same one-time code, so it signs in once, within
     # the same minutes.
     query = urlencode({"email": request.email, "code": code})
@@ -175,15 +186,21 @@ async def google(request: GoogleSignIn, session: Session) -> SignedIn:
     "/demo",
     summary="Sign in to the demo",
     description=(
-        "Signs in as the demo account of the Golden Socks demo organization, "
-        "which `./dev seed` creates."
+        "Signs in as the demo account of a sandbox of its own: a copy of the "
+        "Golden Socks demo organization, which `./dev seed` creates, made at "
+        "the first sign-in with the key. Later sign-ins with the key find the "
+        "same sandbox, so no one else sees what the browser does there."
     ),
     responses={404: {"description": "The demo hasn't been seeded."}},
 )
-async def demo(session: Session) -> SignedIn:
-    user = await session.scalar(select(User).where(User.email == settings.demo_email))
+async def demo(
+    request: DemoSignIn, session: Session, background: BackgroundTasks
+) -> SignedIn:
+    user = await sandbox_account(session, request.key)
     if user is None:
         raise HTTPException(404, "The demo isn't set up. Run ./dev seed.")
+    # After the answer: a copy in place of the sandbox this may have claimed.
+    background.add_task(fill_pool)
     return await signed_in(session, user)
 
 

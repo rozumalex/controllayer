@@ -554,7 +554,7 @@ class Simulation:
         """Asks the agent as the employee, and returns what came back."""
         sink = self.sink
         async with SessionLocal() as session:
-            catalog = await data_catalog(session)
+            catalog = await data_catalog(session, self.account.org_id)
         answer = [sensitive_data(self.policy), PromptLeakGuard(SYSTEM_PROMPT)]
         control = ChatControl(
             control_layer(sink, self.policy, guards, response=answer, mode=self.mode),
