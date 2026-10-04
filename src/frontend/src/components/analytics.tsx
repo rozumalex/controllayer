@@ -122,7 +122,7 @@ const axis = { tickLine: false, axisLine: false, tickMargin: 8 } as const
 const formatTickDuration = (ms: number) => formatDuration(ms).replace(" ", "")
 
 export function AnalyticsCharts() {
-  const [range, setRange] = useState<Range>("1h")
+  const [range, setRange] = useState<Range>("24h")
   const data = useAnalytics(range)
   const timeline = data?.timeline ?? []
   const totals = timeline.map((bucket) => ({
