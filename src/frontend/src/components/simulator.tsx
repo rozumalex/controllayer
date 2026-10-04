@@ -73,11 +73,11 @@ import {
   fetchCases,
   unlock,
   fetchSimulator,
-  OWASP,
   runAttack,
   type CaseEvent,
   type CaseStatus,
   type EndEvent,
+  type Risk,
 } from "@/lib/simulator"
 import { initials } from "@/lib/users"
 import { config, controlLayer } from "@/lib/assistant"
@@ -192,17 +192,15 @@ function GuardPill({ guard }: { guard: string }) {
   )
 }
 
-function Owasp({ feed }: { feed: CaseEvent[] }) {
+// The attacks the layer stopped, by OWASP risk. Each counts once, under the
+// risk the server gave it.
+function Owasp({ risks, feed }: { risks: Risk[]; feed: CaseEvent[] }) {
   return (
     <div className="grid shrink-0 grid-cols-5 gap-2 lg:grid-cols-10">
-      {OWASP.map((risk) => {
-        const guards: readonly string[] = risk.guards
+      {risks.map((risk) => {
+        const guards = risk.guards
         const Icon = ICONS[risk.id]
-        const hits = feed.filter((e) =>
-          e.verdicts.some(
-            (v) => v.action !== "allow" && guards.includes(v.guard)
-          )
-        ).length
+        const hits = feed.filter((e) => e.risk === risk.id).length
         return (
           <Card
             key={risk.id}
@@ -721,7 +719,7 @@ export function Simulator() {
         />
 
         <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-3 lg:overflow-hidden">
-          <Owasp feed={feed} />
+          <Owasp risks={setup?.risks ?? []} feed={feed} />
 
           <main className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_minmax(0,1.2fr)]">
             {/* You, the attacker: the account, the checklist, the button. */}

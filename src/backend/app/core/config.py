@@ -82,11 +82,18 @@ class Settings(BaseSettings):
     control_loop_window_seconds: int = 60
     control_loop_repeat_limit: int = 3
     control_loop_call_limit: int = 30
-    # Account lockout: once this many of a user's requests were blocked in
+    # Account lockout: once this many of a user's attacks were blocked in
     # the window, every request of theirs is blocked until the window has
-    # passed with no more blocks. 0 turns it off.
+    # passed with no more attacks. 0 turns it off. Each role's policy sets
+    # its own; these are the default policy's.
     control_lockout_blocks: int = 5
     control_lockout_window_seconds: int = 300
+    # Spoiled tools: once this many different results of one tool were
+    # blocked as injections in the window, every call to it is blocked, for
+    # the whole organization, until the window has passed with no more of
+    # them. 0 turns it off.
+    control_spoiled_tool_results: int = 3
+    control_spoiled_tool_window_seconds: int = 1800
     # The semantic injection guard asks the first of these models that a
     # provider serves whether a message is an attack; with none served, it
     # is off. It needs a model that takes temperature and structured outputs,

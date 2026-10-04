@@ -57,7 +57,7 @@ export type PolicySettings = {
   pii: Partial<Record<PiiKind, ToolAction>>
   allowed_models: string[]
   budget: Budget
-  // Blocked requests in a window of minutes that lock an employee out.
+  // Blocked attacks in a window of minutes that lock an employee out.
   lockout: { blocks: number; minutes: number }
   default_tool_action: ToolAction
   tools: Record<string, ToolAction>

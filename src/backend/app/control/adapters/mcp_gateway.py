@@ -187,6 +187,7 @@ class McpGateway:
             server=envelope.server,
             tool=envelope.tool,
             action=decision.action,
+            **decision.blocker(),
         )
         return decision
 

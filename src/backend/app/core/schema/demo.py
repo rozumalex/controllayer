@@ -13,7 +13,7 @@ class Account(BaseModel):
     policy: PolicySettings
     locked: bool = Field(
         description="Whether the layer locked the account out for too many "
-        "blocked requests in a short time."
+        "blocked attacks in a short time."
     )
 
 
@@ -30,10 +30,17 @@ class ChecklistItem(BaseModel):
     description: str
 
 
+class Risk(BaseModel):
+    id: str = Field(description="The risk's OWASP Top 10 for LLM id, as LLM01.")
+    title: str
+    guards: list[str] = Field(description="The guards whose stops count toward it.")
+
+
 class Simulator(BaseModel):
     accounts: list[Account]
     goals: list[AttackGoal]
     checklist: list[ChecklistItem] = Field(description="The hacker's checklist.")
+    risks: list[Risk] = Field(description="The OWASP Top 10 for LLM applications.")
 
 
 class UnlockRequest(BaseModel):
@@ -66,6 +73,10 @@ class Case(BaseModel):
     answer: str = Field(description="PII and secrets in it are masked once stored.")
     stolen: int = Field(description="PII, secrets and prompt leaks that got out.")
     achieved: list[str] = Field(description="The checklist goals it achieved.")
+    risk: str | None = Field(
+        description="The OWASP risk of the attack the layer stopped, or None when "
+        "it stopped none."
+    )
     tokens: int
     usd: str
     verdicts: list[dict[str, Any]]
