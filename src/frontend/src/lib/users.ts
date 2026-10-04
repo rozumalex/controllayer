@@ -21,6 +21,28 @@ export function storeToken(token: string | null) {
   }
 }
 
+// The browser's own demo sandbox: a random key, made once and kept, that
+// signs in to the same copy of the demo bank after a reload. Without storage
+// each sign-in gets a new sandbox.
+const DEMO_KEY = "demo-key"
+
+function demoKey(): string {
+  try {
+    const kept = localStorage.getItem(DEMO_KEY)
+    if (kept) return kept
+  } catch {
+    // Made again below.
+  }
+  const bytes = crypto.getRandomValues(new Uint8Array(32))
+  const key = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")
+  try {
+    localStorage.setItem(DEMO_KEY, key)
+  } catch {
+    // This sign-in still works, in a sandbox of its own.
+  }
+  return key
+}
+
 // The header that signs in every API call.
 export const userHeaders = (): Record<string, string> => {
   const token = storedToken()
@@ -84,7 +106,10 @@ export async function sendCode(
   email: string
 ): Promise<Employee | "sent" | "recent"> {
   try {
-    const answer = await post<SignedIn | { sent: true }>("email", { email })
+    const answer = await post<SignedIn | { sent: true }>("email", {
+      email,
+      demo_key: demoKey(),
+    })
     return "token" in answer ? keep(answer) : "sent"
   } catch (e) {
     if (e instanceof RequestError && e.status === 429) return "recent"
@@ -95,7 +120,8 @@ export async function sendCode(
 export const signInWithCode = async (email: string, code: string) =>
   keep(await post<SignedIn>("email/verify", { email, code }))
 
-export const signInToDemo = async () => keep(await post<SignedIn>("demo"))
+export const signInToDemo = async () =>
+  keep(await post<SignedIn>("demo", { key: demoKey() }))
 
 // Sends the browser to the organization's identity provider, which sends it
 // back to /auth/callback. False when no provider signs in this email.

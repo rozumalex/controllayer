@@ -13,12 +13,15 @@ account restrictions, trades, and client contacts and notes. Research, the
 data catalog, the identity profiles and the staff are read only.
 
 It is mounted in the API at /api/bank/mcp and takes the bearer token in
-BANK_MCP_TOKEN.
+BANK_MCP_TOKEN. Every organization has its own copy of the bank: the URL
+names it, as /api/bank/mcp?org=<id>, which a demo sandbox's server has.
+Without one, it is the demo organization's.
 """
 
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from hmac import compare_digest
@@ -31,6 +34,7 @@ from mcp_types import ToolAnnotations
 from pydantic import Field
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.datastructures import QueryParams
 from starlette.responses import JSONResponse
 from starlette.types import Receive, Scope, Send
 
@@ -42,8 +46,10 @@ from app.db.models import (
     BankResearch,
     BankTrade,
     BankTransaction,
+    Organization,
     User,
 )
+from app.db.models.organization import DEMO_SLUG
 from app.db.session import SessionLocal
 
 bank = MCPServer(
@@ -62,6 +68,10 @@ WRITE = ToolAnnotations(
 DESTRUCTIVE = ToolAnnotations(
     read_only_hint=False, destructive_hint=True, open_world_hint=False
 )
+
+# The organization the request's URL names, if any. The MCP session manager
+# starts the tool calls from the request, so they see it.
+requested_org: ContextVar[uuid.UUID | None] = ContextVar("requested_org", default=None)
 
 Limit = Annotated[int, Field(ge=1, le=100)]
 Amount = Annotated[Decimal, Field(gt=0, max_digits=18, decimal_places=2)]
@@ -92,27 +102,46 @@ def stamped(text: str | None, entry: str) -> str:
     return f"{text}\n{line}" if text else line
 
 
+async def bank_org(session: AsyncSession) -> uuid.UUID:
+    """The organization whose copy of the bank the request works on."""
+    org_id = requested_org.get() or await session.scalar(
+        select(Organization.id).where(Organization.slug == DEMO_SLUG)
+    )
+    if org_id is None:
+        raise ToolError("The bank isn't set up. Run ./dev seed.")
+    return org_id
+
+
 async def found[T: Base](
     session: AsyncSession, model: type[T], key: str, lock: bool = False
 ) -> T:
-    record = await session.get(model, key, with_for_update=lock)
+    org_id = await bank_org(session)
+    record = await session.get(model, (org_id, key), with_for_update=lock)
     if record is None:
         raise ToolError(f"No {model.__name__.removeprefix('Bank').lower()} {key}")
     return record
 
 
 async def next_id(session: AsyncSession, column: Any, prefix: str, digits: int) -> str:
-    """The next identifier in a sequence such as TXN-000000001."""
+    """The next identifier in a sequence such as TXN-000000001, in the
+    organization's bank."""
+    org_id = await bank_org(session)
     last = await session.scalar(
-        select(func.max(column)).where(column.like(f"{prefix}%"))
+        select(func.max(column)).where(
+            column.table.c.org_id == org_id, column.like(f"{prefix}%")
+        )
     )
     number = int(last.removeprefix(prefix)) + 1 if last else 1
     return f"{prefix}{number:0{digits}d}"
 
 
 async def rows(statement: Select[Any], key: str) -> dict[str, Any]:
+    """The rows a statement on one bank table selects, in the organization's
+    bank."""
     async with SessionLocal() as session:
-        records = await session.scalars(statement)
+        table = statement.selected_columns[0].table
+        org_id = await bank_org(session)
+        records = await session.scalars(statement.where(table.c.org_id == org_id))
         return {key: [row(r) for r in records]}
 
 
@@ -156,7 +185,9 @@ async def get_client(client_id: str) -> dict[str, Any]:
         client = await found(session, BankClient, client_id)
         accounts = await session.scalars(
             select(BankAccount)
-            .where(BankAccount.client_id == client_id)
+            .where(
+                BankAccount.org_id == client.org_id, BankAccount.client_id == client_id
+            )
             .order_by(BankAccount.account_id)
         )
         return {"client": row(client), "accounts": [row(a) for a in accounts]}
@@ -251,6 +282,7 @@ PAYMENT_TYPES = ["WIRE", "SEPA", "ACH", "FX_TRANSFER"]
 async def available(session: AsyncSession, account: BankAccount) -> Decimal:
     pending = await session.scalar(
         select(func.sum(BankTransaction.amount_usd)).where(
+            BankTransaction.org_id == account.org_id,
             BankTransaction.account_id == account.account_id,
             BankTransaction.status.in_(["PENDING", "HELD", "REVIEW"]),
             BankTransaction.transaction_type.in_(PAYMENT_TYPES),
@@ -281,6 +313,7 @@ async def initiate_payment(
         if amount_usd > await available(session, account):
             raise ToolError(f"Insufficient available balance in {account_id}")
         payment = BankTransaction(
+            org_id=account.org_id,
             transaction_id=await next_id(
                 session, BankTransaction.transaction_id, "TXN-", 9
             ),
@@ -401,12 +434,17 @@ async def book_trade(
     async with SessionLocal.begin() as session:
         account = await found(session, BankAccount, account_id, lock=True)
         open_for_business(account)
-        trader = await session.scalar(select(User).where(User.email == trader_email))
+        trader = await session.scalar(
+            select(User).where(
+                User.org_id == account.org_id, User.email == trader_email
+            )
+        )
         if trader is None or trader.employment_status != "ACTIVE":
             raise ToolError(f"{trader_email} is not an active trader")
         now = utcnow()
         notional = Decimal(quantity) * (1 if asset_class == "FX" else price)
         trade = BankTrade(
+            org_id=account.org_id,
             trade_id=await next_id(session, BankTrade.trade_id, "TRD-", 8),
             client_id=account.client_id,
             account_id=account_id,
@@ -519,7 +557,18 @@ class BankMcpApp:
             )
             await response(scope, receive, send)
             return
-        await bank.session_manager.handle_request(scope, receive, send)
+        org = QueryParams(scope["query_string"]).get("org")
+        try:
+            org_id = uuid.UUID(org) if org else None
+        except ValueError:
+            response = JSONResponse({"detail": "org must be a UUID"}, 400)
+            await response(scope, receive, send)
+            return
+        token = requested_org.set(org_id)
+        try:
+            await bank.session_manager.handle_request(scope, receive, send)
+        finally:
+            requested_org.reset(token)
 
 
 bank_mcp_app = BankMcpApp()

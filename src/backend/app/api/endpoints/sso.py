@@ -23,6 +23,7 @@ from app.core.oidc import (
 from app.core.schema.auth import SignedIn, SsoCallback, SsoRedirect, SsoStart
 from app.db.directory import give_role, role_for, with_groups
 from app.db.models import IdentityProvider, Organization, SsoLogin, User
+from app.db.sandbox import outside_sandboxes
 from app.db.session import get_session
 
 router = APIRouter(prefix="/auth/sso", tags=["auth"])
@@ -129,7 +130,9 @@ async def callback(request: SsoCallback, session: Session) -> SignedIn:
     email = str(claims.get("email") or "").strip().lower()
     if not email or claims.get("email_verified") is False:
         raise HTTPException(401, f"{idp.name} gave no verified email")
-    user = await session.scalar(select(User).where(User.email == email))
+    user = await session.scalar(
+        select(User).where(User.email == email, outside_sandboxes())
+    )
     if user is not None and user.org_id != idp.org_id:
         raise HTTPException(409, "This email belongs to another organization")
     if user is not None and not user.active:
