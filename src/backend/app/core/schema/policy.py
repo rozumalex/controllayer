@@ -52,7 +52,7 @@ class Lockout(BaseModel):
     blocks: int = Field(
         default=5,
         ge=0,
-        description="Blocked requests in the window that lock the account; 0 is off.",
+        description="Blocked attacks in the window that lock the account; 0 is off.",
     )
     minutes: int = Field(default=5, ge=1, le=1440, description="The window.")
 
@@ -82,7 +82,7 @@ class PolicySettings(BaseModel):
     lockout: Lockout = Field(
         default_factory=Lockout,
         description="When the layer locks an employee out: too many of their "
-        "requests blocked in a short time is someone probing the guards.",
+        "attacks blocked in a short time is someone probing the guards.",
     )
     default_tool_action: ToolAction = Field(
         description="For gateway tools that `tools` doesn't name."

@@ -40,7 +40,7 @@ from app.control.adapters.openai_chat import ChatControl
 from app.control.agent import Agent
 from app.control.audit import FanOutSink, UserEventSink
 from app.control.envelope import Direction
-from app.control.guards.lockout import LockoutGuard
+from app.control.guards.lockout import ATTACKS, LockoutGuard
 from app.control.guards.policy import BudgetGuard, ModelGuard
 from app.control.guards.prompt_leak import PromptLeakGuard
 from app.control.guards.sensitive_data import PII, SECRETS, scrub
@@ -304,7 +304,7 @@ class Recorder:
 @dataclass
 class Totals:
     cases: int = 0
-    # Requests the layer blocked, which the lockout counts.
+    # Attacks the layer blocked, which the lockout counts.
     stopped: int = 0
     blocked: int = 0
     landed: int = 0
@@ -592,7 +592,12 @@ class Simulation:
     def count(self, expect: str, result: dict[str, Any]) -> None:
         totals = self.totals
         totals.cases += 1
-        totals.stopped += result["status"] in {"blocked", "false_alarm"}
+        totals.stopped += result["status"] in {"blocked", "false_alarm"} and any(
+            v["action"] == "block"
+            and v["guard"] in ATTACKS
+            and v["direction"] != Direction.OUTBOUND
+            for v in result["verdicts"]
+        )
         totals.blocked += result["status"] == "blocked"
         totals.landed += result["status"] == "landed"
         totals.false_alarms += result["status"] == "false_alarm"

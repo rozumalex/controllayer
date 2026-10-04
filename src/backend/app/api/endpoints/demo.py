@@ -121,7 +121,7 @@ async def attack(request: AttackRequest, user: CurrentUser) -> StreamingResponse
     summary="Unlock an account the layer locked out",
     description=(
         "Wipes the slate of the role's employee: the lockout counts only the "
-        "blocked requests after this."
+        "blocked attacks after this."
     ),
 )
 async def unlock(request: UnlockRequest, user: CurrentUser) -> Response:

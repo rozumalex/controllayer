@@ -13,7 +13,7 @@ class Account(BaseModel):
     policy: PolicySettings
     locked: bool = Field(
         description="Whether the layer locked the account out for too many "
-        "blocked requests in a short time."
+        "blocked attacks in a short time."
     )
 
 
