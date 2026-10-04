@@ -29,7 +29,12 @@ from app.core.schema.auth import (
 from app.core.sign_in_email import sign_in_email
 from app.db.auth import issue_token, new_code, revoke_token, use_code
 from app.db.models import Organization, User
-from app.db.sandbox import fill_pool, outside_sandboxes, sandbox_account
+from app.db.sandbox import (
+    fill_pool,
+    in_sandbox,
+    outside_sandboxes,
+    sandbox_account,
+)
 from app.db.session import get_session
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -59,7 +64,10 @@ PUBLIC_DOMAINS = {
 
 
 async def signed_in(session: AsyncSession, user: User) -> SignedIn:
-    return SignedIn(token=await issue_token(session, user.id), user=employee(user))
+    demo = await in_sandbox(session, user.org_id)
+    return SignedIn(
+        token=await issue_token(session, user.id), user=employee(user, demo)
+    )
 
 
 def slug(name: str) -> str:

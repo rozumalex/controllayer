@@ -99,6 +99,8 @@ export type Employee = {
   employment_status: string | null
   // False once the IdP deactivates or deletes them.
   active: boolean
+  // True in a demo sandbox, the only place the attack challenge runs.
+  demo: boolean
 }
 
 export type EmployeeList = { total: number; employees: Employee[] }

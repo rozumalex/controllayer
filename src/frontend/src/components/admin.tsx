@@ -15,7 +15,7 @@ import { Dashboard } from "@/components/dashboard"
 import { Identity } from "@/components/identity"
 import { UserMenu } from "@/components/sign-in"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { isPrivileged, useSession } from "@/lib/session"
+import { isDemo, isPrivileged, useSession } from "@/lib/session"
 
 // Each tab has its own path under /admin, so a tab can be linked and reloaded.
 const TABS = [
@@ -70,7 +70,7 @@ function Forbidden() {
       </h1>
       <p className="max-w-sm text-sm text-muted-foreground">
         The admin pages need a privileged clearance. Sign in as a privileged
-        user, or go back to the assistant.
+        user.
       </p>
     </div>
   )
@@ -84,7 +84,9 @@ export function Admin() {
   return (
     <div className="flex min-h-svh flex-col bg-muted/40">
       <Header product="Admin">
-        <HeaderLink href="/challenge" label="Challenge" icon={Swords} />
+        {isDemo(session?.user) && (
+          <HeaderLink href="/challenge" label="Challenge" icon={Swords} />
+        )}
         <UserMenu />
       </Header>
 

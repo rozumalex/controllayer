@@ -1,10 +1,12 @@
 import asyncio
 import json
+from collections.abc import Iterator
 from decimal import Decimal
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import update
 
 from app.control.envelope import Action, Direction, Envelope
 from app.control.guards.lockout import LockoutGuard
@@ -19,8 +21,9 @@ from app.core.config import settings
 from app.core.scenarios import load as load_scenarios
 from app.core.schema.policy import Budget, Clearance
 from app.core.simulator import GOALS, Simulation, advance, outcome, risk
-from app.db.models import User
+from app.db.models import Organization, User
 from app.db.policy import builtin_policy
+from app.db.session import SessionLocal
 from tests.test_bank_mcp import seed
 from tests.test_chat import ask, blocked
 from tests.test_pipeline import MemoryAuditSink
@@ -49,6 +52,23 @@ class LeakingModel(MockUpstream):
         used = {"prompt_tokens": 10_000, "completion_tokens": 1_000}
         response["usage"] = {**used, "total_tokens": 11_000}
         return response
+
+
+async def make_sandbox(user: User, sandbox: bool) -> None:
+    async with SessionLocal.begin() as session:
+        await session.execute(
+            update(Organization)
+            .where(Organization.id == user.org_id)
+            .values(sandbox=sandbox)
+        )
+
+
+@pytest.fixture
+def user(user: User) -> Iterator[User]:
+    """The test user, in a demo sandbox, the only place the challenge runs."""
+    asyncio.run(make_sandbox(user, True))
+    yield user
+    asyncio.run(make_sandbox(user, False))
 
 
 @pytest.fixture(autouse=True)

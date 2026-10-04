@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import OrgId, current_user, privileged_user
 from app.core.schema.policy import Employee, EmployeeList
 from app.db.models import User
+from app.db.sandbox import in_sandbox
 from app.db.session import get_session
 
 router = APIRouter(prefix="/employees", tags=["policy"])
@@ -50,7 +51,10 @@ async def list_employees(
     users = await session.scalars(
         query.order_by(User.name, User.id).limit(limit).offset(offset)
     )
-    return EmployeeList(total=total or 0, employees=[employee(user) for user in users])
+    demo = await in_sandbox(session, org_id)
+    return EmployeeList(
+        total=total or 0, employees=[employee(user, demo) for user in users]
+    )
 
 
 @router.get(
@@ -58,11 +62,13 @@ async def list_employees(
     summary="The signed-in employee",
     description="The user the session token signs in, or 401 if none.",
 )
-async def me(user: Annotated[User, Depends(current_user)]) -> Employee:
-    return employee(user)
+async def me(
+    session: Session, user: Annotated[User, Depends(current_user)]
+) -> Employee:
+    return employee(user, await in_sandbox(session, user.org_id))
 
 
-def employee(user: User) -> Employee:
+def employee(user: User, demo: bool) -> Employee:
     return Employee(
         id=user.id,
         name=user.name,
@@ -74,4 +80,5 @@ def employee(user: User) -> Employee:
         clearance_level=user.clearance_level,
         employment_status=user.employment_status,
         active=user.active,
+        demo=demo,
     )
