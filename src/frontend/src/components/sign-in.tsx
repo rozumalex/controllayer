@@ -9,7 +9,6 @@ import {
 } from "react"
 
 import { PortcullisLogo } from "@/components/brand"
-import { ConnectAgent } from "@/components/connect-agent"
 import { GoogleButton } from "@/components/google-button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
@@ -382,7 +381,6 @@ export function UserMenu() {
         </AvatarFallback>
       </Avatar>
       <span className="hidden text-sm md:inline">{user.name}</span>
-      <ConnectAgent className={HEADER_BUTTON} />
       <SignOutButton />
     </div>
   )

@@ -3,11 +3,13 @@
 Replaces the demo organization's rows in the bank_ tables with every row
 from scripts/bank_data, all in one transaction, then plants the hacker's
 checklist's canary password in one client's notes. The demo sandboxes keep
-their own copies. The bank is the demo organization: the staff
-in users are updated in place and belong to it, so the rows that refer to
-them, such as the control events, are kept. Rows that predate organizations
-join it too. It also saves the policies in scripts/policies.yaml for the
-demo's roles that have none, so a policy someone changed is kept, and the
+their own copies. The bank is the demo organization. Its staff are the
+challenge's accounts, one employee per role in scripts/policies.yaml: they
+are updated in place, so the rows that refer to them, such as the control
+events, are kept, and other staff are removed with their traces and chats.
+Rows that predate organizations join it too. It also saves the policies in
+scripts/policies.yaml for the demo's roles that have none, so a policy
+someone changed is kept, removes the policies of other roles, and saves the
 demo account that "Try the demo" signs in as, and makes the demo's
 directory look synced by SCIM: a group for each role, the rules that give
 each group its role, a SCIM token and a provisioning log. Other users and
@@ -42,6 +44,7 @@ from sqlalchemy.pool import NullPool
 from app.api.deps import PRIVILEGED
 from app.core.checklist import CANARY_CLIENT, CANARY_NOTE
 from app.core.config import Settings, settings
+from app.core.simulator import ACCOUNTS_BY_ACCESS
 from app.db import models  # noqa: F401  registers the models in Base.metadata
 from app.db.base import Base
 from app.db.models import (
@@ -64,15 +67,15 @@ LOCAL_HOSTS = {"db", "localhost", "127.0.0.1"}
 STAFF_DOMAIN = "goldensocks.com"
 # Columns the seed sets itself, which the data files don't have.
 OWN_COLUMNS = {"org_id", "external_id", "active"}
-# The demo account's job title, so its policy is the Vice President's: most
-# tools, but no payments, and data above CONFIDENTIAL masked.
+# The demo account's job title. No role policy has it, so the account works
+# under the default policy, and isn't one of the challenge's accounts.
 DEMO_ROLE = "Vice President"
 # The demo's single sign-on: Duende's public demo IdentityServer, whose test
 # users anyone can sign in as. Its ID tokens carry no groups, so the rules
 # match the user's sub: alice (1) and bob (2) get two different policies.
 SSO_RULES = [
-    {"claim": "sub", "value": "1", "role": "Compliance Officer", "admin": True},
-    {"claim": "sub", "value": "2", "role": "Analyst", "admin": False},
+    {"claim": "sub", "value": "1", "role": "Managing Director", "admin": True},
+    {"claim": "sub", "value": "2", "role": "Engineer", "admin": False},
 ]
 DEMO_IDP = {
     "name": "Duende demo IdP",
@@ -125,6 +128,25 @@ def load(table: Table) -> tuple[list[str], list[tuple[Any, ...]]]:
     return columns, rows
 
 
+def challenge_staff(
+    columns: list[str], rows: list[tuple[Any, ...]]
+) -> list[tuple[Any, ...]]:
+    """The challenge's accounts: of each of its roles, the active employee
+    with the lowest ID, as first_employee picks them. Their managers are
+    gone, so they report to no one."""
+    staff = [dict(zip(columns, row, strict=True)) for row in rows]
+    picked = []
+    for role in ACCOUNTS_BY_ACCESS:
+        found = [
+            u
+            for u in staff
+            if u["title"] == role and u["employment_status"] == "ACTIVE"
+        ]
+        user = {**min(found, key=lambda u: u["id"]), "manager_id": None}
+        picked.append(tuple(user[c] for c in columns))
+    return picked
+
+
 async def upsert_staff(
     raw: Any, demo: uuid.UUID, columns: list[str], rows: list[tuple[Any, ...]]
 ) -> None:
@@ -141,13 +163,24 @@ async def upsert_staff(
         f"INSERT INTO users ({names}) SELECT {names} FROM staff "
         f"ON CONFLICT (id) DO UPDATE SET {updates}"
     )
-    # The demo's staff only: each sandbox has its own copy of them.
-    await raw.execute(
-        "DELETE FROM users WHERE email LIKE $1 AND id NOT IN (SELECT id FROM staff) "
-        "AND (org_id = $2 OR org_id IS NULL)",
-        f"%@{STAFF_DOMAIN}",
-        demo,
+    # The demo's staff only: each sandbox has its own copy of them. Their
+    # traces and chats go with them, and the policies and MCP servers they
+    # last changed keep no author.
+    gone = (
+        "SELECT id FROM users WHERE email LIKE $1 "
+        "AND id NOT IN (SELECT id FROM staff) AND (org_id = $2 OR org_id IS NULL)"
     )
+    for statement in [
+        f"DELETE FROM control_events WHERE user_id IN ({gone})",
+        f"DELETE FROM conversations WHERE user_id IN ({gone})",
+        "UPDATE role_policies SET updated_by_id = NULL "
+        f"WHERE updated_by_id IN ({gone})",
+        f"UPDATE mcp_servers SET created_by_id = NULL WHERE created_by_id IN ({gone})",
+        f"UPDATE mcp_servers SET updated_by_id = NULL WHERE updated_by_id IN ({gone})",
+        f"UPDATE users SET manager_id = NULL WHERE manager_id IN ({gone})",
+        f"DELETE FROM users WHERE id IN ({gone})",
+    ]:
+        await raw.execute(statement, f"%@{STAFF_DOMAIN}", demo)
 
 
 def group_of(role: str) -> str:
@@ -156,48 +189,34 @@ def group_of(role: str) -> str:
 
 
 # The provisioning log's story, oldest first: (hours ago, the role of the
-# user it follows, which of that role's staff by email, the events). The user
-# has the role the story ends in, so the log matches the directory.
-STORY: list[tuple[float, str, int, list[tuple[str, dict[str, Any]]]]] = [
+# user it follows, the events). Each role has one employee, the challenge's
+# account, so the log matches the directory.
+STORY: list[tuple[float, str, list[tuple[str, dict[str, Any]]]]] = [
     (
         74,
-        "Analyst",
-        41,
+        "Engineer",
         [
             ("created", {}),
-            ("joined", {"group": group_of("Analyst")}),
-            ("role", {"role": "Analyst", "was": None}),
+            ("joined", {"group": group_of("Engineer")}),
+            ("role", {"role": "Engineer", "was": None}),
         ],
     ),
     (
-        50,
-        "Risk Manager",
-        17,
+        26,
+        "Operations Specialist",
         [
-            ("left", {"group": group_of("Analyst")}),
-            ("joined", {"group": group_of("Risk Manager")}),
-            ("role", {"role": "Risk Manager", "was": "Analyst"}),
+            ("left", {"group": group_of("Engineer")}),
+            ("joined", {"group": group_of("Operations Specialist")}),
+            ("role", {"role": "Operations Specialist", "was": "Engineer"}),
         ],
     ),
-    (26, "Operations Specialist", 29, [("deactivated", {"sessions": 2})]),
     (
         3,
-        "Compliance Officer",
-        33,
+        "Managing Director",
         [
             ("created", {}),
-            ("joined", {"group": group_of("Compliance Officer")}),
-            ("role", {"role": "Compliance Officer", "was": None}),
-        ],
-    ),
-    (
-        0.3,
-        "Vice President",
-        205,
-        [
-            ("left", {"group": group_of("Associate")}),
-            ("joined", {"group": group_of("Vice President")}),
-            ("role", {"role": "Vice President", "was": "Associate"}),
+            ("joined", {"group": group_of("Managing Director")}),
+            ("role", {"role": "Managing Director", "was": None}),
         ],
     ),
 ]
@@ -263,12 +282,9 @@ async def seed_directory(connection: AsyncConnection, demo: uuid.UUID) -> None:
             "created_at": now - timedelta(days=7),
         }
     ]
-    for hours, role, nth, events in STORY:
+    for hours, role, events in STORY:
         user = await connection.scalar(
-            select(User.id)
-            .where(*staff, User.title == role)
-            .order_by(User.email)
-            .offset(nth)
+            select(User.id).where(*staff, User.title == role)
         )
         for i, (kind, data) in enumerate(events):
             at = now - timedelta(hours=hours) + timedelta(seconds=i)
@@ -281,10 +297,6 @@ async def seed_directory(connection: AsyncConnection, demo: uuid.UUID) -> None:
                     "created_at": at,
                 }
             )
-            if kind == "deactivated":
-                await connection.execute(
-                    update(User).where(User.id == user).values(active=False)
-                )
     await connection.execute(insert(DirectoryEvent).values(log))
     print(f"demo directory: {len(roles)} groups, {len(log)} log entries")
 
@@ -326,6 +338,7 @@ async def seed(url: str) -> None:
             for table in tables:
                 columns, rows = load(table)
                 if table.name == "users":
+                    rows = challenge_staff(columns, rows)
                     await upsert_staff(raw, demo, columns, rows)
                 else:
                     await raw.copy_records_to_table(
@@ -362,6 +375,12 @@ async def seed(url: str) -> None:
                 .on_conflict_do_nothing(index_elements=[Policy.org_id, Policy.role])
             )
             print(f"policies: {added.rowcount} new of {len(POLICIES)}")
+            dropped = await connection.execute(
+                delete(Policy).where(
+                    Policy.org_id == demo, Policy.role.not_in(list(POLICIES))
+                )
+            )
+            print(f"policies: {dropped.rowcount} of other roles removed")
             account = {
                 "email": settings.demo_email,
                 "name": "Demo User",

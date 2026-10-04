@@ -26,12 +26,12 @@ def test_strictness_levels_get_stricter() -> None:
 
 def test_a_role_overrides_its_level_and_merges_its_tool_groups() -> None:
     # when
-    analyst = POLICIES["Analyst"]
+    operations = POLICIES["Operations Specialist"]
 
     # then
-    assert analyst.injection_threshold == 0.65
-    assert analyst.tools["bank__get_account"] is ToolAction.REDACT
-    assert analyst.tools["bank__list_trades"] is ToolAction.ALLOW
+    assert operations.injection_threshold == 0.65
+    assert operations.tools["bank__get_client"] is ToolAction.REDACT
+    assert operations.tools["bank__list_trades"] is ToolAction.ALLOW
 
 
 def test_load_rejects_an_invalid_policy(tmp_path: Path) -> None:

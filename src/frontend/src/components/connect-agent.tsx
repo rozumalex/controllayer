@@ -16,20 +16,15 @@ import { storedToken } from "@/lib/users"
 
 // How to plug the user's own agent, such as Claude Code, into the gateway's
 // MCP server. It signs in with the user's session token.
-export function ConnectAgent({ className }: { className?: string }) {
+export function ConnectAgent() {
   const { isCopied, copyToClipboard } = useCopyToClipboard()
   const url = `${window.location.origin}/api/mcp`
   const command = `claude mcp add --transport http portcullis ${url} --header "Authorization: Bearer ${storedToken() ?? ""}"`
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className={className}
-          title="Connect your agent"
-        >
-          <Plug className="size-4" />
+        <Button variant="outline">
+          <Plug /> Connect your agent
         </Button>
       </DialogTrigger>
       <DialogContent>

@@ -1,6 +1,7 @@
 import { ChevronRight, Lock, Plus, Trash2 } from "lucide-react"
 import { useCallback, useEffect, useState, type FormEvent } from "react"
 
+import { ConnectAgent } from "@/components/connect-agent"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -352,13 +353,16 @@ function Servers() {
 export function Mcps() {
   return (
     <>
-      <div>
-        <h1 className="font-serif text-2xl font-semibold tracking-tight text-primary">
-          MCP servers
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          The MCP servers whose tools the control layer gives to agents.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="font-serif text-2xl font-semibold tracking-tight text-primary">
+            MCP servers
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            The MCP servers whose tools the control layer gives to agents.
+          </p>
+        </div>
+        <ConnectAgent />
       </div>
       <Servers />
     </>

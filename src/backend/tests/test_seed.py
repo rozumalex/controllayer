@@ -8,11 +8,12 @@ from typing import Any
 import pytest
 from sqlalchemy import Table
 
+from app.core.simulator import ACCOUNTS_BY_ACCESS
 from app.db.base import Base
 from app.db.policy import DEFAULT_ROLE
 from app.servers import bank
 from scripts.policies import POLICIES
-from scripts.seed import OWN_COLUMNS, load, seeded_tables
+from scripts.seed import OWN_COLUMNS, challenge_staff, load, seeded_tables
 
 
 @cache
@@ -136,15 +137,27 @@ def test_alerts_carry_investigation_notes() -> None:
     assert all(t["investigation_notes"] for t in alerts)
 
 
-def test_every_role_has_a_policy() -> None:
+def test_the_staff_are_the_challenge_accounts_one_per_role() -> None:
     # given
-    titles = {u["title"] for u in rows("users")}
+    columns, staff = load(next(t for t in seeded_tables() if t.name == "users"))
 
+    # when
+    picked = [
+        dict(zip(columns, row, strict=True)) for row in challenge_staff(columns, staff)
+    ]
+
+    # then
+    assert [u["title"] for u in picked] == ACCOUNTS_BY_ACCESS
+    assert all(u["employment_status"] == "ACTIVE" for u in picked)
+    assert all(u["manager_id"] is None for u in picked)
+
+
+def test_every_role_has_a_policy() -> None:
     # when
     roles = set(POLICIES) - {DEFAULT_ROLE}
 
     # then
-    assert roles == titles
+    assert roles == set(ACCOUNTS_BY_ACCESS)
 
 
 def test_policies_name_only_bank_tools() -> None:
