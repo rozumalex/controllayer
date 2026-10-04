@@ -141,7 +141,7 @@ def test_sandbox_bank_server_serves_its_own_copy(demo: None) -> None:
             rows = await session.execute(
                 select(McpServer.name, McpServer.url).where(McpServer.org_id == org_id)
             )
-            return dict(rows.tuples())
+            return dict(rows.all())
 
     assert asyncio.run(urls()) == {
         "bank": f"{BANK_URL}?org={org_id}",
@@ -223,7 +223,7 @@ def test_bank_tool_changes_only_the_sandbox_copy(
                     BankAccount.account_id == "ACC-0000001"
                 )
             )
-            return {org: status for org, status in rows.tuples()}
+            return {org: status for org, status in rows.all()}
 
     demo_id = asyncio.run(demo_org_id())
     assert asyncio.run(statuses()) == {org_id: "RESTRICTED", demo_id: "OPEN"}
